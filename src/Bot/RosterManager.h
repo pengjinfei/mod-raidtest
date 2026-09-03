@@ -20,7 +20,9 @@ public:
                       uint8 partySize);
 
     // 返回场景已建角色 guid（按槽位升序）。
-    std::vector<ObjectGuid> GetSlotGuids(std::string const& scenarioKey);
+    // expected > 0 时：若一次读取行数不足 expected（紧随 EnsureRoster 之后 Execute 的
+    // 行可能还没落到可读连接上），会先排空异步队列并短重试最多 3 次。
+    std::vector<ObjectGuid> GetSlotGuids(std::string const& scenarioKey, uint8 expected = 0);
 
 private:
     static bool HasMapping(std::string const& scenarioKey, uint8 slotIndex);

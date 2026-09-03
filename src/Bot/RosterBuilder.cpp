@@ -12,6 +12,8 @@
 #include "SharedDefines.h"
 #include "StringFormat.h"
 #include "WorldSession.h"
+#include <algorithm>
+#include <array>
 #include <cctype>
 #include <chrono>
 #include <map>
@@ -85,6 +87,53 @@ namespace
             { "Ring1",    EQUIPMENT_SLOT_FINGER1 },  { "Ring2",       EQUIPMENT_SLOT_FINGER2 },
             { "Trinket1", EQUIPMENT_SLOT_TRINKET1 }, { "Trinket2",    EQUIPMENT_SLOT_TRINKET2 },
         };
+    }
+
+    // 专业名（蓝图 Professions 逗号列表里的值）-> SkillLine id（对应 SharedDefines.h 的 SKILL_*）。
+    // 只收 design §5.1 声明的双专业集合；未收录的名字在 ApplyBlueprintProfessions 里 LOG_WARN 跳过。
+    std::map<std::string, uint16> const GetProfessionSkillIdMap()
+    {
+        return {
+            { "mining",         SKILL_MINING },
+            { "jewelcrafting",  SKILL_JEWELCRAFTING },
+            { "herbalism",      SKILL_HERBALISM },
+            { "alchemy",        SKILL_ALCHEMY },
+            { "blacksmithing",  SKILL_BLACKSMITHING },
+            { "enchanting",     SKILL_ENCHANTING },
+            { "tailoring",      SKILL_TAILORING },
+            { "leatherworking", SKILL_LEATHERWORKING },
+            { "skinning",       SKILL_SKINNING },
+            { "engineering",    SKILL_ENGINEERING },
+            { "inscription",    SKILL_INSCRIPTION },
+        };
+    }
+
+    // skill id -> 该专业的起始法术（与 PlayerbotFactory::GetProfessionStarterSpell 同表；
+    // 该方法是 private，模块内维护同样的数据表，避免改动 mod-playerbots 的接口）。
+    std::uint32_t GetProfessionStarterSpell(uint16 skillId)
+    {
+        static std::array<std::pair<uint16, uint32>, 14> const ProfessionStarterSpells = {{
+            { SKILL_ALCHEMY, 2259 },
+            { SKILL_BLACKSMITHING, 2018 },
+            { SKILL_COOKING, 2550 },
+            { SKILL_ENCHANTING, 7411 },
+            { SKILL_ENGINEERING, 4036 },
+            { SKILL_FIRST_AID, 3273 },
+            { SKILL_FISHING, 7620 },
+            { SKILL_HERBALISM, 2366 },
+            { SKILL_INSCRIPTION, 45357 },
+            { SKILL_JEWELCRAFTING, 25229 },
+            { SKILL_LEATHERWORKING, 2108 },
+            { SKILL_MINING, 2575 },
+            { SKILL_SKINNING, 8613 },
+            { SKILL_TAILORING, 3908 }
+        }};
+        for (auto const& [professionSkill, starterSpell] : ProfessionStarterSpells)
+        {
+            if (professionSkill == skillId)
+                return starterSpell;
+        }
+        return 0;
     }
 }
 
@@ -165,6 +214,7 @@ CreatedChar RosterBuilder::CreateCharacter(RosterSlot const& slot, std::string c
 {
     // ---- 1) 账号（按配置文件前缀 + 槽位；已存在则复用，保证幂等）----
     std::string const accountName = RaidTestConfig::instance().AccountPrefix() + std::to_string(slot.slot);
+    bool accountCreated = false;
     uint32 accountId = AccountMgr::GetId(accountName);
     if (!accountId)
     {
@@ -175,6 +225,7 @@ CreatedChar RosterBuilder::CreateCharacter(RosterSlot const& slot, std::string c
                 accountName, static_cast<uint32>(result));
             return {};
         }
+        accountCreated = true;
 
         // LoginDatabase 写入是异步入队，等待落库后才能 GetId
         while (LoginDatabase.QueueSize())
@@ -205,36 +256,73 @@ CreatedChar RosterBuilder::CreateCharacter(RosterSlot const& slot, std::string c
         return {};
     }
 
-    std::string charName = MakeCharacterName(prefix, slot.slot, slot.name);
-    if (charName.empty() || ObjectMgr::CheckPlayerName(charName) != CHAR_NAME_SUCCESS)
+    // 基础名字做了完整 charset/保留名预检；名字冲突时用字母后缀逐次退避重试。
+    // 注意：本核心 CheckPlayerName -> isExtendedLatinString 只收字母（拒绝数字/'-'），
+    // 因此后缀不用任务建议的 "-N"，改用 'a'..'e' 单字母。
+    std::string const baseName = MakeCharacterName(prefix, slot.slot, slot.name);
+    if (baseName.empty() || ObjectMgr::CheckPlayerName(baseName) != CHAR_NAME_SUCCESS)
     {
-        LOG_ERROR("raidtest", "RosterBuilder: generated character name '{}' is invalid", charName);
+        LOG_ERROR("raidtest", "RosterBuilder: generated character name '{}' is invalid", baseName);
         return {};
     }
 
-    CharacterDatabasePreparedStatement* nameCheck =
-        CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHECK_NAME);
-    nameCheck->SetData(0, charName);
-    if (CharacterDatabase.Query(nameCheck))
+    constexpr uint32 kNameAttempts = 5;
+    std::string charName;
+    WorldSession* session = nullptr;
+    Player* player = nullptr;
+
+    for (uint32 attempt = 0; attempt <= kNameAttempts && !player; ++attempt)
     {
-        LOG_ERROR("raidtest", "RosterBuilder: character name '{}' already in use", charName);
-        return {};
-    }
+        charName = baseName;
+        if (attempt > 0)
+        {
+            charName = baseName.substr(0, MAX_PLAYER_NAME - 1);
+            charName += static_cast<char>('a' + (attempt - 1));
+        }
 
-    WorldSession* session = new WorldSession(accountId, "", 0x0, nullptr, SEC_PLAYER,
-        EXPANSION_WRATH_OF_THE_LICH_KING, time_t(0), LOCALE_enUS, 0, false, false, 0, true);
+        // 后缀可能引入“三个连续相同字母”等新违规，逐候选名再校验一次
+        if (ObjectMgr::CheckPlayerName(charName) != CHAR_NAME_SUCCESS)
+        {
+            LOG_DEBUG("raidtest", "RosterBuilder: candidate name '{}' failed validation (attempt {})",
+                charName, attempt);
+            continue;
+        }
 
-    Player* player = new Player(session);
-    player->GetMotionMaster()->Initialize();
+        // 名字占用预检（DB）——冲突则试下一个后缀
+        CharacterDatabasePreparedStatement* nameCheck =
+            CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHECK_NAME);
+        nameCheck->SetData(0, charName);
+        if (CharacterDatabase.Query(nameCheck))
+        {
+            LOG_DEBUG("raidtest", "RosterBuilder: character name '{}' already in use (attempt {})",
+                charName, attempt);
+            continue;
+        }
 
-    CharacterCreateInfo createInfo(charName, race, cls, GENDER_MALE, 0, 0, 0, 0, 0);
-    if (!player->Create(sObjectMgr->GetGenerator<HighGuid::Player>().Generate(), &createInfo))
-    {
-        LOG_ERROR("raidtest", "RosterBuilder: Player::Create failed for '{}' (race={} class={})",
-            charName, uint32(race), uint32(cls));
+        session = new WorldSession(accountId, "", 0x0, nullptr, SEC_PLAYER,
+            EXPANSION_WRATH_OF_THE_LICH_KING, time_t(0), LOCALE_enUS, 0, false, false, 0, true);
+
+        player = new Player(session);
+        player->GetMotionMaster()->Initialize();
+
+        CharacterCreateInfo createInfo(charName, race, cls, GENDER_MALE, 0, 0, 0, 0, 0);
+        if (player->Create(sObjectMgr->GetGenerator<HighGuid::Player>().Generate(), &createInfo))
+            break;
+
+        LOG_ERROR("raidtest", "RosterBuilder: Player::Create failed for candidate '{}' "
+            "(race={} class={}, attempt {}/{})", charName, uint32(race), uint32(cls),
+            attempt, kNameAttempts);
         player->CleanupsBeforeDelete();
         delete player;
+        player = nullptr;
         delete session;
+        session = nullptr;
+    }
+
+    if (!player)
+    {
+        LOG_ERROR("raidtest", "RosterBuilder: failed to create character for slot {} after {} "
+            "candidate name(s) - giving up this slot", uint32(slot.slot), kNameAttempts + 1);
         return {};
     }
 
@@ -244,6 +332,11 @@ CreatedChar RosterBuilder::CreateCharacter(RosterSlot const& slot, std::string c
     // ---- 4) PlayerbotFactory 技能/天赋/职业法术骨架 ----
     PlayerbotFactory botFactory(player, 80);
     botFactory.InitSkills();
+
+    // InitTradeSkills 对非随机 bot 直接 return（IsRandomBot 检查），所以离线角色没有专业；
+    // 蓝图 Professions 字段在此确定性落地。
+    ApplyBlueprintProfessions(player, slot);
+
     if (slot.talentSpec.empty())
     {
         botFactory.InitTalentsTree();
@@ -279,7 +372,93 @@ CreatedChar RosterBuilder::CreateCharacter(RosterSlot const& slot, std::string c
     delete player;
     delete session;
 
-    return { accountId, guid };
+    return { accountId, guid, accountCreated };
+}
+
+void RosterBuilder::ApplyBlueprintProfessions(Player* bot, RosterSlot const& slot)
+{
+    // 蓝图 Professions 是确定性来源（对照 PlayerbotFactory::InitTradeSkills 的随机选择）。
+    // 机制完全复用：SetSkill 定技能值（SetRandomSkill 同级公式），learnSpell 学起始法术注册专业。
+    for (std::string profession : slot.professions)
+    {
+        // 容忍蓝图里的大小写变体
+        std::transform(profession.begin(), profession.end(), profession.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+        auto const& profMap = GetProfessionSkillIdMap();
+        auto it = profMap.find(profession);
+        if (it == profMap.end())
+        {
+            LOG_WARN("raidtest", "RosterBuilder: unknown profession '{}' in blueprint for '{}' - "
+                "ignoring", profession, bot->GetName());
+            continue;
+        }
+
+        uint16 skillId = it->second;
+        uint32 starterSpell = GetProfessionStarterSpell(skillId);
+        if (!starterSpell)
+        {
+            LOG_WARN("raidtest", "RosterBuilder: no starter spell for profession '{}' (skill={}) - "
+                "ignoring", profession, uint32(skillId));
+            continue;
+        }
+
+        if (bot->HasSkill(skillId))
+        {
+            LOG_DEBUG("raidtest", "RosterBuilder: profession '{}' already learned for '{}' - skipping",
+                profession, bot->GetName());
+            continue;
+        }
+
+        // 主专业双专业上限：蓝图声明的都是主专业，learnSpell 首级会消耗 free profession point，
+        // 对标 InitTradeSkills 的 free profession point 检查
+        if (!bot->GetFreePrimaryProfessionPoints())
+        {
+            LOG_WARN("raidtest", "RosterBuilder: no free profession point for '{}' on '{}' - ignoring",
+                profession, bot->GetName());
+            continue;
+        }
+
+        // 参照 SetRandomSkill：value/max = level * 5（80 级 400），step 沿用已学值或 1
+        uint16 step = bot->GetSkillValue(skillId) ? bot->GetSkillStep(skillId) : 1;
+        uint16 skillLevel = static_cast<uint16>(bot->GetLevel() * 5);
+        bot->SetSkill(skillId, step, skillLevel, skillLevel);
+        bot->learnSpell(starterSpell, false);
+
+        LOG_INFO("raidtest", "RosterBuilder: learned profession '{}' (skill={} value={}) for '{}'",
+            profession, uint32(skillId), uint32(skillLevel), bot->GetName());
+    }
+}
+
+void RosterBuilder::DeleteCreatedCharacter(CreatedChar const& created)
+{
+    if (created.guid.IsEmpty())
+        return;
+
+    // 正主删除走核心完整链路（characters 及全部关联表 + 角色缓存清理）
+    Player::DeleteFromDB(created.guid.GetCounter(), created.accountId, true, true);
+
+    // 等异步删除落库，否则后续同名重建的预检 SELECT 可能读不到
+    while (CharacterDatabase.QueueSize())
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    if (created.accountCreated)
+    {
+        // CreateAccount 还会往 realmcharacters 写初始行；先清关联行再删账号，避免孤儿行
+        LoginDatabase.Execute("DELETE FROM realmcharacters WHERE acctid = {}", created.accountId);
+        LoginDatabase.Execute("DELETE FROM account WHERE id = {}", created.accountId);
+
+        // 等删除落库，否则后续用同名重建账号会撞 AOR_NAME_ALREADY_EXIST
+        while (LoginDatabase.QueueSize())
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+
+        LOG_WARN("raidtest", "RosterBuilder: rolled back newly created account id={}",
+            created.accountId);
+    }
+
+    LOG_WARN("raidtest", "RosterBuilder: rolled back created character guid={} (account={}{})",
+        created.guid.ToString(), created.accountId,
+        created.accountCreated ? ", deleted" : ", reused - kept");
 }
 
 Item* RosterBuilder::FindEquippedItem(Player* bot, uint32 itemId)

@@ -11,10 +11,13 @@ class Player;
 class RosterSlot;
 
 // 建号结果：账号 id + 角色 guid。失败时 guid.IsEmpty()。
+// accountCreated：本次建号新建了账号（true）还是复用了已有账号（false），
+// 供映射写入失败回滚时决定是否删除账号。
 struct CreatedChar
 {
     uint32 accountId{0};
     ObjectGuid guid{};
+    bool accountCreated{false};
 };
 
 // 角色蓝图执行器（design §5.1）：建账号 -> 建 80 级角色 -> PlayerbotFactory
@@ -38,6 +41,10 @@ public:
     // class 名称 -> 职业枚举；0 = 无法识别。供 RosterManager 写库换算 class 列。
     static uint8 GetClassId(std::string const& charClass);
 
+    // 回滚：删除刚创建的角色（core 完整删除链：characters 及所有关联表 + 角色缓存）；
+    // 若账号是本次新建的也一并删除（best-effort）。用于映射写入失败后的清理。
+    static void DeleteCreatedCharacter(CreatedChar const& created);
+
 private:
     static uint8 GetRaceId(std::string const& race);          // 0 = 无法识别
     static int32 GetTalentSpecNo(std::string const& talentSpec); // -1 = 未知模板
@@ -46,6 +53,11 @@ private:
     static std::string SanitizeIdentifier(std::string text, size_t maxLen);
     static void SetupCharacterLevel(Player* player, uint32 level);
     static std::string GeneratePassword();
+
+    // 蓝图双专业落地：professions 名称 -> SkillLine（确定性映射，替代
+    // PlayerbotFactory::InitTradeSkills 的随机选择），学习起始法术 + 按等级设置技能值。
+    // 未知专业名 LOG_WARN 后跳过，不中断整个槽位。
+    static void ApplyBlueprintProfessions(Player* bot, RosterSlot const& slot);
 
     static uint32 EquipBlueprintItems(Player* bot, RosterSlot const& slot);
     static void ApplyBlueprintGems(Player* bot, RosterSlot const& slot);

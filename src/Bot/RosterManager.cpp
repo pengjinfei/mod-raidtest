@@ -6,7 +6,9 @@
 #include "StringFormat.h"
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <string>
+#include <thread>
 
 namespace
 {
@@ -56,11 +58,29 @@ bool RosterManager::InsertMapping(std::string const& scenarioKey, uint8 slotInde
         return false;
     }
 
+    // 裸字符串 Execute 是异步入队，此刻无法感知执行成败；先排队，落库后用
+    // 同步查询校验“带本 guid 的行确实存在”，否则视为插入失败（调用方负责回滚）。
     CharacterDatabase.Execute(Acore::StringFormat(
         "INSERT INTO raidtest_accounts (scenario_key, slot, account_id, character_guid, class, role) "
         "VALUES ('{}', {}, {}, {}, {}, '{}')",
         scenarioKey, uint32(slotIndex), created.accountId, created.guid.GetCounter(),
         uint32(cls), slot.role));
+
+    while (CharacterDatabase.QueueSize())
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    QueryResult verify = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT 1 FROM raidtest_accounts "
+        "WHERE scenario_key = '{}' AND slot = {} AND character_guid = {} LIMIT 1",
+        scenarioKey, uint32(slotIndex), created.guid.GetCounter()));
+    if (!verify)
+    {
+        LOG_ERROR("raidtest", "RosterManager: INSERT into raidtest_accounts for scenario '{}' slot {} "
+            "did not persist (character_guid={}) - will roll back", scenarioKey, uint32(slotIndex),
+            created.guid.GetCounter());
+        return false;
+    }
+
     return true;
 }
 
@@ -97,7 +117,9 @@ bool RosterManager::EnsureRoster(std::string const& scenarioKey,
         if (!InsertMapping(scenarioKey, i, created, slot))
         {
             LOG_ERROR("raidtest", "RosterManager: failed to write mapping for scenario '{}' slot {} - "
-                "keeping already ensured slot(s)", scenarioKey, uint32(i));
+                "rolling back this slot's character/account, keeping already ensured slot(s)",
+                scenarioKey, uint32(i));
+            RosterBuilder::DeleteCreatedCharacter(created);
             return false;
         }
 
@@ -110,20 +132,37 @@ bool RosterManager::EnsureRoster(std::string const& scenarioKey,
     return true;
 }
 
-std::vector<ObjectGuid> RosterManager::GetSlotGuids(std::string const& scenarioKey)
+std::vector<ObjectGuid> RosterManager::GetSlotGuids(std::string const& scenarioKey, uint8 expected)
 {
     std::vector<ObjectGuid> guids;
 
-    QueryResult result = CharacterDatabase.Query(Acore::StringFormat(
-        "SELECT character_guid FROM raidtest_accounts "
-        "WHERE scenario_key = '{}' ORDER BY slot", scenarioKey));
-    if (result)
+    // EnsureRoster 的 INSERT 走的是异步 Execute，刚落库的行可能在别的连接上；
+    // 先排空队列保证 SELECT 能看到提交后的最新状态。
+    while (CharacterDatabase.QueueSize())
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // 如果调用方给了期望行数（例如紧接着的登录流程），读不全就短重试。
+    uint32 const kMaxAttempts = expected ? 3u : 1u;
+    for (uint32 attempt = 0; attempt < kMaxAttempts; ++attempt)
     {
-        do
+        guids.clear();
+        QueryResult result = CharacterDatabase.Query(Acore::StringFormat(
+            "SELECT character_guid FROM raidtest_accounts "
+            "WHERE scenario_key = '{}' ORDER BY slot", scenarioKey));
+        if (result)
         {
-            Field* fields = result->Fetch();
-            guids.emplace_back(ObjectGuid::Create<HighGuid::Player>(fields[0].Get<uint32>()));
-        } while (result->NextRow());
+            do
+            {
+                Field* fields = result->Fetch();
+                guids.emplace_back(ObjectGuid::Create<HighGuid::Player>(fields[0].Get<uint32>()));
+            } while (result->NextRow());
+        }
+
+        if (!expected || guids.size() >= expected)
+            break;
+
+        if (attempt + 1 < kMaxAttempts)
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
     return guids;
