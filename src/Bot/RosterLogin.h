@@ -9,14 +9,26 @@ class Player;
 
 // 登录/组队/传送（design §7）：headless bot 登录 + 服务端组队 + 服务端传送。
 //
-// 重要约束：本模块所有接口都必须在世界线程调用（Group/Teleport/查询回调
-// 均为世界线程职责）。
-// RandomBotAutologin=0 时 mod-playerbots 不会自动泵动登录回调与会话传送 ack
-// （RandomPlayerbotMgr::UpdateAIInternal 提前返回），因此：
-//   - LoginAll 在等待期间主动调 sWorld->ProcessQueryCallbacks() +
-//     PlayerbotWorldThreadProcessor::Update(0) 推进异步登录；
-//   - AllOnMap 在等待期间对仍在 IsBeingTeleported() 的 bot 主动调
-//     PlayerbotAI::HandleTeleportAck() 推进 worldport。
+// 线程模型：
+//   - 世界线程调用者能用的入口只有非阻塞接口：Start / FormGroup / TeleportToRaid /
+//     AllLoggedIn / AllOnMap（AllOnMap 是逐 tick 泵 + 轮询，内部驱动 PumpTeleportAcks）。
+//     Group/Teleport/查询回调都是世界线程职责，故这些必须在世界线程调用；
+//     LoginAll 除外（见下）。
+//   - LoginAll（阻塞便捷变体）是唯一例外：它是纯等待原语，MUST 只能在世界线程**之外**
+//     调用 —— 它 sleep 等待期间需要世界循环保持运转来推进异步登录（模块内部无法
+//     手动泵这些回调）。
+//
+// 异步推进机制（模块内部无需、也无法手动泵）：
+//   mod-playerbots 经世界循环（World::Update 内的查询回调泵 / WorldScript OnUpdate）
+//   每个世界 tick **无条件**运行，与 AiPlayerbot.RandomBotAutologin 无关；该配置只
+//   门控 bot AI 的完整时钟（RandomPlayerbotMgr::UpdateAIInternal）：
+//     - 登录回调泵：AddPlayerBot 的查询回调由 World::ProcessQueryCallbacks()（World
+//       私有成员，模块无法调用）泵出 -> HandlePlayerBotLoginCallback -> 登录进世界，
+//       后置的 OnBotLoginOperation 由 PlayerbotWorldThreadProcessor::Update 处理；
+//     - 传送 ack 泵：sRandomPlayerbotMgr.UpdateSessions() 对仍在 IsBeingTeleported()
+//       的 bot 调 PlayerbotAI::HandleTeleportAck() 推进 worldport。
+//   因此登录/worldport 推进不依赖配置；本文件 AllOnMap 内手动 HandleTeleportAck()
+//   是确定性冗余（本 tick 内推进、不等下一世界 tick），不是对“禁用自动泵”的补偿。
 class RosterLogin
 {
 public:
@@ -29,9 +41,10 @@ public:
     // 轮询：所有 guid 对应的 Player 都已进入世界（ObjectAccessor::FindPlayer + IsInWorld）。
     static bool AllLoggedIn(std::vector<ObjectGuid> const& guids);
 
-    // 阻塞便捷变体（brief 接口）：Start + 最多等待 waitTicks * 100ms。
-    // 注意：它是纯等待原语（世界线程无法被阻塞来内泵），只能在世界线程**之外**
-    // 调用（世界循环保持运转以推进异步登录）；世界线程上的驱动（如冒烟 harness）
+    // 阻塞便捷变体（brief 接口）：Start + 最多等待 waitTicks * 100ms
+    // （默认 waitTicks=60 -> 6s）。
+    // 注意：它是纯等待原语，必须只在世界线程**之外**调用（世界循环保持运转才能推进
+    // 异步登录，模块无法内泵 World 私有回调）；世界线程上的驱动（如冒烟 harness）
     // 请改用 Start + 逐 tick AllLoggedIn。
     static bool LoginAll(std::vector<ObjectGuid> const& guids, uint32 waitTicks = 60);
 

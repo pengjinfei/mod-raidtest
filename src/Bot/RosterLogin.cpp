@@ -90,34 +90,43 @@ bool RosterLogin::FormGroup(std::vector<Player*> const& bots)
     if (bots.size() > 1)
         group->ConvertToRaid();
 
+    std::size_t failed = 0;
     for (std::size_t i = 1; i < bots.size(); ++i)
     {
         Player* member = bots[i];
         if (!member)
+        {
+            ++failed;
             continue;
+        }
         if (member->GetGroup())
         {
+            ++failed;
             LOG_WARN("raidtest", "RosterLogin::FormGroup: member {} is already in a group - skipped",
                      member->GetName());
             continue;
         }
         if (!group->AddMember(member))
+        {
+            ++failed;
             LOG_WARN("raidtest", "RosterLogin::FormGroup: AddMember failed for {}", member->GetName());
+        }
     }
 
-    bool const ok = group->GetMembersCount() == bots.size();
-    if (ok)
+    if (failed == 0)
     {
         LOG_INFO("raidtest", "RosterLogin::FormGroup: {} member(s) in group {}, leader={}, raid={}",
                  group->GetMembersCount(), group->GetGUID().ToString(), leader->GetName(),
                  group->isRaidGroup());
+        return true;
     }
-    else
-    {
-        LOG_ERROR("raidtest", "RosterLogin::FormGroup: {}/{} member(s) in group",
-                  group->GetMembersCount(), bots.size());
-    }
-    return ok;
+
+    // 部分失败：必须拆掉已建的部分组（否则 leader 仍留在组里，重试会永久命中
+    // “leader already in a group”）。Disband 会移除全部成员并从 group_mgr 注销、delete 本组。
+    LOG_WARN("raidtest", "RosterLogin::FormGroup: {}/{} roster member(s) failed to join; "
+             "disbanding partial group {}", failed, bots.size(), group->GetGUID().ToString());
+    group->Disband();
+    return false;
 }
 
 bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos)

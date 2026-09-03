@@ -49,10 +49,23 @@ bool CombatTrigger::PullBoss(Player* leader, Creature* boss)
     context->GetValue<GuidVector>("prioritized targets")->Set({boss->GetGUID()});
     context->GetValue<ObjectGuid>("pull target")->Set(boss->GetGUID());
 
+    // 拉怪前置上下文一设即生效，PullBoss 每次退出前必须清掉（镜像 mod-playerbots 的
+    // reset 模式：prioritized targets -> Reset()、pull target -> ObjectGuid::Empty，
+    // 见 ChatShortcutActions / PlayerbotAI 的 Reset 逻辑），否则 leader 的 targeting
+    // 会被永久钉在 boss 上（幂等跑多次时尤其明显）。
+    auto const clearPullContext = [context, leader]()
+    {
+        context->GetValue<GuidVector>("prioritized targets")->Reset();
+        context->GetValue<ObjectGuid>("pull target")->Set(ObjectGuid::Empty);
+        LOG_INFO("raidtest", "CombatTrigger::PullBoss: cleared pull context for leader {}",
+                 leader->GetName());
+    };
+
     RaidPullAction pull(botAI);
     bool const initiated = pull.Attack(boss);
     if (!initiated)
     {
+        clearPullContext();
         LOG_ERROR("raidtest", "CombatTrigger::PullBoss: leader {} could not initiate attack on {} "
                   "(dead/friendly/out of range/no LOS/invalid target)",
                   leader->GetName(), boss->GetName());
@@ -75,6 +88,7 @@ bool CombatTrigger::PullBoss(Player* leader, Creature* boss)
     {
         if (boss->IsInCombat())
         {
+            clearPullContext();
             LOG_INFO("raidtest", "CombatTrigger::PullBoss: {} engaged {} (guid {})",
                      leader->GetName(), boss->GetName(), boss->GetGUID().ToString());
             return true;
@@ -82,6 +96,7 @@ bool CombatTrigger::PullBoss(Player* leader, Creature* boss)
         std::this_thread::sleep_for(std::chrono::milliseconds(kCombatTickMillis));
     }
 
+    clearPullContext();
     LOG_WARN("raidtest", "CombatTrigger::PullBoss: boss {} not in combat within ~{}s - aborted signal",
              boss->GetName(), float(kCombatConfirmTicks * kCombatTickMillis) / 1000.0f);
     return false;

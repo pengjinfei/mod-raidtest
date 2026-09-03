@@ -24,7 +24,8 @@ public:
     // 同步建立 boss<->leader 的战斗引用（boss->SetInCombatWith），随后轮询确认
     // boss 进入战斗（UNIT_FLAG_IN_COMBAT）。返回 true 表示 boss 已确认进入战斗。
     // 发起前会设置 bot 上下文的 prioritized targets / pull target，让后续 bot
-    // 战斗逻辑与拉怪前置信息对齐。
+    // 战斗逻辑与拉怪前置信息对齐；确认进战斗（或中止）后立即清空这两个上下文值，
+    // 避免 leader 的 targeting 被永久钉在 boss 上。
     //
     // 偏离说明：玩家单位发起的 Unit::Attack 不会同步把目标置入战斗（战斗态要等
     // 世界循环推进 bot 的更新/挥击才会落地）；PullBoss 运行在世界线程上不能阻塞
