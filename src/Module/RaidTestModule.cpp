@@ -1,4 +1,5 @@
 #include "RaidTestModule.h"
+#include "CombatEventBus.h"
 #include "Playerbots.h"          // 仅验证 include 通道；后续任务再扩展
 #include "RaidTestConfig.h"
 #include "Config.h"
@@ -8,6 +9,7 @@
 void AddRaidTestScripts()
 {
     RaidTestConfig::instance().Initialize();
+    RegisterRaidTestCombatHooks();   // 施法/伤害/死亡全局 hooks（Task 5）
     LOG_INFO("raidtest", ">> mod-raidtest loaded (prefix={}, party={})",
         RaidTestConfig::instance().AccountPrefix(),
         uint32(RaidTestConfig::instance().PartySize()));
