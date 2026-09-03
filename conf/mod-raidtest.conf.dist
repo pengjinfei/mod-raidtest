@@ -1,0 +1,8 @@
+# mod-raidtest 自动化团测模块
+RaidTest.Enabled = 1
+RaidTest.AccountPrefix = "raidtest"
+RaidTest.PartySize = 10
+RaidTest.DefaultAttempts = 5
+RaidTest.AttemptTimeout = 300
+RaidTest.ForceRecreateOnRun = 0
+RaidTest.LogLevel = 1
