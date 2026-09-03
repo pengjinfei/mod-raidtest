@@ -1,12 +1,15 @@
 #include "CombatEventBus.h"
 #include "EventStore.h"
 #include "AllSpellScript.h"
+#include "Errors.h"
 #include "Log.h"
 #include "Spell.h"
 #include "Unit.h"
 #include "UnitScript.h"
 #include <algorithm>
 #include <chrono>
+#include <functional>
+#include <thread>
 
 // core 战斗 hooks（文件局部声明，仅在 RegisterRaidTestCombatHooks 注册，不对外暴露）。
 class RaidTestSpellScript : public AllSpellScript
@@ -30,6 +33,21 @@ CombatEventBus& CombatEventBus::instance()
     static CombatEventBus instance;
     return instance;
 }
+
+#ifdef ACORE_DEBUG
+void CombatEventBus::AssertWorldThread() const
+{
+    // debug-only 世界线程断言（Task 5 review Fix 1）：三个可变入口在调用它们之前
+    // 必须处于总线创建线程（世界线程）。std::thread::id 无 operator<<，用 hash 值
+    // 打印便于在日志里区分具体线程。release 下本函数与调用点整体编译为空，零开销。
+    ASSERT(std::this_thread::get_id() == _ownerThread,
+           "CombatEventBus: entry from thread {} but bus is confined to creating thread {} - "
+           "all mutating entry points (StartAttempt/EndAttempt/Push) must run on the "
+           "world thread; see CombatEventBus.h thread model",
+           std::hash<std::thread::id>{}(std::this_thread::get_id()),
+           std::hash<std::thread::id>{}(_ownerThread));
+}
+#endif
 
 uint32 CombatEventBus::RelMs() const
 {
@@ -93,8 +111,17 @@ void CombatEventBus::BumpCounters(CombatEvent const& e)
     case CombatEventType::BossHp:
         ++_evBossHp;
         break;
-    default:
-        ++_evOther;
+    case CombatEventType::CombatStart:
+        ++_evCombatStart;
+        break;
+    case CombatEventType::CombatEnd:
+        ++_evCombatEnd;
+        break;
+    case CombatEventType::Strategy:
+        ++_evStrategy;
+        break;
+    case CombatEventType::State:
+        ++_evState;
         break;
     }
 }
@@ -102,6 +129,9 @@ void CombatEventBus::BumpCounters(CombatEvent const& e)
 void CombatEventBus::StartAttempt(uint32 attemptId, std::vector<ObjectGuid> const& botGuids,
                                   ObjectGuid const& bossGuid, uint32 bossEntry)
 {
+#ifdef ACORE_DEBUG
+    AssertWorldThread();
+#endif
     if (_active)
         EndAttempt();  // 防御：上一 attempt 未收尾则先收尾
 
@@ -112,7 +142,8 @@ void CombatEventBus::StartAttempt(uint32 attemptId, std::vector<ObjectGuid> cons
     _botGuids.insert(botGuids.begin(), botGuids.end());
     _attemptStart = std::chrono::steady_clock::now();
     _pending.clear();
-    _evSpell = _evDamage = _evDeath = _evBossHp = _evOther = _evDropped = 0;
+    _evSpell = _evDamage = _evDeath = _evBossHp = 0;
+    _evCombatStart = _evCombatEnd = _evStrategy = _evState = _evDropped = 0;
     _active = true;
 
     // 流开头锚点：rel_ms=0 的第一条。经过 Push 盖章（恰为起始时刻）。
@@ -124,6 +155,9 @@ void CombatEventBus::StartAttempt(uint32 attemptId, std::vector<ObjectGuid> cons
 
 void CombatEventBus::EndAttempt()
 {
+#ifdef ACORE_DEBUG
+    AssertWorldThread();
+#endif
     if (!_active)
         return;
 
@@ -137,8 +171,9 @@ void CombatEventBus::EndAttempt()
     FlushToStore();
 
     LOG_INFO("raidtest", "CombatEventBus: attempt {} ended - spell={} damage={} death={} "
-        "boss_hp={} other={} dropped={}",
-        _attemptId, _evSpell, _evDamage, _evDeath, _evBossHp, _evOther, _evDropped);
+        "boss_hp={} combat_start={} combat_end={} strategy={} state={} dropped={}",
+        _attemptId, _evSpell, _evDamage, _evDeath, _evBossHp, _evCombatStart, _evCombatEnd,
+        _evStrategy, _evState, _evDropped);
 
     _active = false;
     _attemptId = 0;
@@ -149,6 +184,9 @@ void CombatEventBus::EndAttempt()
 
 void CombatEventBus::Push(CombatEvent const& event)
 {
+#ifdef ACORE_DEBUG
+    AssertWorldThread();
+#endif
     if (!_active)
         return;  // 非采集期快路径：hooks 每世界事件都会进这里，先挡掉大部分
 
@@ -179,8 +217,16 @@ bool CombatEventBus::FlushToStore()
     batch.swap(_pending);
     bool const ok = EventStore::InsertBatch(_attemptId, batch);
     if (!ok)
-        LOG_WARN("raidtest", "CombatEventBus::FlushToStore: attempt {} EmptyBatch? - {} events dropped "
-            "from memory", _attemptId, batch.size());
+    {
+        // InsertBatch 返回 false == 本次没有任何可入队的行（缓冲已 swap 清出，
+        // 无法重试）。此前该分支日志写成 "EmptyBatch?" 有歧义——这里只可能是
+        // 「存储层拒绝了本次批量」，明确标 DATA LOST 以便审计；底层 MySQL 报错
+        // 由 sql.sql 日志承载（数据库线程自行输出）。
+        LOG_ERROR("raidtest",
+            "CombatEventBus::FlushToStore: attempt {} DB batch insert failed ({} events) - "
+            "batch rolled back, DATA LOST for this flush (see sql.sql log for MySQL error)",
+            _attemptId, batch.size());
+    }
     return ok;
 }
 

@@ -5,6 +5,7 @@
 #include "Define.h"
 #include "ObjectGuid.h"
 #include <chrono>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -30,7 +31,9 @@ class Unit;
 //     语义由调用方负责。
 //
 // 非 active 时刻（未 StartAttempt / 已 EndAttempt）Push 走快路径直接丢弃。
-// 不持有锁：依赖「全部入口在世界线程」的前置。
+// 不持有锁：依赖「全部入口在世界线程」的前置。debug 构建下在 StartAttempt /
+// EndAttempt / Push 三个可变入口做线程 id 断言（AssertWorldThread），违规调用
+// 立即 ASSERT；release 下该检查整体编译为空，零运行时开销。
 class CombatEventBus
 {
 public:
@@ -65,7 +68,18 @@ public:
     bool IsMember(ObjectGuid const& guid) const;
 
 private:
+#ifdef ACORE_DEBUG
+    // 世界线程加固（Task 5 review Fix 1）：总线创建时记录线程 id。该线程必须是世界
+    // 线程 —— 模块只在世界线程登记 hooks / 驱动 attempt，单例首次构造必然发生在
+    // 世界线程（首个 OnXXX hook 或 StartAttempt）。三个可变入口（StartAttempt /
+    // EndAttempt / Push）在 debug 构建下先过 AssertWorldThread，调用线程 != 创建
+    // 线程立即 ASSERT。
+    CombatEventBus() : _ownerThread(std::this_thread::get_id()) {}
+
+    void AssertWorldThread() const;
+#else
     CombatEventBus() = default;
+#endif
 
     uint32 RelMs() const;
     bool ShouldKeep(CombatEvent const& e) const;
@@ -79,12 +93,21 @@ private:
     std::chrono::steady_clock::time_point _attemptStart;
     std::vector<CombatEvent> _pending;
 
-    // 分型统计（冒烟 hook 命中计数 / Task 7 诊断）：过滤后入队的各类型数量 + 丢弃量
+#ifdef ACORE_DEBUG
+    std::thread::id _ownerThread; // 创建线程（世界线程）id，debug 线程断言用
+#endif
+
+    // 分型统计（冒烟 hook 命中计数 / Task 7 诊断）：过滤后入队的各类型数量 + 丢弃量。
+    // 逐类型计数（CombatStart/CombatEnd/Strategy/State 不再合并进 other），
+    // EndAttempt 汇总日志按类型分开输出（Task 5 review Fix 3）。
     uint64 _evSpell{0};
     uint64 _evDamage{0};
     uint64 _evDeath{0};
     uint64 _evBossHp{0};
-    uint64 _evOther{0};
+    uint64 _evCombatStart{0};
+    uint64 _evCombatEnd{0};
+    uint64 _evStrategy{0};
+    uint64 _evState{0};
     uint64 _evDropped{0};
 
     static constexpr uint32 kAutoFlushThreshold = 500;

@@ -13,6 +13,22 @@ namespace
     {
         return guid ? std::to_string(guid.GetCounter()) : std::string("0");
     }
+
+    // detail 是 raidtest_events.detail VARCHAR(255)。超长按 UTF-8 边界截断：
+    // 直接 resize/substr 会把多字节字符切掉半个——无效字节序列在 MySQL strict 模式
+    // 下报 errno 1366/1406，会让**整批** InnoDB 事务回滚（一条脏行毁整批，
+    // Task 5 review Fix 2）。从 limit 往前找最后一个非续字节（ASCII 或码元前导
+    // 字节），其后必然是一条完整码元序列。
+    std::string TruncateUtf8(std::string const& s, size_t limit)
+    {
+        if (s.size() <= limit)
+            return s;
+
+        size_t pos = limit;
+        while (pos > 0 && (static_cast<unsigned char>(s[pos]) & 0xC0u) == 0x80u)
+            --pos;
+        return s.substr(0, pos);
+    }
 }
 
 char const* EventStore::TypeToStr(CombatEventType type)
@@ -51,8 +67,9 @@ bool EventStore::InsertBatch(uint32 attemptId, std::vector<CombatEvent> const& e
 
     for (CombatEvent const& e : events)
     {
-        // detail 是自由文本（策略名/快照），经 EscapeString 转义后落 '{}'。
-        std::string detail = e.detail;
+        // detail 是自由文本（策略名/快照），VARCHAR(255)：超长先按 UTF-8 边界截断
+        // （TruncateUtf8），再 EscapeString 转义后落单引号字符串。
+        std::string detail = TruncateUtf8(e.detail, 255);
         if (!detail.empty())
             CharacterDatabase.EscapeString(detail);
 
