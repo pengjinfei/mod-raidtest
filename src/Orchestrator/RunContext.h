@@ -37,7 +37,7 @@ struct RunContext
     uint32 timeouts = 0;
 
     // ---- 当前 attempt 运行态 ----
-    uint32 attemptId = 0;               // raidtest_attempts.id（StartAttemptRow 后有效）
+    uint32 attemptId = 0;               // raidtest_attempts.id（QueueStartAttemptRow + ResolveStartAttemptRowId 后有效）
     uint32 attemptSeq = 0;              // 1-based
     uint32 attemptElapsedMs = 0;        // 开战（bus StartAttempt）起累计（world diff）
     uint32 attemptTimeoutMs = 0;        // 0 = 本 attempt 无超时

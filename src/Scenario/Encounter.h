@@ -4,8 +4,8 @@
 #include "Define.h"
 
 // 开战方式（design §7）：Encounter 的 engage 触发方式。
-// 当前唯一取值 Pull：leader bot 主动 pull 目标，走 CombatTrigger::PullBoss
-// （Task 4 已实机验证 leader 拉起 Patchwerk 并确认进入战斗）。
+// 当前唯一取值 Pull：leader bot 主动 pull 目标，走 CombatTrigger::BeginPull +
+// 逐 tick 确认进战斗（Task 4 已实机验证 leader 拉起 Patchwerk 并确认进入战斗）。
 enum class EncounterTrigger : uint8
 {
     Pull = 0,

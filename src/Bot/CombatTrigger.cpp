@@ -8,8 +8,6 @@
 #include "Playerbots.h"   // GET_PLAYERBOT_AI
 #include "Unit.h"
 #include <algorithm>
-#include <chrono>
-#include <thread>
 
 namespace
 {
@@ -22,23 +20,20 @@ public:
     RaidPullAction(PlayerbotAI* botAI) : AttackAction(botAI, "raid pull") {}
     using AttackAction::Attack;
 };
-
-constexpr uint32 kCombatConfirmTicks = 20;    // ~2s
-constexpr uint32 kCombatTickMillis = 100;
 }
 
-bool CombatTrigger::PullBoss(Player* leader, Creature* boss)
+bool CombatTrigger::BeginPull(Player* leader, Creature* boss)
 {
     if (!leader || !boss)
     {
-        LOG_ERROR("raidtest", "CombatTrigger::PullBoss: null leader/boss");
+        LOG_ERROR("raidtest", "CombatTrigger::BeginPull: null leader/boss");
         return false;
     }
 
     PlayerbotAI* botAI = GET_PLAYERBOT_AI(leader);
     if (!botAI)
     {
-        LOG_ERROR("raidtest", "CombatTrigger::PullBoss: no PlayerbotAI for leader {} "
+        LOG_ERROR("raidtest", "CombatTrigger::BeginPull: no PlayerbotAI for leader {} "
                   "(headless login failed?)", leader->GetName());
         return false;
     }
@@ -49,24 +44,13 @@ bool CombatTrigger::PullBoss(Player* leader, Creature* boss)
     context->GetValue<GuidVector>("prioritized targets")->Set({boss->GetGUID()});
     context->GetValue<ObjectGuid>("pull target")->Set(boss->GetGUID());
 
-    // 拉怪前置上下文一设即生效，PullBoss 每次退出前必须清掉（镜像 mod-playerbots 的
-    // reset 模式：prioritized targets -> Reset()、pull target -> ObjectGuid::Empty，
-    // 见 ChatShortcutActions / PlayerbotAI 的 Reset 逻辑），否则 leader 的 targeting
-    // 会被永久钉在 boss 上（幂等跑多次时尤其明显）。
-    auto const clearPullContext = [context, leader]()
-    {
-        context->GetValue<GuidVector>("prioritized targets")->Reset();
-        context->GetValue<ObjectGuid>("pull target")->Set(ObjectGuid::Empty);
-        LOG_INFO("raidtest", "CombatTrigger::PullBoss: cleared pull context for leader {}",
-                 leader->GetName());
-    };
-
     RaidPullAction pull(botAI);
     bool const initiated = pull.Attack(boss);
     if (!initiated)
     {
-        clearPullContext();
-        LOG_ERROR("raidtest", "CombatTrigger::PullBoss: leader {} could not initiate attack on {} "
+        // 发起被拒：拉怪上下文在此统一清掉，避免钉死在 rejected 的靶标上。
+        EndPullContext(leader);
+        LOG_ERROR("raidtest", "CombatTrigger::BeginPull: leader {} could not initiate attack on {} "
                   "(dead/friendly/out of range/no LOS/invalid target)",
                   leader->GetName(), boss->GetName());
         return false;
@@ -75,31 +59,38 @@ bool CombatTrigger::PullBoss(Player* leader, Creature* boss)
     // 玩家单位发起的 Unit::Attack 不会同步把目标置入战斗：Unit::Attack 中建立
     // 目标战斗态的 EngageWithTarget/SetInCombatWith 只在 creature 攻击者路径上
     // 执行（Unit.cpp），玩家攻击的 boss 战斗标旗要等世界循环推进 bot 更新（挥击/
-    // 施法/移动）才会落地。PullBoss 运行在世界线程上，阻塞等待会停掉世界循环，
-    // 反而让战斗态永远推不进来。故在 bot 真实攻击发起后，用 SetInCombatWith
-    // 同步建立 boss<->leader 的 PvE 战斗引用（CombatManager::SetInCombatWith 会
-    // 同步置位双方 UNIT_FLAG_IN_COMBAT 并通知 AI），使“确认进战斗”确定化。
+    // 施法/移动）才会落地。故在 bot 真实攻击发起后，用 SetInCombatWith 同步建立
+    // boss<->leader 的 PvE 战斗引用（CombatManager::SetInCombatWith 会同步置位
+    // 双方 UNIT_FLAG_IN_COMBAT 并通知 AI），使“确认进战斗”确定化 —— 正常情形下
+    // 调用方下一 tick（甚至本 tick）的 ConfirmBossInCombat 立即为真，退化情形
+    // （如 CanBeginCombat 边界拒绝）才走跨 tick 泵。
     boss->SetInCombatWith(leader);
+    return true;
+}
 
-    // 确认 boss 真正进入战斗（Unit::IsInCombat == UNIT_FLAG_IN_COMBAT；本 fork 的
-    // UnitAI 无 IsInCombat 谓词，见头文件偏离说明）。SetInCombatWith 已同步置位，
-    // 该轮询保留作兜底（如 CanBeginCombat 边界拒绝），成功即立即返回。
-    for (uint32 tick = 0; tick < kCombatConfirmTicks; ++tick)
-    {
-        if (boss->IsInCombat())
-        {
-            clearPullContext();
-            LOG_INFO("raidtest", "CombatTrigger::PullBoss: {} engaged {} (guid {})",
-                     leader->GetName(), boss->GetName(), boss->GetGUID().ToString());
-            return true;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(kCombatTickMillis));
-    }
+bool CombatTrigger::ConfirmBossInCombat(Creature* boss)
+{
+    // Unit::IsInCombat == UNIT_FLAG_IN_COMBAT；本 fork 的 UnitAI 无 IsInCombat
+    // 谓词，见头文件偏离说明。每 tick 只读采样，跨 tick 由调用方按预算推进。
+    return boss && boss->IsInCombat();
+}
 
-    clearPullContext();
-    LOG_WARN("raidtest", "CombatTrigger::PullBoss: boss {} not in combat within ~{}s - aborted signal",
-             boss->GetName(), float(kCombatConfirmTicks * kCombatTickMillis) / 1000.0f);
-    return false;
+void CombatTrigger::EndPullContext(Player* leader)
+{
+    if (!leader)
+        return;
+
+    PlayerbotAI* botAI = GET_PLAYERBOT_AI(leader);
+    if (!botAI)
+        return;
+
+    // 镜像 mod-playerbots 的 reset 模式：prioritized targets -> Reset()、pull target
+    // -> ObjectGuid::Empty，见 ChatShortcutActions / PlayerbotAI 的 Reset 逻辑。
+    AiObjectContext* context = botAI->GetAiObjectContext();
+    context->GetValue<GuidVector>("prioritized targets")->Reset();
+    context->GetValue<ObjectGuid>("pull target")->Set(ObjectGuid::Empty);
+    LOG_INFO("raidtest", "CombatTrigger::EndPullContext: cleared pull context for leader {}",
+             leader->GetName());
 }
 
 bool CombatTrigger::IsRaidStrategyActive(Player* bot, std::string const& strategyName)

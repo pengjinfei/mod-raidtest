@@ -9,8 +9,8 @@
 // 与 RaidTestOrchestrator（run 级状态机）职责分离：
 //   - 上层负责 run 生命周期、登录/组队、结果存储、attempt 计数；
 //   - 本类负责一次 attempt 内：复活+定位 -> 传送进本（异步逐 tick 泵）-> 找 boss
-//     -> 落 attempt 行 + 开事件流 -> PullBoss 开战 -> 逐 tick 判定，并把结果
-//     （AttemptResult + notes）暴露给上层落库。
+//     -> 落 attempt 占位行（两段式异步）+ 开事件流 -> BeginPull 开战 + 逐 tick 确认
+//     -> 逐 tick 判定，并把结果（AttemptResult + notes）暴露给上层落库。
 //
 // 线程模型：全部方法在世界线程调用，逐 tick 推进（不阻塞）。传送为异步，由
 // RosterLogin::PumpTeleportAcks 推进 worldport；战斗判定由 AttemptObserver 轮询。
@@ -38,13 +38,34 @@ public:
 private:
     enum class Stage : uint8 { Idle, TeleportAndPosition, Pull, Observing, Done };
 
+    // Pull 子阶段（Task 7 review Fix 2/3 的世界线程非阻塞细化）：
+    //   FindBoss          —— 找场景 boss 落 ctx.bossGuid/boss；
+    //   AwaitAttemptRow   —— 占位 INSERT 已异步入队，逐 tick 泵队列排空后取 id；
+    //   AwaitCombatConfirm—— BeginPull 已发起，逐 tick 泵 ConfirmBossInCombat
+    //                         （kCombatConfirmTicks 预算内）。SetInCombatWith 同步
+    //                         置位 → 正常情形在 AwaitAttemptRow 内即已确认，此子
+    //                         阶段只在退化情形（战斗标旗未同步落地）才走。
+    enum class PullStep : uint8 { FindBoss, AwaitAttemptRow, AwaitCombatConfirm };
+
     static bool ReviveDead(RunContext& ctx);   // 复活战死 bot（下一 attempt 用）
     static Creature* FindBossNear(RunContext const& ctx);  // 场景 boss entry 最近者
+    static void ResolveBoss(RunContext& ctx);  // 每 tick 从地图重寻址当前 boss（防悬垂）
+
+    // 确认进战斗后的公共收尾：清拉怪上下文 + 策略观察日志 + 转入 Observing。
+    void ConfirmAndEnterObserving(RunContext& ctx);
+
+    // 兜底清理仍在生效的拉怪上下文（Begin 防御上一 attempt 中止残留；跨 tick
+    // 泵窗口被打断时拉怪上下文会钉在 leader 上，下一个 attempt 开始时清掉）。
+    void ClearHeldPullContext();
 
     Stage _stage{Stage::Idle};
+    PullStep _pullStep{PullStep::FindBoss};
     bool _teleportSent{false};
-    bool _pullSent{false};
-    uint32 _stuckTicks{0};      // 阶段内无进展采样（传送/找 boss）
+    bool _pullContextHeld{false};   // BeginPull 后拉怪上下文处于生效窗口
+    ObjectGuid _pullLeader;         // 生效窗口对应的 leader（兜底清理用）
+    uint32 _stuckTicks{0};          // 阶段内无进展采样（传送/找 boss）
+    uint32 _rowResolveTicks{0};     // 占位行等队列排空的粘滞计数（跨 tick）
+    uint32 _confirmTicks{0};        // 进战斗确认泵（仅计算确实检查了战斗态的 tick）
     AttemptObserver _observer;
     AttemptResult _result{AttemptResult::Ongoing};
     std::string _notes;

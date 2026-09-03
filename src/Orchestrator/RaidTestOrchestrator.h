@@ -73,19 +73,40 @@ private:
     void FinishRun();
 
     // 让 run 以失败提前终止（attempt 尚未落行）：补一条 aborted 占位行再 FinishRun。
-    // 用于登录阶段超时 / 登录阶段被 Stop。
+    // 用于登录阶段超时 / 登录阶段被 Stop。落库走 SerializeStep 管线逐 tick 完成
+    // （世界线程不阻塞）。
     void FailRun(std::string const& why);
 
     static char const* ResultName(AttemptResult r);
     static std::string DeathNamesJoin(RunContext const& ctx, std::vector<ObjectGuid> const& deadGuids);
 
+    // SERIALIZE_RESULT 的逐 tick 落库子步骤（Task 7 review Fix 1：把曾经的
+    // 「DrainDbQueue + 同步 Query」改为跨 tick 泵，读可见性屏障 = 队列排空）：
+    //   WaitEventFlush    —— EndAttempt 事件流已异步入队（每 run 一次）；
+    //   ReadDeaths        —— 队列排空后的 tick 同步读 death 明细（attemptId!=0）；
+    //   EnsureAttemptRow  —— attemptId==0：异步排队占位 INSERT（仅此一步排队）；
+    //   ResolveAttemptRow —— 队列排空后的 tick 同步读回占位行 id；
+    //   Finalize          —— FinishAttemptRow（异步 UPDATE）+ 计数 + 续跑/收尾。
+    enum class SerializeStep : uint8
+    {
+        WaitEventFlush,
+        ReadDeaths,
+        EnsureAttemptRow,
+        ResolveAttemptRow,
+        Finalize,
+    };
+
     RunState _state{RunState::Idle};
+    SerializeStep _serialStep{SerializeStep::WaitEventFlush};
+    uint32 _serialTicks{0};               // 等队列排空的粘滞计数（跨 tick，只防无限粘滞）
+    bool _forceFinish{false};             // FailRun 置位：Finalize 后无条件 FinishRun
+    std::vector<ObjectGuid> _deadGuids;   // 本 attempt 战死明细（ReadDeaths 填充，Finalize 消费）
+
     std::string _scenarioKey;
     Scenario* _scenario{nullptr};
     RunContext _ctx;
     AttemptRunner _runner;
 
-    uint32 _attemptsTarget{0};
     bool _stopRequested{false};
     bool _groupDirty{true};                  // 登齐后需要重建队伍
     std::chrono::steady_clock::time_point _stageClock;   // 当前阶段起始时刻（登录超时用）

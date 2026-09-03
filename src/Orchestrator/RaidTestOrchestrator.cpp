@@ -16,19 +16,17 @@
 #include "StringFormat.h"
 #include <algorithm>
 #include <chrono>
-#include <thread>
 
 namespace
 {
     // LOGIN_AND_GROUP 预算（世界 tick 名义 ~100ms；登录含角色加载/进世界）。
     constexpr uint32 kLoginStageTimeoutMs = 120000;
 
-    // 世界线程落库排空等待（复制 RosterManager::GetSlotGuids / InsertThenSelectId 口径）。
-    void DrainDbQueue()
-    {
-        while (CharacterDatabase.QueueSize())
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
+    // Serializing 内等队列排空的粘滞预算（读可见性屏障：异步 Execute/Commit 落库
+    // 前，另一连接的 SELECT 读不到；逐 tick 泵 QueueSize==0 后再读 —— 急 DB 写
+    // 通常 1-2 tick 排空，此值只是不无限粘滞的下限防护：超时后按已有数据继续，
+    // 不 block 世界线程）。
+    constexpr uint32 kSerializeDrainTicks = 120;   // ~12s
 }
 
 RaidTestOrchestrator& RaidTestOrchestrator::instance()
@@ -39,16 +37,19 @@ RaidTestOrchestrator& RaidTestOrchestrator::instance()
 
 uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 attempts)
 {
-    if (_state != RunState::Idle)
+    // Error = 上次 StartRun 失败（Status 可见其原因）；允许从该状态直接重试。
+    if (_state != RunState::Idle && _state != RunState::Error)
     {
         LOG_ERROR("raidtest", "Orchestrator: cannot start run '{}' - another run is active ({})",
             scenarioKey, Status());
         return 0;
     }
 
+    // 启动失败统一转 Error（Status 显示 ERROR，不再伪装成从未尝试过）。
     Scenario* scenario = ScenarioRegistry::instance().Get(scenarioKey);
     if (!scenario)
     {
+        _state = RunState::Error;
         LOG_ERROR("raidtest", "Orchestrator: start run '{}' failed - scenario not registered "
             "(scenario conf not loaded or missing in config dir)", scenarioKey);
         return 0;
@@ -56,6 +57,7 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
 
     if (attempts == 0)
     {
+        _state = RunState::Error;
         LOG_ERROR("raidtest", "Orchestrator: start run '{}' failed - attempts must be > 0", scenarioKey);
         return 0;
     }
@@ -65,6 +67,7 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
     std::string const modulesDir = sConfigMgr->GetConfigPath() + "modules/";
     if (!blueprint.Load(modulesDir + scenario->GetRosterFile()))
     {
+        _state = RunState::Error;
         LOG_ERROR("raidtest", "Orchestrator: start run '{}' failed - roster blueprint '{}' load failed",
             scenarioKey, scenario->GetRosterFile());
         return 0;
@@ -74,6 +77,7 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
     RosterManager roster;
     if (!roster.EnsureRoster(scenarioKey, blueprint, partySize))
     {
+        _state = RunState::Error;
         LOG_ERROR("raidtest", "Orchestrator: start run '{}' failed - roster ensure failed "
             "(create failed, see RosterManager log)", scenarioKey);
         return 0;
@@ -82,6 +86,7 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
     std::vector<ObjectGuid> const guids = roster.GetSlotGuids(scenarioKey, partySize);
     if (guids.empty())
     {
+        _state = RunState::Error;
         LOG_ERROR("raidtest", "Orchestrator: start run '{}' failed - no chars in roster",
             scenarioKey);
         return 0;
@@ -96,6 +101,7 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
     _ctx.attemptsTotal = attempts;
     _runner = AttemptRunner{};                 // 清 attempt 子状态
     _stopRequested = false;
+    _forceFinish = false;
     _groupDirty = true;
 
     // 登录发起（异步，世界线程快路径）。
@@ -105,6 +111,7 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
                                                scenario->GetBossEntry(), attempts);
     if (!runId)
     {
+        _state = RunState::Error;
         LOG_ERROR("raidtest", "Orchestrator: start run '{}' failed - ResultStore::StartRun "
             "returned 0", scenarioKey);
         return 0;
@@ -158,7 +165,7 @@ std::string RaidTestOrchestrator::Status() const
         stateName,
         hasRun ? _ctx.runId : 0u,
         _ctx.HasRun() ? _ctx.attemptsDone : 0u,
-        _attemptsTarget,
+        _ctx.attemptsTotal,
         _ctx.kills, _ctx.wipes, _ctx.timeouts,
         _ctx.HasAttempt() ? _ctx.attemptSeq : 0u,
         _ctx.HasAttempt() ? _ctx.attemptId : 0u,
@@ -189,7 +196,13 @@ void RaidTestOrchestrator::Update(uint32 diff)
     case RunState::Running:
         _runner.Tick(_ctx, diff);
         if (_runner.IsDone())
+        {
+            // 进入 Serializing：初始化逐 tick 落库 scratch（每 run 进一次）。
+            _serialStep = SerializeStep::WaitEventFlush;
+            _serialTicks = 0;
+            _deadGuids.clear();
             _state = RunState::Serializing;
+        }
         return;
 
     case RunState::Serializing:
@@ -275,83 +288,149 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
 
 void RaidTestOrchestrator::CompleteAttemptAndNext()
 {
-    AttemptResult const result = _runner.Result();
-    std::string notes = _runner.Notes();
-    if (!_ctx.notes.empty())
+    // 逐 tick 落库管线：一次调用只推进一个子步骤（读可见性屏障 = 队列排空），
+    // 不 sleep、不 hold 世界线程。每个 switch case 都返回/推进，天然不会在单次
+    // Update 里做多次同步读。
+    switch (_serialStep)
     {
-        if (!notes.empty())
-            notes += " | ";
-        notes += _ctx.notes;
-    }
-
-    // 事件流收尾（EndAttempt 落 CombatEnd + flush 缓冲到 raidtest_events）。
-    CombatEventBus::instance().EndAttempt();
-
-    // ★ Task 7 = BossHp 生产者：attempt 已结束，摘取本 attempt 的 death 明细
-    //   （raidtest_events，EndAttempt 已 flush）用于 attempt 行计量。
-    uint32 deaths = 0;
-    std::vector<ObjectGuid> deadGuids;
-    if (_ctx.attemptId)
+    case SerializeStep::WaitEventFlush:
     {
-        DrainDbQueue();
-        QueryResult deathRows = CharacterDatabase.Query(Acore::StringFormat(
-            "SELECT source_guid FROM raidtest_events "
-            "WHERE attempt_id = {} AND event_type = 'death' AND source_guid != {}",
-            _ctx.attemptId,
-            _ctx.bossGuid ? _ctx.bossGuid.GetCounter() : 0u));
-        if (deathRows)
-        {
-            do
-            {
-                Field* fields = deathRows->Fetch();
-                deadGuids.emplace_back(ObjectGuid::Create<HighGuid::Player>(fields[0].Get<uint32>()));
-            } while (deathRows->NextRow());
-        }
-        deaths = static_cast<uint32>(deadGuids.size());
-    }
-
-    char const* const resultName = ResultName(result);
-
-    // 若 attempt 在占位行落地前就中止（传送/找 boss 超时等，attemptId==0），
-    // 补一条占位行再 update，保证「attempt 行存在」不变量。
-    uint32 const attemptId = _ctx.attemptId ? _ctx.attemptId
-        : ResultStore::StartAttemptRow(_ctx.runId, _ctx.attemptsDone + 1);
-
-    if (attemptId)
-        ResultStore::FinishAttemptRow(attemptId, resultName, _ctx.attemptElapsedMs,
-                                      _ctx.bossHpMin, deaths, DeathNamesJoin(_ctx, deadGuids),
-                                      notes);
-
-    ++_ctx.attemptsDone;
-    switch (result)
-    {
-    case AttemptResult::Kill:   ++_ctx.kills;   break;
-    case AttemptResult::Wipe:   ++_ctx.wipes;   break;
-    case AttemptResult::Timeout: ++_ctx.timeouts; break;
-    default: break;   // aborted 不计入 kills/wipes/timeouts（run 汇总口径）
-    }
-
-    LOG_INFO("raidtest", "Orchestrator: attempt {} complete - result={} seq={} elapsed={}ms "
-        "boss_hp_min={}% deaths={} notes='{}'",
-        attemptId, resultName, _ctx.attemptSeq, _ctx.attemptElapsedMs, _ctx.bossHpMin,
-        deaths, notes);
-
-    if (_stopRequested || _ctx.attemptsDone >= _ctx.attemptsTotal)
-    {
-        FinishRun();
+        // 事件流收尾：EndAttempt 落 CombatEnd + flush 缓冲到 raidtest_events
+        // （异步事务入队；本步只触发一次，由 Update 的 Running→Serializing 转入）。
+        CombatEventBus::instance().EndAttempt();
+        _serialStep = SerializeStep::ReadDeaths;
+        _serialTicks = 0;
         return;
     }
 
-    // 续跑下一 attempt（清 attempt 状态；runId/bots/计数保留）。
-    _runner.Begin(_ctx, _ctx.attemptsDone + 1);
-    _state = RunState::Running;
+    case SerializeStep::ReadDeaths:
+    {
+        // attemptId!=0 才需要读 death 明细，且要求 EndAttempt 的异步 flush 已排空
+        // （另一连接的 SELECT 才能看到）。attemptId==0（传送/找 boss 超时中止）时
+        // 跳过读，直接走占位行分支，无需等队列。
+        if (_ctx.attemptId && CharacterDatabase.QueueSize() != 0)
+        {
+            if (++_serialTicks >= kSerializeDrainTicks)
+            {
+                LOG_WARN("raidtest", "Orchestrator: attempt {} death-row read skipped - db queue "
+                    "stayed busy for {} tick(s), continuing with 0 deaths", _ctx.attemptId,
+                    _serialTicks);
+                // 不无限粘滞：按无死亡明细继续（计量用 0），日志已留痕迹。
+            }
+            else
+                return;
+        }
+
+        _serialTicks = 0;
+        if (_ctx.attemptId)
+        {
+            QueryResult deathRows = CharacterDatabase.Query(Acore::StringFormat(
+                "SELECT source_guid FROM raidtest_events "
+                "WHERE attempt_id = {} AND event_type = 'death' AND source_guid != {}",
+                _ctx.attemptId,
+                _ctx.bossGuid ? _ctx.bossGuid.GetCounter() : 0u));
+            if (deathRows)
+            {
+                do
+                {
+                    Field* fields = deathRows->Fetch();
+                    _deadGuids.emplace_back(
+                        ObjectGuid::Create<HighGuid::Player>(fields[0].Get<uint32>()));
+                } while (deathRows->NextRow());
+            }
+        }
+        _ctx.deaths = static_cast<uint32>(_deadGuids.size());
+
+        _serialStep = _ctx.attemptId ? SerializeStep::Finalize : SerializeStep::EnsureAttemptRow;
+        return;
+    }
+
+    case SerializeStep::EnsureAttemptRow:
+    {
+        // 若 attempt 在占位行落地前就中止（传送/找 boss 超时等，attemptId==0），
+        // 异步排队补一条占位行再收尾，保证「attempt 行存在」不变量。
+        ResultStore::QueueStartAttemptRow(_ctx.runId, _ctx.attemptsDone + 1);
+        _serialTicks = 0;
+        _serialStep = SerializeStep::ResolveAttemptRow;
+        return;
+    }
+
+    case SerializeStep::ResolveAttemptRow:
+    {
+        if (CharacterDatabase.QueueSize() != 0)
+        {
+            if (++_serialTicks >= kSerializeDrainTicks)
+            {
+                LOG_ERROR("raidtest", "Orchestrator: attempt placeholder row for run {} seq {} never "
+                    "became visible after {} tick(s) - finishing without it", _ctx.runId,
+                    _ctx.attemptsDone + 1, _serialTicks);
+                _serialStep = SerializeStep::Finalize;   // 不无限粘滞
+            }
+            return;
+        }
+
+        _ctx.attemptId = ResultStore::ResolveStartAttemptRowId(_ctx.runId, _ctx.attemptsDone + 1);
+        if (!_ctx.attemptId)
+            LOG_ERROR("raidtest", "Orchestrator: attempt placeholder row resolve failed for run {} "
+                "seq {} (row will be missing, invariant degraded)", _ctx.runId,
+                _ctx.attemptsDone + 1);
+        _serialStep = SerializeStep::Finalize;
+        return;
+    }
+
+    case SerializeStep::Finalize:
+    {
+        AttemptResult const result = _runner.Result();
+        std::string notes = _runner.Notes();
+        if (!_ctx.notes.empty())
+        {
+            if (!notes.empty())
+                notes += " | ";
+            notes += _ctx.notes;
+        }
+
+        char const* const resultName = ResultName(result);
+        uint32 const attemptId = _ctx.attemptId;
+        if (attemptId)
+            ResultStore::FinishAttemptRow(attemptId, resultName, _ctx.attemptElapsedMs,
+                                          _ctx.bossHpMin, _ctx.deaths,
+                                          DeathNamesJoin(_ctx, _deadGuids), notes);
+
+        ++_ctx.attemptsDone;
+        switch (result)
+        {
+        case AttemptResult::Kill:   ++_ctx.kills;   break;
+        case AttemptResult::Wipe:   ++_ctx.wipes;   break;
+        case AttemptResult::Timeout: ++_ctx.timeouts; break;
+        default: break;   // aborted 不计入 kills/wipes/timeouts（run 汇总口径）
+        }
+
+        LOG_INFO("raidtest", "Orchestrator: attempt {} complete - result={} seq={} elapsed={}ms "
+            "boss_hp_min={}% deaths={} notes='{}'",
+            attemptId, resultName, _ctx.attemptSeq, _ctx.attemptElapsedMs, _ctx.bossHpMin,
+            _ctx.deaths, notes);
+
+        // FailRun 强制收尾；否则按停止请求/attempt 配额续跑。
+        if (_forceFinish || _stopRequested || _ctx.attemptsDone >= _ctx.attemptsTotal)
+        {
+            FinishRun();
+            return;
+        }
+
+        // 续跑下一 attempt（清 attempt 状态；runId/bots/计数保留）。
+        _runner.Begin(_ctx, _ctx.attemptsDone + 1);
+        _state = RunState::Running;
+        return;
+    }
+    }
 }
 
 void RaidTestOrchestrator::FinishRun()
 {
     uint32 const runId = _ctx.runId;
+    // 汇总 UPDATE 走异步入队（ResultStore::FinishRun），run 收尾不读库、无需
+    // 排空屏障 —— 旧版在这里阻塞 DrainDbQueue 没有任何后续读，纯浪费世界 tick。
     ResultStore::FinishRun(runId, _ctx.kills, _ctx.wipes, _ctx.timeouts);
-    DrainDbQueue();
 
     LOG_INFO("raidtest", "Orchestrator: run {} '{}' finished - attempts={}/{} kills={} wipes={} "
         "timeouts={}", runId, _scenarioKey, _ctx.attemptsDone, _ctx.attemptsTotal,
@@ -363,6 +442,7 @@ void RaidTestOrchestrator::FinishRun()
     _scenario = nullptr;
     _state = RunState::Idle;
     _stopRequested = false;
+    _forceFinish = false;
     _groupDirty = true;
 }
 
@@ -372,13 +452,17 @@ void RaidTestOrchestrator::FailRun(std::string const& why)
         return;   // run 行都没建（StartRun 失败路径），无事可收尾
 
     LOG_WARN("raidtest", "Orchestrator: run {} '{}' failing - {}", _ctx.runId, _scenarioKey, why);
-    uint32 const attemptId = ResultStore::StartAttemptRow(_ctx.runId, _ctx.attemptsDone + 1);
-    if (attemptId)
-    {
-        ResultStore::FinishAttemptRow(attemptId, "aborted", 0, 100, 0, "", why);
-        ++_ctx.attemptsDone;
-    }
-    FinishRun();
+
+    // 把 attempt 判为 aborted（runner 此时通常还在 Idle；Abort 置 Result/notes）。
+    _runner.Abort(why);
+
+    // 落库走 Serializing 管线逐 tick 完成（attemptId==0 → 补 aborted 占位行 →
+    // FinishAttemptRow → FinishRun），_forceFinish 保证 Finalize 后必然收尾。
+    _serialStep = SerializeStep::EnsureAttemptRow;
+    _serialTicks = 0;
+    _deadGuids.clear();
+    _forceFinish = true;
+    _state = RunState::Serializing;
 }
 
 char const* RaidTestOrchestrator::ResultName(AttemptResult r)

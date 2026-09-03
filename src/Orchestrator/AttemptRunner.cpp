@@ -2,8 +2,10 @@
 #include "CombatEventBus.h"
 #include "CombatTrigger.h"
 #include "Creature.h"
+#include "DatabaseEnv.h"
 #include "Log.h"
 #include "Map.h"
+#include "ObjectAccessor.h"
 #include "Player.h"
 #include "ResultStore.h"
 #include "RosterLogin.h"
@@ -16,6 +18,9 @@ namespace
     constexpr uint32 kTeleportStageTicks = 400;   // ~40s
     // 找 boss 重试窗口（地图/实例内 creature 可能尚未加载）。
     constexpr uint32 kBossFindStuckTicks = 60;    // ~6s
+    // 占位行 INSERT 等队列排空的粘滞预算（世界 tick 名义 ~100ms；急 DB 写通常
+    // 1-2 tick 即排空，此值只是不无限粘滞的下限防护）。
+    constexpr uint32 kAttemptRowResolveTicks = 120;   // ~12s
 }
 
 char const* AttemptRunner::StageName() const
@@ -44,12 +49,18 @@ void AttemptRunner::Abort(std::string const& why)
 void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
 {
     _stage = Stage::TeleportAndPosition;
+    _pullStep = PullStep::FindBoss;
     _teleportSent = false;
-    _pullSent = false;
     _stuckTicks = 0;
+    _rowResolveTicks = 0;
+    _confirmTicks = 0;
     _result = AttemptResult::Ongoing;
     _notes.clear();
     _observer.Reset();
+
+    // 兜底：上一 attempt 中止（StopRun）时跨 tick 泵窗口被打断，拉怪上下文可能
+    // 仍钉在旧 leader 上；新 attempt 开始前统一清掉（幂等，无人钉着时是 no-op）。
+    ClearHeldPullContext();
 
     ctx.attemptId = 0;
     ctx.attemptSeq = seq;
@@ -109,7 +120,9 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
 
     case Stage::Pull:
     {
-        if (!_pullSent)
+        switch (_pullStep)
+        {
+        case PullStep::FindBoss:
         {
             Creature* boss = FindBossNear(ctx);
             if (!boss)
@@ -140,14 +153,39 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             ctx.bossGuid = boss->GetGUID();
             ctx.boss = boss;
 
-            // 先落 attempt 占位行取 id，再开事件流（raidtest_events 需要 attempt 归属）。
-            ctx.attemptId = ResultStore::StartAttemptRow(ctx.runId, ctx.attemptSeq);
+            // 先异步入队 attempt 占位 INSERT（不阻塞）；id 等队列排空后的 tick 再取
+            // （raidtest_events 需要 attempt 归属，见 ResultStore 两段式 API）。
+            ResultStore::QueueStartAttemptRow(ctx.runId, ctx.attemptSeq);
+            _rowResolveTicks = 0;
+            _pullStep = PullStep::AwaitAttemptRow;
+            return;
+        }
+
+        case PullStep::AwaitAttemptRow:
+        {
+            // 世界线程非阻塞泵：队列未排空就下个 tick 再来；不 sleep。排空后
+            // 同步 SELECT 取 id —— 这是唯一一次同步读，且已确认前序 INSERT 落库。
+            if (CharacterDatabase.QueueSize() != 0)
+            {
+                if (++_rowResolveTicks >= kAttemptRowResolveTicks)
+                {
+                    _result = AttemptResult::Aborted;
+                    _notes = "attempt row not visible (db queue stalled)";
+                    _stage = Stage::Done;
+                    LOG_ERROR("raidtest", "AttemptRunner: attempt {} - attempt-row INSERT for run {} "
+                        "seq {} never became visible after {} tick(s)", ctx.attemptSeq, ctx.runId,
+                        ctx.attemptSeq, _rowResolveTicks);
+                }
+                return;
+            }
+
+            ctx.attemptId = ResultStore::ResolveStartAttemptRowId(ctx.runId, ctx.attemptSeq);
             if (!ctx.attemptId)
             {
                 _result = AttemptResult::Aborted;
                 _notes = "failed to create attempt row";
                 _stage = Stage::Done;
-                LOG_ERROR("raidtest", "AttemptRunner: attempt {} - ResultStore::StartAttemptRow failed",
+                LOG_ERROR("raidtest", "AttemptRunner: attempt {} - ResolveStartAttemptRowId failed",
                     ctx.attemptSeq);
                 return;
             }
@@ -157,30 +195,58 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             ctx.attemptElapsedMs = 0;
 
             Player* leader = ctx.bots.empty() ? nullptr : ctx.bots[0];
-            if (!CombatTrigger::PullBoss(leader, boss))
+            if (!CombatTrigger::BeginPull(leader, ctx.boss))
             {
                 _result = AttemptResult::Aborted;
                 _notes = "pull failed (boss not engaged)";
                 _stage = Stage::Done;
-                LOG_WARN("raidtest", "AttemptRunner: attempt {} aborted - PullBoss failed (leader {})",
+                LOG_WARN("raidtest", "AttemptRunner: attempt {} aborted - BeginPull failed (leader {})",
                     ctx.attemptSeq, leader ? leader->GetName() : "?");
                 return;
             }
 
-            if (CombatTrigger::IsRaidStrategyActive(leader, "naxx"))
-                LOG_INFO("raidtest", "AttemptRunner: attempt {} - naxx raid strategy active on leader {}",
-                    ctx.attemptSeq, leader ? leader->GetName() : "?");
-            else
-                LOG_WARN("raidtest", "AttemptRunner: attempt {} - naxx raid strategy NOT active on "
-                    "leader {} (observation only)", ctx.attemptSeq, leader ? leader->GetName() : "?");
+            // 拉怪上下文从此刻起视为「钉」在 leader 上，所有离开 Pull 的终态都要
+            // 清掉（ConfirmAndEnterObserving 的 ClearHeldPullContext / 确认超时路径）。
+            _pullContextHeld = true;
+            _pullLeader = leader ? leader->GetGUID() : ObjectGuid();
 
-            _pullSent = true;
-            _stuckTicks = 0;
-            _stage = Stage::Observing;
-            LOG_INFO("raidtest", "AttemptRunner: attempt {} - combat started (boss {} guid {}, "
-                "attempt_id={}, timeout={}ms)", ctx.attemptSeq, boss->GetName(),
-                ctx.bossGuid.ToString(), ctx.attemptId, ctx.attemptTimeoutMs);
+            // SetInCombatWith 已同步置位战斗标旗 → 正常情形本 tick 立即确认；退化
+            // 情形（如 CanBeginCombat 边界拒绝）才进入 AwaitCombatConfirm 跨 tick 泵。
+            if (CombatTrigger::ConfirmBossInCombat(ctx.boss))
+            {
+                ConfirmAndEnterObserving(ctx);
+                return;
+            }
+
+            _confirmTicks = 1;   // 本 tick 已检查过一次（退化起点）
+            _pullStep = PullStep::AwaitCombatConfirm;
             return;
+        }
+
+        case PullStep::AwaitCombatConfirm:
+        {
+            // 逐 tick 泵确认，never sleep：每 tick 重寻址 boss（防跨 tick 悬垂；
+            // despawn 记作未进战斗），确认预算只在确实检查了战斗态的 tick 上计数。
+            ResolveBoss(ctx);
+            bool const inCombat = CombatTrigger::ConfirmBossInCombat(ctx.boss);
+            if (!inCombat && ++_confirmTicks < CombatTrigger::kCombatConfirmTicks)
+                return;
+
+            if (inCombat)
+            {
+                ConfirmAndEnterObserving(ctx);
+                return;
+            }
+
+            _result = AttemptResult::Aborted;
+            _notes = "pull failed (boss not engaged)";
+            _stage = Stage::Done;
+            ClearHeldPullContext();
+            LOG_WARN("raidtest", "AttemptRunner: attempt {} aborted - pull confirm timed out "
+                "(boss {} not in combat after {} world tick(s))", ctx.attemptSeq,
+                ctx.bossGuid.ToString(), CombatTrigger::kCombatConfirmTicks);
+            return;
+        }
         }
         return;
     }
@@ -247,4 +313,48 @@ Creature* AttemptRunner::FindBossNear(RunContext const& ctx)
             bossEntry, map->GetId(), map->GetCreatureBySpawnIdStore().size());
 
     return best;
+}
+
+void AttemptRunner::ResolveBoss(RunContext& ctx)
+{
+    ctx.boss = nullptr;
+    if (!ctx.bossGuid || ctx.bots.empty() || !ctx.bots[0])
+        return;
+
+    if (Map* map = ctx.bots[0]->GetMap())
+        ctx.boss = map->GetCreature(ctx.bossGuid);
+}
+
+void AttemptRunner::ConfirmAndEnterObserving(RunContext& ctx)
+{
+    Player* leader = ctx.bots.empty() ? nullptr : ctx.bots[0];
+    ClearHeldPullContext();
+
+    LOG_INFO("raidtest", "AttemptRunner: attempt {} - boss {} engaged (guid {})",
+        ctx.attemptSeq, ctx.boss ? ctx.boss->GetName() : "?", ctx.bossGuid.ToString());
+
+    if (CombatTrigger::IsRaidStrategyActive(leader, "naxx"))
+        LOG_INFO("raidtest", "AttemptRunner: attempt {} - naxx raid strategy active on leader {}",
+            ctx.attemptSeq, leader ? leader->GetName() : "?");
+    else
+        LOG_WARN("raidtest", "AttemptRunner: attempt {} - naxx raid strategy NOT active on "
+            "leader {} (observation only)", ctx.attemptSeq, leader ? leader->GetName() : "?");
+
+    _stuckTicks = 0;
+    _confirmTicks = 0;
+    _stage = Stage::Observing;
+    LOG_INFO("raidtest", "AttemptRunner: attempt {} - combat started (boss {} guid {}, "
+        "attempt_id={}, timeout={}ms)", ctx.attemptSeq, ctx.boss ? ctx.boss->GetName() : "?",
+        ctx.bossGuid.ToString(), ctx.attemptId, ctx.attemptTimeoutMs);
+}
+
+void AttemptRunner::ClearHeldPullContext()
+{
+    if (!_pullContextHeld)
+        return;
+
+    if (Player* leader = ObjectAccessor::FindPlayer(_pullLeader))
+        CombatTrigger::EndPullContext(leader);
+    _pullContextHeld = false;
+    _pullLeader.Clear();
 }
