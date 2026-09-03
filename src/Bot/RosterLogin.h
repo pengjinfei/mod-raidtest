@@ -61,8 +61,13 @@ public:
     // 直到所有 bot 都落在 mapId 且不再处于传送中（最多 waitTicks * 100ms）。
     static bool AllOnMap(std::vector<Player*> const& bots, uint32 mapId, uint32 waitTicks = 30);
 
-private:
+    // 世界线程逐 tick 泵（非阻塞）：对仍在 IsBeingTeleported() 的 bot 手动调
+    // botAI->HandleTeleportAck()（确定性推进 worldport）。AttemptRunner/Observer 在
+    // 世界线程驱动，逐 tick 调用本函数推进传送；不作为最终判定（用 AllOnMapNow）。
     static void PumpTeleportAcks(std::vector<Player*> const& bots);
+
+    // 世界线程瞬态轮询（非阻塞）：全部 bot 是否已落在 mapId 且不在传送中。
+    // 仅用于逐 tick 判定，不做等待。
     static bool AllOnMapNow(std::vector<Player*> const& bots, uint32 mapId);
 };
 
