@@ -39,9 +39,13 @@ AzerothCore 3.3.5 WotLK Playerbot fork 的自动化团队副本验证模块：�
 
 ## 配置与数据注意
 
-- 配置按「复制不自动安装」处理：`conf.sh.dist` 模板不会被自动部署；世界服务端
-  读取 `etc/modules/mod-raidtest-*.conf`（scenario / roster / 主配置），新场景与本
-  模块配置需手工放到 worldserver 的 `etc/modules/` 下并重启。
+- 配置自动安装：`conf/` 下的 `*.conf.dist`（主配置、scenario、roster）在构建时经
+  `modules/CMakeLists.txt` 的 `*.conf.dist` glob 自动复制为 worldserver 运行配置
+  `etc/modules/` 下的 `mod-raidtest.conf` / `mod-raidtest-scenario-*.conf` /
+  `mod-raidtest-roster-*.conf`（`acore.sh` 构建在 install 后自动剥 `.dist` 后缀生成
+  运行名，`AC_ENABLE_CONF_COPY_ON_INSTALL=1` 默认开启），无需手工复制；改动后重启
+  worldserver 生效。若平台关闭了该 conf 复制开关，需手工把 `.conf.dist` 复制为
+  对应的 `.conf`（仅加载运行名 `.conf`，`.conf.dist` 只是模板）。
 - 事件量：一次 attempt（含进战斗、首领 HP 取样、技能/伤害/死亡明细）通常落数万行
   raidtest_events。模块对 raidtest_* 表不做自动清理；长跑环境建议按
   `raidtest_runs.finished_at` / run 维度定期删除或保留最近 N 轮。`dump` 默认封顶

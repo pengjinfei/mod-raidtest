@@ -82,7 +82,9 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
 
     uint8 const partySize = RaidTestConfig::instance().PartySize();
     RosterManager roster;
-    if (!roster.EnsureRoster(scenarioKey, blueprint, partySize, forceRecreate))
+    // gearProfile 一并下发（scenario 数据驱动）：注入 RosterBuilder 供缺槽工厂兜底选品。
+    if (!roster.EnsureRoster(scenarioKey, blueprint, partySize, forceRecreate,
+                             scenario->GetGearProfile()))
     {
         _state = RunState::Error;
         LOG_ERROR("raidtest", "Orchestrator: start run '{}' failed - roster ensure failed "
@@ -402,6 +404,13 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
             }
             return;   // 预算内：继续等队列排空（逐 tick 快路径，不 sleep）
         }
+
+        // settle 窗口（复用 kAttemptRowResolveSettleTicks，与 ResolveAttemptRow /
+        // AttemptRunner 同法）：空队列只代表 async worker 已从队首取走 flush，不代表
+        // 已 commit；队列空满窗口后再做同步 SELECT，避免错失 EndAttempt 末次 flush
+        // 的死亡事件（此前仅在 QueueSize()==0 时单次抢跑读取）。
+        if (_ctx.attemptId && ++_serialTicks < kAttemptRowResolveSettleTicks)
+            return;
 
         _serialTicks = 0;
         if (_ctx.attemptId)

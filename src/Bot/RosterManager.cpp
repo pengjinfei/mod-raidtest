@@ -88,8 +88,11 @@ bool RosterManager::InsertMapping(std::string const& scenarioKey, uint8 slotInde
 
 bool RosterManager::EnsureRoster(std::string const& scenarioKey,
                                  RosterBlueprint const& blueprint, uint8 partySize,
-                                 bool forceRecreate)
+                                 bool forceRecreate, GearProfile gearProfile)
 {
+    // 兜底配装档位注入（场景数据驱动；ApplyGear 的缺槽工厂兜底按此档位选品）。
+    _builder.SetGearProfile(gearProfile);
+
     uint8 const slotsToEnsure = std::min<uint8>(partySize, blueprint.Size());
     if (slotsToEnsure == 0)
     {

@@ -5,6 +5,7 @@
 #include "ObjectGuid.h"
 #include "RosterBlueprint.h"
 #include "RosterBuilder.h"
+#include "Scenario.h"
 #include <string>
 #include <vector>
 
@@ -20,8 +21,11 @@ public:
     // 见 DeleteSlotMapping；本参数仅供 Task 8 `--force-recreate` 命令，为「重建阵容」
     // 的显式路径）。删除发生在登录之前（Orchestrator::StartRun -> EnsureRoster），
     // 若对应 bot 此刻在线则拒绝该槽位（错误返回），避免删在线角色破坏状态。
+    // gearProfile=场景兜底配装档位（Scenario::GetGearProfile，Orchestrator 传入）：
+    // 注入 _builder，供稍后 ApplyGear 的缺槽工厂兜底选品。
     bool EnsureRoster(std::string const& scenarioKey, RosterBlueprint const& blueprint,
-                      uint8 partySize, bool forceRecreate = false);
+                      uint8 partySize, bool forceRecreate = false,
+                      GearProfile gearProfile = GearProfile::None);
 
     // 返回场景已建角色 guid（按槽位升序）。
     // expected > 0 时：若一次读取行数不足 expected（紧随 EnsureRoster 之后 Execute 的

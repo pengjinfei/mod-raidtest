@@ -4,6 +4,7 @@
 #include "Define.h"
 #include "ObjectGuid.h"
 #include "RosterBlueprint.h"
+#include "Scenario.h"
 #include <string>
 
 class Item;
@@ -36,7 +37,14 @@ public:
     // 装配：清空当前装备 -> 蓝图物品逐一入场 -> 工厂兜底填充其余槽位 -> 工厂附魔+宝石
     // -> 蓝图槽位宝石 -> 蓝图槽位附魔。逐槽位独立，单槽失败记日志不中断。
     // 返回装配后已穿装备件数（用于日志/冒烟断言）。
+    // 工厂兜底档位取自 SetGearProfile（Scenario::GetGearProfile -> RosterManager ->
+    // RosterBuilder 注入；epic=4，None=0 跟随工厂配置默认档）。
     uint32 ApplyGear(Player* bot, RosterSlot const& slot);
+
+    // 兜底配装档位（数据驱动：场景声明缺槽兜底质量，见 Scenario::GetGearProfile）。
+    // 该 setter 由 RosterManager::EnsureRoster 在每次 run 前注入场景档位。
+    void SetGearProfile(GearProfile gearProfile) { _gearProfile = gearProfile; }
+    GearProfile GetGearProfile() const { return _gearProfile; }
 
     // class 名称 -> 职业枚举；0 = 无法识别。供 RosterManager 写库换算 class 列。
     static uint8 GetClassId(std::string const& charClass);
@@ -63,6 +71,10 @@ private:
     static void ApplyBlueprintGems(Player* bot, RosterSlot const& slot);
     static void ApplyBlueprintEnchants(Player* bot, RosterSlot const& slot);
     static Item* FindEquippedItem(Player* bot, uint32 itemId);
+
+    // 兜底配装档位（ApplyGear 的工厂 InitEquipment 缺槽选品用）；默认 None 保持既
+    // 有行为（跟随 AiPlayerbot.RandomGearQualityLimit 默认档）。
+    GearProfile _gearProfile{GearProfile::None};
 };
 
 #endif

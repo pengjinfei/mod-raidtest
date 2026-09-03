@@ -636,7 +636,11 @@ uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
     // 而非“先于工厂入场”，否则工厂会把蓝图件全部挤进包里、蓝图宝石/附魔随之失配。
     PlayerbotFactory::DestroyEquippedGear(bot);
 
-    PlayerbotFactory factory(bot, bot->GetLevel());
+    // 兜底配装档位：epic -> 工厂 itemQuality=ITEM_QUALITY_EPIC(4)（蓝图显式装备优先，
+    // 缺失槽位按此档位选品）；None/默认 -> 0（跟随 AiPlayerbot.RandomGearQualityLimit，
+    // 通常 3=稀有）。镜像 PlayerbotFactory `init=epic` 的 itemQuality 语义。
+    uint32 const factoryItemQuality = _gearProfile == GearProfile::Epic ? ITEM_QUALITY_EPIC : 0u;
+    PlayerbotFactory factory(bot, bot->GetLevel(), factoryItemQuality);
     factory.InitEquipment(false);
     factory.ApplyEnchantAndGemsNew(true);
 
@@ -653,6 +657,8 @@ uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
     }
 
     LOG_INFO("raidtest", "RosterBuilder: gear applied for '{}' (blueprint items equipped: {}, "
-        "total equipped: {})", bot->GetName(), blueprintEquipped, totalEquipped);
+        "total equipped: {}, gear_profile={}, factory_item_quality={})", bot->GetName(),
+        blueprintEquipped, totalEquipped,
+        _gearProfile == GearProfile::Epic ? "epic" : "none", factoryItemQuality);
     return totalEquipped;
 }
