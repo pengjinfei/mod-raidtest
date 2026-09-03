@@ -3,6 +3,30 @@
 
 #include "Define.h"
 #include <string>
+#include <vector>
+
+// 一次 run 的报表行（Task 8 report/compare 用）：raidtest_runs 元数据 + 该 run
+// 全部 attempt 行的聚合（attempt_rows / result 拆分 / duration 合计 / boss_hp_min
+// 合计 / 事件总数）。attempt 行数按下标口径侧算（raidtest_runs 无 attempts_done
+// 列，见 task-7 报告 concern #1）。
+struct RunReportRow
+{
+    uint32 runId = 0;
+    std::string scenarioKey;
+    uint32 attemptsTotal = 0;      // raidtest_runs.attempts_total（计划尝试数）
+    uint32 kills = 0;              // raidtest_runs 聚合（attempt 行 result 为准）
+    uint32 wipes = 0;
+    uint32 timeouts = 0;
+    uint32 attemptRows = 0;        // 该 run 实际 attempt 行数
+    uint64 durationSumMs = 0;      // attempt.duration_ms 合计（avg = /attemptRows）
+    uint32 killRows = 0;           // attempt 行按 result 拆分
+    uint32 wipeRows = 0;
+    uint32 timeoutRows = 0;
+    uint32 abortedRows = 0;
+    uint64 eventCount = 0;         // 该 run 全部 attempt 的事件行数（compare/dump）
+    uint64 bossHpMinSum = 0;       // attempt.boss_hp_min 合计（avg = /bossHpRows）
+    uint32 bossHpRows = 0;
+};
 
 // run/attempt 结果落库（design §6，raidtest_runs / raidtest_attempts DAO）。
 // 库连接复用 characters 库；语句为原始 SQL（模块自有表，核心无 prepared
@@ -41,6 +65,18 @@ public:
 
     // run 结束回写 kills/wipes/timeouts 与 finished_at。
     static bool FinishRun(uint32 runId, uint32 kills, uint32 wipes, uint32 timeouts);
+
+    // ---- Task 8 报表/对比（Command 层只做格式化，查询全在本 DAO）----
+
+    // 单个 run 的完整报表行（run 元数据 + attempt 聚合 + 事件总数）。run 存在
+    // 返回 true（无 attempt 行时按 0 聚合）；run 不存在返回 false。同步只读。
+    static bool QueryRunReportRow(uint32 runId, RunReportRow& out);
+
+    // 某场景最近 limit 次 run 的 id（id 倒序，最多 limit 条）。同步只读。
+    static std::vector<uint32> QueryRecentRunIds(std::string const& scenarioKey, uint32 limit);
+
+    // attempt 行是否存在（Command::dump 区分「attempt 不存在」与「无事件行」）。
+    static bool AttemptExists(uint32 attemptId);
 
 private:
     // INSERT 异步入队 -> 排空队列保证可见 -> SELECT 取回自增 id（0 = 失败）。

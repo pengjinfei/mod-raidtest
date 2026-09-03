@@ -1,6 +1,7 @@
 #include "EventStore.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "QueryResult.h"
 #include "StringFormat.h"
 
 namespace
@@ -85,4 +86,37 @@ bool EventStore::InsertBatch(uint32 attemptId, std::vector<CombatEvent> const& e
     // 非阻塞：TransactionTask 入异步队列，由数据库线程执行。
     CharacterDatabase.CommitTransaction(trans);
     return true;
+}
+
+std::vector<EventRow> EventStore::ReadAttempt(uint32 attemptId, uint32 limit)
+{
+    std::vector<EventRow> rows;
+
+    // 对照 schema §6 的 10 列；NULL 列（target_guid/spell_id/actor_entry/value/detail）
+    // 在 Field::Get 读出时为 0 / 空串。rel_ms 升序对 Command::dump 的可读输出友好。
+    QueryResult result = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT id, attempt_id, rel_ms, event_type, source_guid, target_guid, spell_id, "
+        "actor_entry, value, detail FROM raidtest_events WHERE attempt_id = {} "
+        "ORDER BY rel_ms ASC, id ASC LIMIT {}", attemptId, limit));
+    if (!result)
+        return rows;
+
+    do
+    {
+        Field* f = result->Fetch();
+        EventRow row;
+        row.id = f[0].Get<uint64>();
+        row.attemptId = f[1].Get<uint32>();
+        row.relMs = f[2].Get<uint32>();
+        row.eventType = f[3].Get<std::string>();
+        row.sourceGuid = f[4].Get<uint64>();
+        row.targetGuid = f[5].Get<uint64>();
+        row.spellId = f[6].Get<uint32>();
+        row.actorEntry = f[7].Get<uint32>();
+        row.value = f[8].Get<int32>();
+        row.detail = f[9].Get<std::string>();
+        rows.push_back(std::move(row));
+    } while (result->NextRow());
+
+    return rows;
 }

@@ -27,6 +27,12 @@ namespace
     // 通常 1-2 tick 排空，此值只是不无限粘滞的下限防护：超时后按已有数据继续，
     // 不 block 世界线程）。
     constexpr uint32 kSerializeDrainTicks = 120;   // ~12s
+
+    // 队列「排空」≠「已提交」：async worker 把消息取走后到 commit 完成之间
+    // QueueSize() 已是 0，紧接的同步 SELECT 会抢跑读空（Task 8 验收 run 4 实机
+    // 复现：占位 INSERT 落下后 read-back 返回空）。排空后再连续空够 settle 窗口
+    // 才做读回（与 AttemptRunner::kAttemptRowResolveSettleTicks 同法）。
+    constexpr uint32 kAttemptRowResolveSettleTicks = 3;
 }
 
 RaidTestOrchestrator& RaidTestOrchestrator::instance()
@@ -35,7 +41,8 @@ RaidTestOrchestrator& RaidTestOrchestrator::instance()
     return instance;
 }
 
-uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 attempts)
+uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 attempts,
+                                      bool forceRecreate)
 {
     // Error = 上次 StartRun 失败（Status 可见其原因）；允许从该状态直接重试。
     if (_state != RunState::Idle && _state != RunState::Error)
@@ -75,7 +82,7 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
 
     uint8 const partySize = RaidTestConfig::instance().PartySize();
     RosterManager roster;
-    if (!roster.EnsureRoster(scenarioKey, blueprint, partySize))
+    if (!roster.EnsureRoster(scenarioKey, blueprint, partySize, forceRecreate))
     {
         _state = RunState::Error;
         LOG_ERROR("raidtest", "Orchestrator: start run '{}' failed - roster ensure failed "
@@ -122,13 +129,55 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
     _stageClock = std::chrono::steady_clock::now();
 
     LOG_INFO("raidtest", "Orchestrator: run {} '{}' started - run_id={} map={} boss={} "
-        "attempts={} bots={}", uint32(_state), scenarioKey, runId, scenario->GetMapId(),
-        scenario->GetBossEntry(), attempts, guids.size());
+        "attempts={} bots={} force={}", runId, scenarioKey, runId, scenario->GetMapId(),
+        scenario->GetBossEntry(), attempts, guids.size(), forceRecreate);
     return runId;
+}
+
+bool RaidTestOrchestrator::RequestRun(std::string const& scenarioKey, uint32 attempts,
+                                      bool forceRecreate, std::string& outReason)
+{
+    // 世界线程回调（命令 handler）：只记账，不在此执行 StartRun（含 ROSTER_ENSURE
+    // 同步等待）。消费在 Update —— 见类注释 / RaidTestCommandScript.cpp 线程说明。
+    if (_pendingRun.valid)
+    {
+        outReason = "a run request is already pending (use `status` to check)";
+        return false;
+    }
+    if (IsRunning())
+    {
+        outReason = Acore::StringFormat("another run is active ({})", Status());
+        return false;
+    }
+    if (!ScenarioRegistry::instance().Get(scenarioKey))
+    {
+        outReason = Acore::StringFormat("unknown scenario '{}' (see `scenario list`)",
+            scenarioKey);
+        return false;
+    }
+    if (attempts == 0)
+    {
+        outReason = "attempts must be > 0";
+        return false;
+    }
+
+    _pendingRun = PendingRun{ true, scenarioKey, attempts, forceRecreate };
+    LOG_INFO("raidtest", "Orchestrator: run request queued - scenario '{}' attempts={} force={} "
+        "(will start on next world tick)", scenarioKey, attempts, forceRecreate);
+    return true;
 }
 
 void RaidTestOrchestrator::StopRun()
 {
+    // Task 8 .raidtest stop：请求记账后、Update 消费前（同一世界 tick 内）下达，
+    // 直接取消待办，绝不进入 StartRun。放在 Idle 检查之前，避免空运行态漏掉待办。
+    if (_pendingRun.valid)
+    {
+        _pendingRun = PendingRun{};
+        LOG_INFO("raidtest", "Orchestrator: pending run request cancelled by stop");
+        return;
+    }
+
     if (_state == RunState::Idle || _state == RunState::Error)
     {
         LOG_DEBUG("raidtest", "Orchestrator: StopRun ignored - not running");
@@ -158,7 +207,7 @@ std::string RaidTestOrchestrator::Status() const
     }
 
     bool const hasRun = _ctx.HasRun();
-    return Acore::StringFormat(
+    std::string status = Acore::StringFormat(
         "run='{}' state={} runId={} attempts={}/{} kills={} wipes={} timeouts={} "
         "| attempt seq={} id={} stage={} elapsed={}ms hp_min={}% result={} notes='{}'",
         _scenarioKey,
@@ -174,10 +223,37 @@ std::string RaidTestOrchestrator::Status() const
         _ctx.bossHpMin,
         ResultName(_runner.Result()),
         hasRun ? _ctx.notes : std::string(""));
+
+    // 显示待消费的 run 请求（async 记账 -> 下一 tick 启动），避免 status 在
+    // 记账与启动之间显示成 Idle/空。
+    if (_pendingRun.valid)
+    {
+        status += Acore::StringFormat(" | pending='{}' attempts={} force={}",
+            _pendingRun.scenarioKey, _pendingRun.attempts, _pendingRun.forceRecreate);
+    }
+
+    return status;
 }
 
 void RaidTestOrchestrator::Update(uint32 diff)
 {
+    // 消费待办的 run 请求：命令 handler（世界线程回调）只记账，本 tick 在此实际
+    // StartRun。StartRun 的 ROSTER_ENSURE 同步段（建号幂等 / GetSlotGuids 排空 /
+    // ResultStore::StartRun 排空）按既有同步预算运行 —— 常见「角色已存在」路径为
+    // 快速 DB 读（毫秒级）；重建/首建需要秒级。与 in-ProcessCliCommands 同步执行
+    // 相比，迁移到 tick 内使 handler 本身恒快，且 StartRun 仍处于世界线程单线程
+    // 上下文（无并发）。消费后本 tick 不再推进状态机。
+    if (_pendingRun.valid)
+    {
+        PendingRun run = _pendingRun;   // 拷贝后清：StartRun 失败（Error 态）可再被
+        _pendingRun = PendingRun{};     // 下一次 RequestRun 重试，不会残留旧待办。
+        uint32 const runId = StartRun(run.scenarioKey, run.attempts, run.forceRecreate);
+        if (!runId)
+            LOG_ERROR("raidtest", "Orchestrator: pending run '{}' failed to start "
+                "(see earlier logs; status shows ERROR)", run.scenarioKey);
+        return;
+    }
+
     switch (_state)
     {
     case RunState::Idle:
@@ -312,13 +388,19 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
         {
             if (++_serialTicks >= kSerializeDrainTicks)
             {
+                // Task 8 review Fix (i)：排空预算耗尽 = 真·跳过读取，下一 tick 直接
+                // 进 Finalize 按 0 death 继续。旧代码日志写「跳过」却仍执行了同步
+                // SELECT —— 队列忙时读不到前序 EndAttempt flush 落库的数据，执行了
+                // 也是旧数据；「已跳过」与执行结果相互矛盾，已改为真正跳过。
                 LOG_WARN("raidtest", "Orchestrator: attempt {} death-row read skipped - db queue "
                     "stayed busy for {} tick(s), continuing with 0 deaths", _ctx.attemptId,
                     _serialTicks);
-                // 不无限粘滞：按无死亡明细继续（计量用 0），日志已留痕迹。
-            }
-            else
+                _ctx.deaths = 0;
+                _deadGuids.clear();
+                _serialStep = SerializeStep::Finalize;
                 return;
+            }
+            return;   // 预算内：继续等队列排空（逐 tick 快路径，不 sleep）
         }
 
         _serialTicks = 0;
@@ -368,6 +450,11 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
             }
             return;
         }
+
+        // settle 窗口（见 kAttemptRowResolveSettleTicks）：空队列 ≠ 已提交，连续
+        // 空满窗口再读占位行 id，避免 read-back 抢跑读空（Task 8 验收 run 4 复现）。
+        if (++_serialTicks < kAttemptRowResolveSettleTicks)
+            return;
 
         _ctx.attemptId = ResultStore::ResolveStartAttemptRowId(_ctx.runId, _ctx.attemptsDone + 1);
         if (!_ctx.attemptId)

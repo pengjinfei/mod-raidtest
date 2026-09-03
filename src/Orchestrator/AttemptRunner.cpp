@@ -21,6 +21,12 @@ namespace
     // 占位行 INSERT 等队列排空的粘滞预算（世界 tick 名义 ~100ms；急 DB 写通常
     // 1-2 tick 即排空，此值只是不无限粘滞的下限防护）。
     constexpr uint32 kAttemptRowResolveTicks = 120;   // ~12s
+    // 队列排空 ≠ 提交完成：async DB worker 把消息从队首取出后、在连接上 commit
+    // 完成之前 QueueSize() 已为 0；紧接的同步 SELECT（另一连接）会抢跑读空 ——
+    // Task 8 验收 run 4 实机复现：占位 INSERT 已落下、read-back 却返回空，attempt
+    // 以 'failed to create attempt row' 中止并留下一条未收尾的占位行。因此排空后
+    // 还要连续空够 settle 窗口再读回 id（3 tick=300ms，worker 必已提交）。
+    constexpr uint32 kAttemptRowResolveSettleTicks = 3;
 }
 
 char const* AttemptRunner::StageName() const
@@ -40,6 +46,13 @@ void AttemptRunner::Abort(std::string const& why)
 {
     if (_stage == Stage::Done)
         return;
+
+    // Task 8 review Fix (ii)：Abort 是所有「非战斗终态」的收口（StopRun 在
+    // Pull 阶段被打断、FailRun 等）。若本轮 BeginPull 已成功（拉怪上下文钉在
+    // leader 上）而终态清理未走，run 收尾后 leader 的 targeting 仍被永久占用
+    // （prioritized targets / pull target）。在此统一清掉（幂等：未钉着时 no-op）。
+    ClearHeldPullContext();
+
     _result = AttemptResult::Aborted;
     _notes = why;
     _stage = Stage::Done;
@@ -178,6 +191,11 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 }
                 return;
             }
+
+            // settle 窗口（见 kAttemptRowResolveSettleTicks）：空队列只代表 worker
+            // 已把 INSERT 从队首取走，不代表已 commit；连续空满窗口才读回 id。
+            if (++_rowResolveTicks < kAttemptRowResolveSettleTicks)
+                return;
 
             ctx.attemptId = ResultStore::ResolveStartAttemptRowId(ctx.runId, ctx.attemptSeq);
             if (!ctx.attemptId)

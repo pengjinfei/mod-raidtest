@@ -1,6 +1,7 @@
 #include "RaidTestModule.h"
 #include "CombatEventBus.h"
 #include "Playerbots.h"          // 仅验证 include 通道；后续任务再扩展
+#include "RaidTestCommandScript.h"
 #include "RaidTestConfig.h"
 #include "RaidTestOrchestrator.h"
 #include "Scenario.h"
@@ -30,6 +31,7 @@ void AddRaidTestScripts()
     RaidTestConfig::instance().Initialize();
     RegisterRaidTestCombatHooks();   // 施法/伤害/死亡全局 hooks（Task 5）
     RegisterAllScenarios();          // 扫描 conf 目录 mod-raidtest-scenario-*.conf 并登记（Task 6）
+    AddRaidTestCommandScripts();     // .raidtest 命令面（Task 8）
     new RaidTestWorldScript();       // run 状态机逐 tick 驱动（Task 7）
     LOG_INFO("raidtest", ">> mod-raidtest loaded (prefix={}, party={})",
         RaidTestConfig::instance().AccountPrefix(),

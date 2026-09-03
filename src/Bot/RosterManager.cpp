@@ -1,6 +1,8 @@
 #include "RosterManager.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
+#include "Player.h"
 #include "QueryResult.h"
 #include "RaidTestConfig.h"
 #include "StringFormat.h"
@@ -85,7 +87,8 @@ bool RosterManager::InsertMapping(std::string const& scenarioKey, uint8 slotInde
 }
 
 bool RosterManager::EnsureRoster(std::string const& scenarioKey,
-                                 RosterBlueprint const& blueprint, uint8 partySize)
+                                 RosterBlueprint const& blueprint, uint8 partySize,
+                                 bool forceRecreate)
 {
     uint8 const slotsToEnsure = std::min<uint8>(partySize, blueprint.Size());
     if (slotsToEnsure == 0)
@@ -100,8 +103,21 @@ bool RosterManager::EnsureRoster(std::string const& scenarioKey,
     for (uint8 i = 0; i < slotsToEnsure; ++i)
     {
         // 槽位键 = 蓝图向量位置 i（controller 决策：与段内 N 无关）
-        if (HasMapping(scenarioKey, i))
+        bool const mapped = HasMapping(scenarioKey, i);
+        if (mapped && !forceRecreate)
             continue;
+
+        if (mapped)   // forceRecreate：删旧（映射行 + 角色），再走下方重建分支
+        {
+            LOG_INFO("raidtest", "RosterManager: force-recreate slot {} for scenario '{}'",
+                uint32(i), scenarioKey);
+            if (!DeleteSlotMapping(scenarioKey, i))
+            {
+                LOG_ERROR("raidtest", "RosterManager: force-recreate failed for scenario '{}' "
+                    "slot {} - keep existing slot(s) as-is", scenarioKey, uint32(i));
+                return false;
+            }
+        }
 
         RosterSlot slot = blueprint.Slots()[i];  // 拷贝后固定槽位键，避免段号与向量位错位
         slot.slot = i;
@@ -127,8 +143,53 @@ bool RosterManager::EnsureRoster(std::string const& scenarioKey,
             "account={} guid={}", scenarioKey, uint32(i), created.accountId, created.guid.ToString());
     }
 
-    LOG_INFO("raidtest", "RosterManager: roster up to date for scenario '{}' ({} slot(s))",
-        scenarioKey, uint32(slotsToEnsure));
+    LOG_INFO("raidtest", "RosterManager: roster up to date for scenario '{}' ({} slot(s){})",
+        scenarioKey, uint32(slotsToEnsure), forceRecreate ? ", force-recreate" : "");
+    return true;
+}
+
+bool RosterManager::DeleteSlotMapping(std::string const& scenarioKey, uint8 slotIndex)
+{
+    QueryResult result = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT account_id, character_guid FROM raidtest_accounts "
+        "WHERE scenario_key = '{}' AND slot = {}",
+        scenarioKey, uint32(slotIndex)));
+    if (!result)
+    {
+        LOG_ERROR("raidtest", "RosterManager: force-recreate slot {} - no mapping row to delete",
+            uint32(slotIndex));
+        return false;
+    }
+
+    Field* fields = result->Fetch();
+    uint32 const accountId = fields[0].Get<uint32>();
+    ObjectGuid const guid = ObjectGuid::Create<HighGuid::Player>(fields[1].Get<uint32>());
+
+    // 删在线角色会破坏 Live Player 状态（core 删除流程按离线设计）；检测到角色
+    // 在线即拒绝该槽位，调用方中止 ensure（StartRun 失败），保留既有数据不动。
+    if (Player* online = ObjectAccessor::FindPlayer(guid))
+    {
+        LOG_ERROR("raidtest", "RosterManager: force-recreate slot {} - character {} is currently "
+            "online; log out raidtest bots first (restart worldserver) and retry",
+            uint32(slotIndex), online->GetName());
+        return false;
+    }
+
+    // 删除角色（完整删除链 + 角色缓存），账号保留（CreateCharacter 按名复用）。
+    // DeleteCreatedCharacter 的 accountCreated=false 分支即「删角色、留账号」。
+    RosterBuilder::DeleteCreatedCharacter({ accountId, guid, false });
+
+    // 删映射行；等待角色删除落库后再删，避免 FK/缓存时序问题。
+    while (CharacterDatabase.QueueSize())
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    CharacterDatabase.Execute(Acore::StringFormat(
+        "DELETE FROM raidtest_accounts WHERE scenario_key = '{}' AND slot = {}",
+        scenarioKey, uint32(slotIndex)));
+    while (CharacterDatabase.QueueSize())
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    LOG_WARN("raidtest", "RosterManager: force-recreate slot {} for '{}' - deleted character {}",
+        uint32(slotIndex), scenarioKey, guid.ToString());
     return true;
 }
 

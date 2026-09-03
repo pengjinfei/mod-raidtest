@@ -24,6 +24,14 @@ class Scenario;
 // 的世界线程驱动约定一致）。StartRun/StopRun/Status 也应在世界线程调用（模块/
 // 冒烟 harness 均如此；Task 8 的控制台命令仍由世界线程回调）。
 //
+// Task 8 命令路径的启动流程：.raidtest run 在 fork 里由世界循环 ProcessCliCommands
+// 回调执行（控制台/RA 命令全部排队到世界线程，见 CliRunnable.cpp / RASession.cpp /
+// World::ProcessCliCommands）。若 handler 内同步执行 StartRun（含 ROSTER_ENSURE 的
+// 1s 级同步等待：建号幂等 + GetSlotGuids 排空 + ResultStore::StartRun 排空），会
+// 阻塞世界循环。因此命令层只调用 RequestRun（记一笔待办），由随后的 Update 消费
+// 并实际执行 StartRun —— handler 本身恒快、不阻塞；StartRun 的既有同步预算保留
+// （同 Task 7「StartRun 是既定同步路径」口径，迁移到世界循环的 tick 内）。
+//
 // 阶段超时均为 run 级防护，把「流程卡住」记为 aborted attempt + notes，不当作
 // wipe/kill 的战斗结果：登录超时、传送超时、boss 未找到、pull 未落地、
 // boss 战场卡壳（见 AttemptObserver kStuckAbortTicks）。
@@ -34,8 +42,15 @@ public:
 
     // 启动一轮测试：ROSTER_ENSURE + raidtest_runs 落库后进入 LOGIN_AND_GROUP。
     // 返回 runId（0 = 启动失败，原因已 LOG_ERROR）。已在跑/场景未知/蓝图加载
-    // 失败时拒绝启动。
-    uint32 StartRun(std::string const& scenarioKey, uint32 attempts);
+    // 失败时拒绝启动。forceRecreate = 重建阵容（删映射+角色重造）后再跑。
+    uint32 StartRun(std::string const& scenarioKey, uint32 attempts, bool forceRecreate = false);
+
+    // 请求启动一轮测试（Task 8 控制台命令入口）：不执行 ROSTER_ENSURE，只把请求
+    // 记入 _pendingRun，由下一世界 tick 的 Update 消费并实际 StartRun（见类注释）。
+    // 返回 true = 已接受；false = 拒绝，原因写 outReason（已在跑/已有待办/场景未知/
+    // attempts==0）。世界线程调用（命令 handler 所在线程）。
+    bool RequestRun(std::string const& scenarioKey, uint32 attempts, bool forceRecreate,
+                    std::string& outReason);
 
     // 软停止：不再启动新 attempt；当前 attempt 收尾后立即结束 run（不强杀）。
     void StopRun();
@@ -101,6 +116,16 @@ private:
     uint32 _serialTicks{0};               // 等队列排空的粘滞计数（跨 tick，只防无限粘滞）
     bool _forceFinish{false};             // FailRun 置位：Finalize 后无条件 FinishRun
     std::vector<ObjectGuid> _deadGuids;   // 本 attempt 战死明细（ReadDeaths 填充，Finalize 消费）
+
+    // Task 8：待消费的 run 请求（RequestRun 记账 -> Update 下一 tick 消费）。
+    struct PendingRun
+    {
+        bool valid = false;
+        std::string scenarioKey;
+        uint32 attempts = 0;
+        bool forceRecreate = false;
+    };
+    PendingRun _pendingRun;
 
     std::string _scenarioKey;
     Scenario* _scenario{nullptr};

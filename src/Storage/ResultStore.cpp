@@ -112,3 +112,75 @@ bool ResultStore::FinishRun(uint32 runId, uint32 kills, uint32 wipes, uint32 tim
         kills, wipes, timeouts, runId));
     return true;
 }
+
+bool ResultStore::QueryRunReportRow(uint32 runId, RunReportRow& out)
+{
+    out = RunReportRow{};
+
+    QueryResult runRow = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT id, scenario_key, attempts_total, kills, wipes, timeouts "
+        "FROM raidtest_runs WHERE id = {}", runId));
+    if (!runRow)
+        return false;
+
+    Field* fields = runRow->Fetch();
+    out.runId = fields[0].Get<uint32>();
+    out.scenarioKey = fields[1].Get<std::string>();
+    out.attemptsTotal = fields[2].Get<uint32>();
+    out.kills = fields[3].Get<uint32>();
+    out.wipes = fields[4].Get<uint32>();
+    out.timeouts = fields[5].Get<uint32>();
+
+    // attempt 聚合：行数 / duration 合计 / result 拆分（MySQL 布尔表达式求和）。
+    QueryResult attemptAgg = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT COUNT(*), COALESCE(SUM(duration_ms),0), "
+        "COALESCE(SUM(result='kill'),0), COALESCE(SUM(result='wipe'),0), "
+        "COALESCE(SUM(result='timeout'),0), COALESCE(SUM(result='aborted'),0), "
+        "COALESCE(SUM(boss_hp_min),0) "
+        "FROM raidtest_attempts WHERE run_id = {}", runId));
+    if (attemptAgg)
+    {
+        Field* af = attemptAgg->Fetch();
+        out.attemptRows = af[0].Get<uint32>();
+        out.durationSumMs = af[1].Get<uint64>();
+        out.killRows = af[2].Get<uint32>();
+        out.wipeRows = af[3].Get<uint32>();
+        out.timeoutRows = af[4].Get<uint32>();
+        out.abortedRows = af[5].Get<uint32>();
+        out.bossHpMinSum = af[6].Get<uint64>();
+        out.bossHpRows = out.attemptRows;
+    }
+
+    // 事件总数：该 run 全部 attempt 的事件行（事件按 attempt_id 归属）。
+    QueryResult eventCount = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT COUNT(*) FROM raidtest_events e "
+        "JOIN raidtest_attempts a ON a.id = e.attempt_id WHERE a.run_id = {}", runId));
+    if (eventCount)
+        out.eventCount = (*eventCount)[0].Get<uint64>();
+
+    return true;
+}
+
+std::vector<uint32> ResultStore::QueryRecentRunIds(std::string const& scenarioKey, uint32 limit)
+{
+    std::vector<uint32> ids;
+    QueryResult result = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT id FROM raidtest_runs WHERE scenario_key = '{}' ORDER BY id DESC LIMIT {}",
+        Esc(scenarioKey), std::max<uint32>(limit, 1)));
+    if (!result)
+        return ids;
+
+    do
+    {
+        ids.push_back((*result)[0].Get<uint32>());
+    } while (result->NextRow());
+
+    return ids;
+}
+
+bool ResultStore::AttemptExists(uint32 attemptId)
+{
+    QueryResult result = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT 1 FROM raidtest_attempts WHERE id = {} LIMIT 1", attemptId));
+    return result != nullptr;
+}
