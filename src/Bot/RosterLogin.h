@@ -52,6 +52,14 @@ public:
     // 失败（空输入 / leader 已在组）返回 false。
     static bool FormGroup(std::vector<Player*> const& bots);
 
+    // 无 master 自治 bot 的目标合法性修复（B2-1）：
+    // 对 loot-tagged boss，AttackersValue::IsPossibleTarget 对无 master 非 leader bot
+    // 判非法（AttackersValue.cpp:223-233），"invalid target" 触发器每 tick 踢掉
+    // current target，输出循环目标恒空。启用既有 "attack tagged" 策略（AttackersValue
+    // 检查 NON_COMBAT 状态的 HasStrategy）使 boss 变合法目标 -> bot 自身 DPS 循环生效。
+    // 世界线程安全（登录完成后调用一次，非 tick 热路径）。全部应用成功返回 true。
+    static bool ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots);
+
     // 服务端远距离传送（Player::TeleportTo）。远传异步完成，需要世界线程对仍在
     // IsBeingTeleported() 的 bot 调 PlayerbotAI::HandleTeleportAck() 推进 worldport
     // （见 AllOnMap）。本函数只负责发起，全部发起成功返回 true。

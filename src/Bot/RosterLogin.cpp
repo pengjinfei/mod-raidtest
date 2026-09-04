@@ -129,6 +129,30 @@ bool RosterLogin::FormGroup(std::vector<Player*> const& bots)
     return false;
 }
 
+bool RosterLogin::ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots)
+{
+    uint32 applied = 0;
+    for (Player* bot : bots)
+    {
+        if (!bot)
+            continue;
+        if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+        {
+            botAI->ChangeStrategy("+attack tagged", BOT_STATE_NON_COMBAT);
+            ++applied;
+        }
+    }
+    if (applied != bots.size())
+    {
+        LOG_WARN("raidtest", "RosterLogin::ApplyMasterlessCombatStrategy: applied to {}/{} bot(s)",
+            applied, bots.size());
+        return false;
+    }
+    LOG_INFO("raidtest", "RosterLogin: enabled 'attack tagged' on {} bot(s) (masterless combat target fix)",
+        applied);
+    return true;
+}
+
 bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos)
 {
     if (bots.empty())

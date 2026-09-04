@@ -363,6 +363,10 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
         }
     }
 
+    // B2-1：登录后启用 attack tagged，使 loot-tagged boss 对无 master bot 成为合法目标
+    // （AttackersValue::IsPossibleTarget 豁免，见 RosterLogin::ApplyMasterlessCombatStrategy）。
+    RosterLogin::ApplyMasterlessCombatStrategy(_ctx.bots);
+
     // 本 attempt 的 timeout 缺省用配置兜底（场景未设时）。
     uint32 timeoutMs = _ctx.scenario->GetTimeoutSeconds()
         ? _ctx.scenario->GetTimeoutSeconds() * 1000u
