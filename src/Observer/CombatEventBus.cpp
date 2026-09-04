@@ -144,6 +144,7 @@ void CombatEventBus::StartAttempt(uint32 attemptId, std::vector<ObjectGuid> cons
     _pending.clear();
     _evSpell = _evDamage = _evDeath = _evBossHp = 0;
     _evCombatStart = _evCombatEnd = _evStrategy = _evState = _evDropped = 0;
+    _bossDeathSeen = false;  // 新 attempt 重新武装 boss 死亡确认信号
     _active = true;
 
     // 流开头锚点：rel_ms=0 的第一条。经过 Push 盖章（恰为起始时刻）。
@@ -195,6 +196,13 @@ void CombatEventBus::Push(CombatEvent const& event)
         ++_evDropped;
         return;
     }
+
+    // boss 死亡确认（Task 7）：Death 事件且死亡者 == 当前 attempt boss 才置位。
+    // 只认真实死亡事件 —— 指针丢失 / despawn 不会经过这条路径，杜绝把「boss
+    // 暂时找不到」误当成「boss 已击杀」（AttemptObserver 以此区分 kill 与
+    // evade/reset/瞬时失效）。
+    if (event.type == CombatEventType::Death && event.source == _bossGuid)
+        _bossDeathSeen = true;
 
     CombatEvent stamped = event;
     stamped.relMs = RelMs();  // 总线统一盖章；调用方传入的 rel_ms 被忽略

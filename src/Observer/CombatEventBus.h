@@ -64,6 +64,11 @@ public:
     bool IsActive() const { return _active; }
     uint32 BossEntry() const { return _bossEntry; }
 
+    // boss 死亡确认（Task 7）：本 attempt 期间是否收到过当前 boss 的 Death 事件
+    // （真实死亡）。AttemptObserver 以「hp 读到 0 且本标志为 true」双条件判定
+    // Kill，避免把 boss 指针暂时消失（evade/reset/瞬时失效）误判为击杀。
+    bool BossDeathSeen() const { return _bossDeathSeen; }
+
     // 成员判定：guid 是本 attempt 的 bot 之一或当前 boss。非 active 恒 false。
     bool IsMember(ObjectGuid const& guid) const;
 
@@ -89,6 +94,8 @@ private:
     uint32 _attemptId{0};
     uint32 _bossEntry{0};
     ObjectGuid _bossGuid;
+    bool _bossDeathSeen{false};   // 本 attempt 是否已收到 boss 真实死亡事件
+                                 // （Push 中置位，StartAttempt 重置）
     std::unordered_set<ObjectGuid> _botGuids;
     std::chrono::steady_clock::time_point _attemptStart;
     std::vector<CombatEvent> _pending;

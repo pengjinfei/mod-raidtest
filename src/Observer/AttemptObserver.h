@@ -8,7 +8,8 @@
 //
 // 三次采样守卫：终态条件需连续 kSampleConfirmTicks 个世界 tick 成立才提交，
 // 避免瞬时状态误判。判定优先级 Kill > Wipe > Timeout > Aborted：
-//   - boss 血 0（或已从地图移除 = 击杀后 despawn）→ Kill；
+//   - boss 血读到 0 **且** CombatEventBus 已确认 boss 死亡事件（BossDeathSeen）
+//     → Kill；单凭 boss 指针消失（evade/reset/瞬时失效）不得判 kill；
 //   - 全团 isDead() → Wipe；
 //   - attemptElapsed >= attemptTimeoutMs → Timeout；
 //   - boss 仍在场但脱离战斗、且全团存活（pull 未确认 / 战斗中 reset）→ Aborted。

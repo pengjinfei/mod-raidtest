@@ -57,13 +57,18 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     }
 
     // ---- 判定（优先级 Kill > Wipe > Timeout > Aborted）----
-    // boss 血 0 或已从地图移除即 Kill 候选（击杀后 despawn 需守卫确认）。
-    bool const bossDown = !bossKnown || hpPct == 0;
+    // Kill 候选需「真实死亡证据」：boss 血读到 0 **且** CombatEventBus 已确认
+    // boss 死亡事件（BossDeathSeen）。单凭 boss 指针消失（!bossKnown = evade/
+    // reset/瞬时失效）不得判 Kill —— 指针找不到 ≠ boss 已死；击杀后 boss 尸体
+    // 仍在场且血量读 0，配合 Death 事件才是确凿信号（击杀后 despawn 需守卫确认）。
+    bool const bossDeathSeen = CombatEventBus::instance().BossDeathSeen();
+    bool const bossDown = hpPct == 0 && bossDeathSeen;
     if (bossDown)
     {
         if (++_killSamples >= kSampleConfirmTicks)
         {
-            LOG_INFO("raidtest", "AttemptObserver: kill confirmed (boss {} down, {} consecutive sample(s))",
+            LOG_INFO("raidtest",
+                "AttemptObserver: kill confirmed (boss {} hp=0% + boss death event, {} consecutive sample(s))",
                 ctx.bossGuid.ToString(), _killSamples);
             return AttemptResult::Kill;
         }
