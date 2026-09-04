@@ -3,6 +3,7 @@
 #include "CombatTrigger.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
+#include "InstanceSaveMgr.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
@@ -333,6 +334,84 @@ Creature* AttemptRunner::FindBossNear(RunContext const& ctx)
             bossEntry, map->GetId(), map->GetCreatureBySpawnIdStore().size());
 
     return best;
+}
+
+bool AttemptRunner::ResetInstance(RunContext& ctx)
+{
+    // B1-3 跨 attempt 实例重置：SERIALIZE_RESULT 收尾后、下一 attempt 开始前调用，
+    // 让场景 boss 复活，使下次 FindBoss 不再命中 "boss already dead"。
+    //
+    // 两层清理（都是世界线程 transition-time 调用，不 sleep、不阻塞）：
+    //   1) InstanceSaveMgr::DeleteInstanceSaveIfNeeded —— brief 指定的核心 canonical
+    //      API（Map.cpp:1948 同款用法）。注意：核心守卫要求 save 无玩家绑定（pussywizard
+    //      fork：save removed only when no players bound AND map doesn't exist），bot
+    //      仍在实例内时它通常直接返回 false（无可删/无副作用）——此时实例的 boss 死亡
+    //      状态存在内存里的 InstanceScript + 已加载 creature，不靠删 save 复活，所以
+    //      还要走第 2 步的内存态重置。对 fresh/无 save 的场景它就是安全 no-op。
+    //   2) 内存态重置：把地图上场景 boss entry 的死 creature 强制复活
+    //      （Creature::Respawn(true) force 绕过 BossAI::CanRespawn 的 DONE 守卫），
+    //      其 AI Reset 会把 InstanceScript 的 boss state 置回 NOT_STARTED。
+    if (ctx.bots.empty() || !ctx.bots[0] || !ctx.scenario)
+        return false;
+
+    Map* map = ctx.bots[0]->GetMap();
+    if (!map || !map->IsDungeon())
+    {
+        LOG_DEBUG("raidtest", "AttemptRunner: ResetInstance - no dungeon map (fresh instance, nothing to reset)");
+        return false;
+    }
+
+    // 1) 删 save（best-effort；bot 绑定中通常 no-op，返回值仅用于日志）。
+    bool const saveDeleted = sInstanceSaveMgr->DeleteInstanceSaveIfNeeded(map->GetInstanceId(), true);
+    LOG_INFO("raidtest", "AttemptRunner: ResetInstance - map {} instance {} save_deleted={}",
+        map->GetId(), map->GetInstanceId(), saveDeleted);
+
+    // 2) 内存态复位场景 boss（可能多个 spawn 同 entry，全部处理）。
+    //    - 死 boss：force respawn（绕过 BossAI::CanRespawn 的 DONE 守卫），其 AI
+    //      Reset 会把遭遇状态重置回 NOT_STARTED。
+    //    - 活 boss：上一 attempt 是 wipe/stuck 时可能残留在 UNIT_STATE_EVADE /
+    //      combat 状态（CombatManager::CanBeginCombat 对 evading 单位会拒绝重新
+    //      进战斗，导致下一 attempt 的 pull confirm 超时）。reset 时清掉这些状态
+    //      并归位，保证下一次 FindBoss + pull 可直接接战。幂等：干净 boss 是 no-op。
+    uint32 const bossEntry = ctx.scenario->GetBossEntry();
+    bool respawned = false;
+    for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
+    {
+        (void)spawnId;
+        if (!creature || creature->GetEntry() != bossEntry)
+            continue;
+
+        if (creature->isDead())
+        {
+            // force=true：即使 InstanceScript boss state == DONE（BossAI::CanRespawn()
+            // 返回 false）也强制复活；其 AI Reset 会把遭遇状态重置回 NOT_STARTED。
+            creature->Respawn(true);
+            respawned = true;
+            LOG_INFO("raidtest", "AttemptRunner: ResetInstance - force-respawned boss {} (guid {})",
+                creature->GetName(), creature->GetGUID().ToString());
+            continue;
+        }
+
+        // 活 boss：清残留 combat/evade 状态并归位（防 wipe 后 pull 超时）。
+        if (creature->IsInCombat() || creature->HasUnitState(UNIT_STATE_EVADE))
+        {
+            creature->CombatStop();
+            creature->GetThreatMgr().ClearAllThreat();
+            creature->ClearUnitState(UNIT_STATE_EVADE);
+            creature->GetMotionMaster()->MoveTargetedHome();
+            LOG_INFO("raidtest", "AttemptRunner: ResetInstance - cleared stuck combat/evade state on "
+                "boss {} (guid {})", creature->GetName(), creature->GetGUID().ToString());
+        }
+    }
+
+    if (!respawned)
+        LOG_DEBUG("raidtest", "AttemptRunner: ResetInstance - no dead boss to respawn "
+            "(entry {}; boss alive or absent)", bossEntry);
+
+    // 清掉可能悬垂的 boss 引用：下一 attempt 的 FindBoss 会重新寻址（Begin 也清）。
+    ctx.bossGuid.Clear();
+    ctx.boss = nullptr;
+    return true;
 }
 
 void AttemptRunner::ResolveBoss(RunContext& ctx)

@@ -529,7 +529,9 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
             return;
         }
 
-        // 续跑下一 attempt（清 attempt 状态；runId/bots/计数保留）。
+        // 续跑下一 attempt：先跨 attempt 实例重置（boss 复活 + 清 save，B1-3），
+        // 再清 attempt 状态。reset 是 world-thread transition-time 调用，不 sleep。
+        AttemptRunner::ResetInstance(_ctx);
         _runner.Begin(_ctx, _ctx.attemptsDone + 1);
         _state = RunState::Running;
         return;

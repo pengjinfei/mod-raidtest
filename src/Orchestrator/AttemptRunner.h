@@ -35,6 +35,12 @@ public:
     // 软中止（run stop / 上线请求）：把当前 attempt 标为 aborted；已 done 则忽略。
     void Abort(std::string const& why);
 
+    // B1-3 跨 attempt 实例重置：SERIALIZE_RESULT 收尾后、下一 attempt 开始前调用。
+    // 让场景 boss 复活 + 清实例保存，使下次 FindBoss 找到活 boss（不再命中
+    // "boss already dead"）。仅影响 raidtest 所在实例。返回 false = 无可重置
+    // （fresh / 非实例地图 / 场景无 boss 信息）。世界线程非阻塞（transition-time）。
+    static bool ResetInstance(RunContext& ctx);
+
 private:
     enum class Stage : uint8 { Idle, TeleportAndPosition, Pull, Observing, Done };
 
