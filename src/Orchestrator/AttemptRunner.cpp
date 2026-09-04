@@ -213,12 +213,14 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             ctx.attemptElapsedMs = 0;
 
             Player* leader = ctx.bots.empty() ? nullptr : ctx.bots[0];
-            if (!CombatTrigger::BeginPull(leader, ctx.boss))
+            // 方案 b（B1-Task1）：全 roster 广播拉怪 —— 每个 bot 都经 AttackAction::
+            // Attack(boss) 拿到 current target 并切入自身 COMBAT 引擎（不只 leader）。
+            if (!CombatTrigger::BeginPullForAll(ctx.bots, ctx.boss))
             {
                 _result = AttemptResult::Aborted;
                 _notes = "pull failed (boss not engaged)";
                 _stage = Stage::Done;
-                LOG_WARN("raidtest", "AttemptRunner: attempt {} aborted - BeginPull failed (leader {})",
+                LOG_WARN("raidtest", "AttemptRunner: attempt {} aborted - BeginPullForAll failed (leader {})",
                     ctx.attemptSeq, leader ? leader->GetName() : "?");
                 return;
             }

@@ -3,6 +3,7 @@
 
 #include "Define.h"
 #include <string>
+#include <vector>
 
 class Creature;
 class Player;
@@ -32,13 +33,23 @@ public:
     // 轮询 ConfirmBossInCombat，仅统计确实检查了战斗态的 tick。
     static constexpr uint32 kCombatConfirmTicks = 20;
 
-    // 发起开战（不阻塞、不做进战斗确认）：设置拉怪上下文（prioritized targets /
-    // pull target）→ 以真实 bot 行为 AttackAction::Attack(boss) 发起攻击 → 同步
-    // 建立 boss<->leader 的 PvE 战斗引用（boss->SetInCombatWith）。返回 false =
-    // 发起失败（dead/friendly/out of range/no LOS/invalid target 等），此时拉怪
-    // 上下文已在本方法内清掉；返回 true 后拉怪上下文仍钉在 leader 上，等待
-    // 调用方在确认终态后调用 EndPullContext 清除（或由下一 attempt 的 Begin 兜底）。
+    // 发起开战（不阻塞、不做进战斗确认）—— 单 bot（leader）形态，委托给
+    // BeginPullForAll（单元素 roster）。见 BeginPullForAll 的完整语义说明。
     static bool BeginPull(Player* leader, Creature* boss);
+
+    // 发起开战（不阻塞、不做进战斗确认）—— 全 roster 形态（方案 b，B1-Task1）：
+    // 以「raid lead 攻击指令」广播全队 —— 对 roster 中每个 bot（含 leader）逐一以
+    // 真实 bot 行为 AttackAction::Attack(boss) 发起攻击：各自设置 current target、
+    // 启动核心 auto-attack、切入自身 COMBAT 引擎（ChangeEngine）。此后由各 bot 自己的
+    // 战斗策略决定施法/冷却/走位 —— 只给靶标，不给脚本化循环。
+    // 语义与单 bot 形态一致：拉怪上下文（prioritized targets / pull target）钉在
+    // leader(bots[0]) 上，由 EndPullContext 清除；boss->SetInCombatWith 只在 leader 上
+    // 建立 PvE 战斗引用，非 leader bot 不需要重复置位。返回 false = leader 发起失败
+    // （dead/friendly/out of range/no LOS/invalid target 等），此时拉怪上下文已在本
+    // 方法内清掉；非 leader bot 发起被拒不阻断整次拉怪（各自仍可由自身策略在进战斗
+    // 后补上），仅记日志。返回 true 后拉怪上下文仍钉在 leader 上，等待调用方在确认
+    // 终态后调用 EndPullContext 清除（或由下一 attempt 的 Begin 兜底）。
+    static bool BeginPullForAll(std::vector<Player*> const& bots, Creature* boss);
 
     // 每 tick 的进战斗确认：Unit::IsInCombat()（UNIT_FLAG_IN_COMBAT）。跨 tick
     // 调用方只需在真正检查战斗态的 tick 上计数，见 kCombatConfirmTicks。

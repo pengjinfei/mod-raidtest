@@ -24,36 +24,87 @@ public:
 
 bool CombatTrigger::BeginPull(Player* leader, Creature* boss)
 {
-    if (!leader || !boss)
+    if (!leader)
     {
-        LOG_ERROR("raidtest", "CombatTrigger::BeginPull: null leader/boss");
+        LOG_ERROR("raidtest", "CombatTrigger::BeginPull: null leader");
         return false;
     }
 
-    PlayerbotAI* botAI = GET_PLAYERBOT_AI(leader);
-    if (!botAI)
+    // 单 bot 形态 = 全 roster 形态的单元素特例，逻辑统一在 BeginPullForAll。
+    return BeginPullForAll({leader}, boss);
+}
+
+bool CombatTrigger::BeginPullForAll(std::vector<Player*> const& bots, Creature* boss)
+{
+    if (bots.empty())
     {
-        LOG_ERROR("raidtest", "CombatTrigger::BeginPull: no PlayerbotAI for leader {} "
+        LOG_ERROR("raidtest", "CombatTrigger::BeginPullForAll: empty roster");
+        return false;
+    }
+
+    Player* leader = bots[0];
+    if (!leader || !boss)
+    {
+        LOG_ERROR("raidtest", "CombatTrigger::BeginPullForAll: null leader/boss");
+        return false;
+    }
+
+    PlayerbotAI* leaderBotAI = GET_PLAYERBOT_AI(leader);
+    if (!leaderBotAI)
+    {
+        LOG_ERROR("raidtest", "CombatTrigger::BeginPullForAll: no PlayerbotAI for leader {} "
                   "(headless login failed?)", leader->GetName());
         return false;
     }
 
     // 与 AttackMyTargetAction 同样前置上下文铺垫（真实 bot 拉怪信息），但靶标由
-    // 服务端直接指定，不依赖 master 的鼠标目标。
-    AiObjectContext* context = botAI->GetAiObjectContext();
-    context->GetValue<GuidVector>("prioritized targets")->Set({boss->GetGUID()});
-    context->GetValue<ObjectGuid>("pull target")->Set(boss->GetGUID());
+    // 服务端直接指定，不依赖 master 的鼠标目标。拉怪上下文钉在 leader 上（终态由
+    // 调用方 EndPullContext 清除），非 leader bot 不设（各自只拿 current target）。
+    AiObjectContext* leaderContext = leaderBotAI->GetAiObjectContext();
+    leaderContext->GetValue<GuidVector>("prioritized targets")->Set({boss->GetGUID()});
+    leaderContext->GetValue<ObjectGuid>("pull target")->Set(boss->GetGUID());
 
-    RaidPullAction pull(botAI);
-    bool const initiated = pull.Attack(boss);
-    if (!initiated)
+    // 方案 b（B1-Task1）：把「raid lead 的攻击指令」广播给全队。每个 bot 各自走
+    // 真实的 AttackAction::Attack(boss) —— 设置自身 current target、启动核心
+    // auto-attack、切入自身 COMBAT 引擎；此后由各 bot 自己的战斗策略决定施法/冷却/
+    // 走位，这里只给靶标，不给脚本化循环。leader 发起被拒 = 整次拉怪失败（沿用
+    // BeginPull 语义：清上下文返回 false）；非 leader bot 发起被拒不阻断整次拉怪，
+    // 仅记日志（各自仍可由自身策略在进战斗后补上）。
+    for (Player* bot : bots)
     {
-        // 发起被拒：拉怪上下文在此统一清掉，避免钉死在 rejected 的靶标上。
-        EndPullContext(leader);
-        LOG_ERROR("raidtest", "CombatTrigger::BeginPull: leader {} could not initiate attack on {} "
-                  "(dead/friendly/out of range/no LOS/invalid target)",
-                  leader->GetName(), boss->GetName());
-        return false;
+        if (!bot)
+        {
+            LOG_WARN("raidtest", "CombatTrigger::BeginPullForAll: null bot in roster");
+            continue;
+        }
+
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+        if (!botAI)
+        {
+            LOG_WARN("raidtest", "CombatTrigger::BeginPullForAll: no PlayerbotAI for bot {} "
+                      "(headless login failed?)", bot->GetName());
+            continue;
+        }
+
+        RaidPullAction pull(botAI);
+        bool const initiated = pull.Attack(boss);
+        if (!initiated)
+        {
+            if (bot == leader)
+            {
+                // 发起被拒：拉怪上下文在此统一清掉，避免钉死在 rejected 的靶标上。
+                EndPullContext(leader);
+                LOG_ERROR("raidtest", "CombatTrigger::BeginPullForAll: leader {} could not "
+                          "initiate attack on {} (dead/friendly/out of range/no LOS/invalid target)",
+                          leader->GetName(), boss->GetName());
+                return false;
+            }
+
+            LOG_WARN("raidtest", "CombatTrigger::BeginPullForAll: bot {} could not initiate "
+                     "attack on {} (dead/friendly/out of range/no LOS/invalid target); continuing",
+                     bot->GetName(), boss->GetName());
+            continue;
+        }
     }
 
     // 玩家单位发起的 Unit::Attack 不会同步把目标置入战斗：Unit::Attack 中建立
