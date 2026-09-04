@@ -3,8 +3,10 @@
 
 #include "AttemptRunner.h"
 #include "RunContext.h"
+#include "RosterBlueprint.h"
 #include <chrono>
 #include <string>
+#include <vector>
 
 class Scenario;
 
@@ -131,6 +133,10 @@ private:
     Scenario* _scenario{nullptr};
     RunContext _ctx;
     AttemptRunner _runner;
+
+    // 本 run 的蓝图槽位（StartRun 加载蓝图时保存，与 _ctx.botGuids 同位序）。
+    // LOGIN_AND_GROUP 阶段 bots 登录齐后按同位序逐个 ApplyGear（B1-2 方案 C 装配）。
+    std::vector<RosterSlot> _rosterSlots;
 
     bool _stopRequested{false};
     bool _groupDirty{true};                  // 登齐后需要重建队伍

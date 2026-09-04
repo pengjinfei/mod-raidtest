@@ -79,6 +79,7 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
             scenarioKey, scenario->GetRosterFile());
         return 0;
     }
+    _rosterSlots = blueprint.Slots();   // 登录齐后 ApplyGear 按同位序装配（B1-2）
 
     uint8 const partySize = RaidTestConfig::instance().PartySize();
     RosterManager roster;
@@ -347,6 +348,21 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
         LOG_WARN("raidtest", "Orchestrator: FormGroup failed for {} bot(s) - continuing "
             "(best effort)", _ctx.bots.size());
 
+    // B1-2 方案 C：登录齐后按蓝图槽位逐 bot 装配（蓝图显式件 + 缺省槽 BIS 最高档 +
+    // 工厂兜底）。一次性登录动作（非 tick 路径），与 StartRun 的 ROSTER_ENSURE 同步段
+    // 同属「世界线程上的既定同步预算」；ApplyGear 内部逐槽独立，单槽失败只记日志。
+    {
+        RosterBuilder builder;
+        builder.SetGearProfile(_scenario->GetGearProfile());
+        size_t const n = std::min(_ctx.bots.size(), _rosterSlots.size());
+        for (size_t i = 0; i < n; ++i)
+        {
+            if (!_ctx.bots[i])
+                continue;
+            builder.ApplyGear(_ctx.bots[i], _rosterSlots[i]);
+        }
+    }
+
     // 本 attempt 的 timeout 缺省用配置兜底（场景未设时）。
     uint32 timeoutMs = _ctx.scenario->GetTimeoutSeconds()
         ? _ctx.scenario->GetTimeoutSeconds() * 1000u
@@ -536,6 +552,7 @@ void RaidTestOrchestrator::FinishRun()
     _ctx = RunContext{};
     _scenarioKey.clear();
     _scenario = nullptr;
+    _rosterSlots.clear();
     _state = RunState::Idle;
     _stopRequested = false;
     _forceFinish = false;

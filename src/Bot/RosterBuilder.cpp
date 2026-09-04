@@ -89,6 +89,21 @@ namespace
         };
     }
 
+    // 蓝图槽位 key -> playerbots_bis_gear.slot_name（方案 C：BIS 提取的槽位名映射）。
+    // BIS 表用复数/别称：Shoulder->Shoulders、Wrist->Wrists、Ring1/2->Finger1/2，
+    // 其余同名；Ranged 蓝图无对应键，EquipBisItems 单独处理。
+    std::string const& GetBisSlotName(std::string const& blueprintSlotKey)
+    {
+        static std::map<std::string, std::string> const BisSlotNames = {
+            { "Shoulder", "Shoulders" },
+            { "Wrist",    "Wrists" },
+            { "Ring1",    "Finger1" },
+            { "Ring2",    "Finger2" },
+        };
+        auto it = BisSlotNames.find(blueprintSlotKey);
+        return it == BisSlotNames.end() ? blueprintSlotKey : it->second;
+    }
+
     // 专业名（蓝图 Professions 逗号列表里的值）-> SkillLine id（对应 SharedDefines.h 的 SKILL_*）。
     // 只收 design §5.1 声明的双专业集合；未收录的名字在 ApplyBlueprintProfessions 里 LOG_WARN 跳过。
     std::map<std::string, uint16> const GetProfessionSkillIdMap()
@@ -551,46 +566,55 @@ void RosterBuilder::ApplyBlueprintGems(Player* bot, RosterSlot const& slot)
             continue;
         }
 
-        if (!item->HasSocket())
+        ApplyGemsToItem(bot, item, gemIds);
+    }
+}
+
+void RosterBuilder::ApplyGemsToItem(Player* bot, Item* item, std::vector<uint32> const& gemIds)
+{
+    if (!item)
+        return;
+
+    if (!item->HasSocket())
+    {
+        LOG_WARN("raidtest", "RosterBuilder: item {} has no sockets", item->GetEntry());
+        return;
+    }
+
+    uint8 socketIndex = 0;
+    for (uint32 gemItemId : gemIds)
+    {
+        EnchantmentSlot enchantSlot = EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + socketIndex++);
+        if (enchantSlot > SOCK_ENCHANTMENT_SLOT_3)
         {
-            LOG_WARN("raidtest", "RosterBuilder: item {} for gem slot '{}' has no sockets",
-                gearIt->second, slotKey);
+            LOG_WARN("raidtest", "RosterBuilder: too many gems for item {} (max 3 sockets)",
+                item->GetEntry());
+            break;
+        }
+
+        ItemTemplate const* gemTemplate = sObjectMgr->GetItemTemplate(gemItemId);
+        if (!gemTemplate)
+        {
+            LOG_WARN("raidtest", "RosterBuilder: gem item {} not found in DB", gemItemId);
             continue;
         }
 
-        uint8 socketIndex = 0;
-        for (uint32 gemItemId : gemIds)
+        GemPropertiesEntry const* gemProperties =
+            sGemPropertiesStore.LookupEntry(gemTemplate->GemProperties);
+        if (!gemProperties || !gemProperties->spellitemenchantement)
         {
-            EnchantmentSlot enchantSlot = EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + socketIndex++);
-            if (enchantSlot > SOCK_ENCHANTMENT_SLOT_3)
-            {
-                LOG_WARN("raidtest", "RosterBuilder: too many gems for '{}' (max 3 sockets)", slotKey);
-                break;
-            }
-
-            ItemTemplate const* gemTemplate = sObjectMgr->GetItemTemplate(gemItemId);
-            if (!gemTemplate)
-            {
-                LOG_WARN("raidtest", "RosterBuilder: gem item {} not found in DB", gemItemId);
-                continue;
-            }
-
-            GemPropertiesEntry const* gemProperties =
-                sGemPropertiesStore.LookupEntry(gemTemplate->GemProperties);
-            if (!gemProperties || !gemProperties->spellitemenchantement)
-            {
-                LOG_WARN("raidtest", "RosterBuilder: gem item {} has no valid gem properties",
-                    gemItemId);
-                continue;
-            }
-
-            bot->ApplyEnchantment(item, enchantSlot, false);
-            item->SetEnchantment(enchantSlot, gemProperties->spellitemenchantement, 0, 0,
-                bot->GetGUID());
-            bot->ApplyEnchantment(item, enchantSlot, true);
-
-            LOG_DEBUG("raidtest", "RosterBuilder: socketed gem {} into '{}'", gemItemId, slotKey);
+            LOG_WARN("raidtest", "RosterBuilder: gem item {} has no valid gem properties",
+                gemItemId);
+            continue;
         }
+
+        bot->ApplyEnchantment(item, enchantSlot, false);
+        item->SetEnchantment(enchantSlot, gemProperties->spellitemenchantement, 0, 0,
+            bot->GetGUID());
+        bot->ApplyEnchantment(item, enchantSlot, true);
+
+        LOG_DEBUG("raidtest", "RosterBuilder: socketed gem {} into item {}", gemItemId,
+            item->GetEntry());
     }
 }
 
@@ -613,27 +637,175 @@ void RosterBuilder::ApplyBlueprintEnchants(Player* bot, RosterSlot const& slot)
             continue;
         }
 
-        if (!sSpellItemEnchantmentStore.LookupEntry(enchantId))
+        ApplyEnchantToItem(bot, item, enchantId);
+    }
+}
+
+void RosterBuilder::ApplyEnchantToItem(Player* bot, Item* item, uint32 enchantId)
+{
+    if (!item)
+        return;
+
+    if (!sSpellItemEnchantmentStore.LookupEntry(enchantId))
+    {
+        LOG_WARN("raidtest", "RosterBuilder: enchant {} for item {} not found in SpellItemEnchantment",
+            enchantId, item->GetEntry());
+        return;
+    }
+
+    bot->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
+    item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, bot->GetGUID());
+    bot->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
+
+    LOG_DEBUG("raidtest", "RosterBuilder: enchanted item {} with {}", item->GetEntry(), enchantId);
+}
+
+std::string RosterBuilder::BisSlotName(std::string const& blueprintSlotKey)
+{
+    return GetBisSlotName(blueprintSlotKey);
+}
+
+bool RosterBuilder::FetchBisForSlot(uint8 classId, std::string const& specName,
+                                    std::string const& slotName, uint32& itemId)
+{
+    (void)specName;   // B1-2 决策：最高档 = ilvl 最高史诗装，按 class+slot 取，不按 spec 过滤
+                      // （实测各 spec 顶档件共享同一批 ilvl 284/277 装；表内 spec_name 命名与
+                      //  蓝图 TalentSpec 不一致，过滤反而引入空结果/降档风险）。
+
+    // 跨库无法 JOIN：先取 playerbots_bis_gear（PlayerbotsDatabase）该 职业+槽位 的候选
+    // item_id，再回 item_template（WorldDatabase）按 Quality>=4 + ItemLevel DESC 取顶。
+    QueryResult candidates = PlayerbotsDatabase.Query(Acore::StringFormat(
+        "SELECT item_id FROM playerbots_bis_gear "
+        "WHERE class = {} AND slot_name = '{}'",
+        uint32(classId), slotName));
+    if (!candidates)
+    {
+        LOG_DEBUG("raidtest", "RosterBuilder: no BIS candidates for class {} slot '{}'",
+            uint32(classId), slotName);
+        return false;
+    }
+
+    std::vector<uint32> ids;
+    do
+    {
+        Field* fields = candidates->Fetch();
+        uint32 const id = fields[0].Get<uint32>();
+        if (std::find(ids.begin(), ids.end(), id) == ids.end())
+            ids.push_back(id);
+    } while (candidates->NextRow());
+
+    if (ids.empty())
+        return false;
+
+    std::string inList;
+    for (size_t i = 0; i < ids.size(); ++i)
+    {
+        if (i)
+            inList += ", ";
+        inList += std::to_string(ids[i]);
+    }
+
+    QueryResult top = WorldDatabase.Query(Acore::StringFormat(
+        "SELECT entry FROM item_template WHERE entry IN ({}) AND Quality >= {} "
+        "ORDER BY ItemLevel DESC, entry DESC LIMIT 1", inList, uint32(ITEM_QUALITY_EPIC)));
+    if (!top)
+    {
+        LOG_DEBUG("raidtest", "RosterBuilder: no epic BIS for class {} slot '{}' "
+            "({} candidate(s) all below epic)", uint32(classId), slotName, ids.size());
+        return false;
+    }
+
+    itemId = top->Fetch()[0].Get<uint32>();
+    LOG_DEBUG("raidtest", "RosterBuilder: BIS for class {} slot '{}' -> item {}",
+        uint32(classId), slotName, itemId);
+    return true;
+}
+
+uint32 RosterBuilder::EquipBisItems(Player* bot, RosterSlot const& slot)
+{
+    auto const& slotMap = GetEquipSlotMap();
+    uint32 equipped = 0;
+
+    auto equipBisAt = [&](std::string const& slotKey, EquipmentSlots equipSlot,
+                          std::string const& bisSlotName) -> void
+    {
+        // 蓝图显式指定的槽位由 EquipBlueprintItems 负责（蓝图优先），BIS 只填缺省槽。
+        if (slot.gear.find(slotKey) != slot.gear.end())
+            return;
+
+        uint32 itemId = 0;
+        if (!FetchBisForSlot(bot->getClass(), slot.talentSpec, bisSlotName, itemId))
+            return;
+
+        if (!sObjectMgr->GetItemTemplate(itemId))
         {
-            LOG_WARN("raidtest", "RosterBuilder: enchant {} for '{}' not found in SpellItemEnchantment",
-                enchantId, slotKey);
-            continue;
+            LOG_WARN("raidtest", "RosterBuilder: BIS item {} for '{}' not found in DB",
+                itemId, bisSlotName);
+            return;
         }
 
-        bot->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, false);
-        item->SetEnchantment(PERM_ENCHANTMENT_SLOT, enchantId, 0, 0, bot->GetGUID());
-        bot->ApplyEnchantment(item, PERM_ENCHANTMENT_SLOT, true);
+        // 与蓝图件同一套装配可行性校验（CanEquipItem）；失败落回工厂件（该槽不动）。
+        uint16 dest = 0;
+        Item* probe = Item::CreateItem(itemId, 1, bot, false, 0, true);
+        if (!probe)
+        {
+            LOG_WARN("raidtest", "RosterBuilder: cannot instantiate BIS item {} for '{}'",
+                itemId, bisSlotName);
+            return;
+        }
+        bool const canEquip =
+            bot->CanEquipItem(uint8(equipSlot), dest, probe, true, true) == EQUIP_ERR_OK;
+        probe->RemoveFromUpdateQueueOf(bot);
+        delete probe;
+        if (!canEquip)
+        {
+            LOG_WARN("raidtest", "RosterBuilder: BIS item {} for '{}' cannot be equipped by "
+                "this class - keeping factory gear", itemId, bisSlotName);
+            return;
+        }
 
-        LOG_DEBUG("raidtest", "RosterBuilder: enchanted '{}' with {}", slotKey, enchantId);
-    }
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, equipSlot))
+            bot->DestroyItem(INVENTORY_SLOT_BAG_0, equipSlot, true);
+
+        if (!bot->EquipNewItem(equipSlot, itemId, true))
+        {
+            LOG_WARN("raidtest", "RosterBuilder: failed to equip BIS item {} at '{}'",
+                itemId, bisSlotName);
+            return;
+        }
+
+        ++equipped;
+        LOG_INFO("raidtest", "RosterBuilder: equipped BIS item {} at {} (class {} spec '{}')",
+            itemId, bisSlotName, uint32(bot->getClass()), slot.talentSpec);
+
+        // 蓝图对该槽声明的宝石/附魔同步落到 BIS 件上；未声明则跳过（保持工厂语义）。
+        Item* equippedItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, equipSlot);
+        auto gemIt = slot.gems.find(slotKey);
+        if (equippedItem && gemIt != slot.gems.end())
+            ApplyGemsToItem(bot, equippedItem, gemIt->second);
+        auto enchantIt = slot.enchants.find(slotKey);
+        if (equippedItem && enchantIt != slot.enchants.end())
+            ApplyEnchantToItem(bot, equippedItem, enchantIt->second);
+    };
+
+    for (auto const& [key, equipSlot] : slotMap)
+        equipBisAt(key, equipSlot, BisSlotName(key));
+
+    // Ranged（蓝图无该键，工厂本就会填）：BIS 表有 Ranged 槽，给猎人/战贼等补上
+    // 顶档远程件。EquipNewItem 内部自带该槽的射程/职业校验。
+    equipBisAt("Ranged", EQUIPMENT_SLOT_RANGED, "Ranged");
+
+    return equipped;
 }
 
 uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
 {
     // 装配顺序：清空现有装备 -> 工厂档位配装填满全槽 -> 工厂附魔+宝石
-    // -> 蓝图物品精确覆盖指定槽位 -> 蓝图宝石 -> 蓝图附魔。
+    // -> 蓝图物品精确覆盖指定槽位 -> BIS 最高档装备填充蓝图未指定槽位（方案 C）
+    // -> 蓝图宝石 -> 蓝图附魔。
     // 工厂 InitEquipment 会把已装备的旧件挪进背包再换新，所以蓝图件必须先做“覆盖”
     // 而非“先于工厂入场”，否则工厂会把蓝图件全部挤进包里、蓝图宝石/附魔随之失配。
+    // BIS 件同理在工厂之后入场（工厂件作为失败兜底留在槽内）。
     PlayerbotFactory::DestroyEquippedGear(bot);
 
     // 兜底配装档位：epic -> 工厂 itemQuality=ITEM_QUALITY_EPIC(4)（蓝图显式装备优先，
@@ -645,6 +817,7 @@ uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
     factory.ApplyEnchantAndGemsNew(true);
 
     uint32 blueprintEquipped = EquipBlueprintItems(bot, slot);
+    uint32 bisEquipped = EquipBisItems(bot, slot);
 
     ApplyBlueprintGems(bot, slot);
     ApplyBlueprintEnchants(bot, slot);
@@ -657,8 +830,14 @@ uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
     }
 
     LOG_INFO("raidtest", "RosterBuilder: gear applied for '{}' (blueprint items equipped: {}, "
-        "total equipped: {}, gear_profile={}, factory_item_quality={})", bot->GetName(),
-        blueprintEquipped, totalEquipped,
+        "bis items equipped: {}, total equipped: {}, gear_profile={}, factory_item_quality={})",
+        bot->GetName(), blueprintEquipped, bisEquipped, totalEquipped,
         _gearProfile == GearProfile::Epic ? "epic" : "none", factoryItemQuality);
+
+    // 装配结果立即落库：装备流程结束后显式 SaveToDB（走既有异步队列提交，与
+    // CreateCharacter 的 SaveToDB+排空同属「登录期一次性同步预算」）。否则新穿上的
+    // BIS 件只存在于内存，要等 PlayerSaveInterval(15min)/登出才落库 —— 中途重启
+    // 或紧随其后的装配查询（验收 SQL）会看到旧装备。create=false（角色已存在）。
+    bot->SaveToDB(false, false);
     return totalEquipped;
 }
