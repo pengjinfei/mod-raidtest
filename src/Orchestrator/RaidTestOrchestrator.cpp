@@ -533,9 +533,9 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
             return;
         }
 
-        // 续跑下一 attempt：先跨 attempt 实例重置（boss 复活 + 清 save，B1-3），
-        // 再清 attempt 状态。reset 是 world-thread transition-time 调用，不 sleep。
-        AttemptRunner::ResetInstance(_ctx);
+        // 续跑下一 attempt。boss 干净重置（复活/清 enrage/回满血）与全队满血
+        // 恢复已内聚到 AttemptRunner::Tick 的 TeleportAndPosition 阶段（每次 attempt
+        // 传送到位后、pull 前统一执行，首个 attempt 也覆盖），此处只清 attempt 状态。
         _runner.Begin(_ctx, _ctx.attemptsDone + 1);
         _state = RunState::Running;
         return;

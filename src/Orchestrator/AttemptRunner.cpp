@@ -126,6 +126,14 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         }
 
         _stuckTicks = 0;
+
+        // attempt 状态卫生（B2-5）：每次 attempt（含首个）传送到位后、pull 前，
+        // 先重置 boss 到干净态（复活/清 enrage/清残留战斗/add/回满血），再把全队
+        // bot 回满血/资源。消除「带状态进 attempt」的归因污染（Gluth run34：boss
+        // 继承上一场 enrage、bot 残血入场）。纯编排，不改任何 bot 行为。
+        ResetInstance(ctx);
+        RestoreRoster(ctx);
+
         _stage = Stage::Pull;
         LOG_INFO("raidtest", "AttemptRunner: attempt {} - all {}/{} bot(s) on map {}",
             ctx.attemptSeq, ctx.bots.size(), ctx.botGuids.size(), ctx.scenario->GetMapId());
@@ -302,6 +310,31 @@ bool AttemptRunner::ReviveDead(RunContext& ctx)
     return any;
 }
 
+// attempt 状态卫生（B2-5）：拉怪前把所有 bot 回满血/资源，消除上一场战斗
+// 的残血入场（Gluth run34 归因：全队满血池 23-46k 却被 boss 白字一刀一个，
+// 是「进战斗时血量不满」而非「一刀真能秒满血」）。纯恢复，不改任何 bot 行为。
+void AttemptRunner::RestoreRoster(RunContext& ctx)
+{
+    for (Player* bot : ctx.bots)
+    {
+        if (!bot || !bot->IsInWorld())
+            continue;
+
+        bot->SetHealth(bot->GetMaxHealth());
+        // 资源：法力/能量/怒气/符能/集中（POWER_ 枚举前 7 位；MAX_POWERS 未
+        // 直接引以兼容 fork）。GetMaxPower 对不适用的类型返回 0，SetPower 到
+        // 上限即等价于回满；仅对 bot 实际拥有的资源执行。
+        for (uint8 p = POWER_MANA; p <= POWER_RUNIC_POWER; ++p)
+        {
+            Powers const power = Powers(p);
+            if (bot->GetMaxPower(power) > 0)
+                bot->SetPower(power, bot->GetMaxPower(power));
+        }
+    }
+    LOG_INFO("raidtest", "AttemptRunner: restored {} bot(s) to full health/resources before pull",
+        ctx.bots.size());
+}
+
 Creature* AttemptRunner::FindBossNear(RunContext const& ctx)
 {
     if (ctx.bots.empty() || !ctx.bots[0] || !ctx.scenario)
@@ -392,16 +425,20 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
             continue;
         }
 
-        // 活 boss：清残留 combat/evade 状态并归位（防 wipe 后 pull 超时）。
-        if (creature->IsInCombat() || creature->HasUnitState(UNIT_STATE_EVADE))
-        {
-            creature->CombatStop();
-            creature->GetThreatMgr().ClearAllThreat();
-            creature->ClearUnitState(UNIT_STATE_EVADE);
-            creature->GetMotionMaster()->MoveTargetedHome();
-            LOG_INFO("raidtest", "AttemptRunner: ResetInstance - cleared stuck combat/evade state on "
-                "boss {} (guid {})", creature->GetName(), creature->GetGUID().ToString());
-        }
+        // 活 boss：清残留 combat/evade 状态 + 清 enrage/残留 buff + 回满血并归位。
+        // 覆盖两个脏态来源：① wipe/stuck 后残留在 combat/evade（CanBeginCombat 会
+        // 拒绝 evading 单位，下一 attempt 的 pull confirm 超时）；② 上一场景/上一
+        // attempt 残留的 enrage 或其它加伤 buff（Gluth run34 实测：enrage 在脚本
+        // 22s 前于 931ms 就施放——boss 带着上一场战斗状态进 attempt，白字一刀一个）。
+        // 幂等：干净 boss 的 RemoveAllAuras/SetFullHealth 是 no-op。
+        creature->RemoveAllAuras();
+        creature->SetFullHealth();
+        creature->CombatStop();
+        creature->GetThreatMgr().ClearAllThreat();
+        creature->ClearUnitState(UNIT_STATE_EVADE);
+        creature->GetMotionMaster()->MoveTargetedHome();
+        LOG_INFO("raidtest", "AttemptRunner: ResetInstance - reset boss {} (guid {}) to clean state "
+            "(auras/full-hp/home)", creature->GetName(), creature->GetGUID().ToString());
     }
 
     if (!respawned)

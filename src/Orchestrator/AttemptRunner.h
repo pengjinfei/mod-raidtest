@@ -35,11 +35,16 @@ public:
     // 软中止（run stop / 上线请求）：把当前 attempt 标为 aborted；已 done 则忽略。
     void Abort(std::string const& why);
 
-    // B1-3 跨 attempt 实例重置：SERIALIZE_RESULT 收尾后、下一 attempt 开始前调用。
-    // 让场景 boss 复活 + 清实例保存，使下次 FindBoss 找到活 boss（不再命中
-    // "boss already dead"）。仅影响 raidtest 所在实例。返回 false = 无可重置
-    // （fresh / 非实例地图 / 场景无 boss 信息）。世界线程非阻塞（transition-time）。
+    // 每次 attempt 开始前（传送到位后、pull 前）调用，保证干净起点：
+    //   - ResetInstance：boss 复活 + 清实例保存 + 清残留 combat/enrage/add，使
+    //     下次 FindBoss 找到满血无 buff 的活 boss（首个 attempt 也覆盖——此前只
+    //     在 attempt 之间调用，导致首个 attempt 可能继承上一场残留 enrage/僵尸，
+    //     见 Gluth run34 归因）。仅影响 raidtest 所在实例。返回 false = 无可重置。
+    //   - RestoreRoster：所有在线 bot 回满血/资源（ReviveDead 只复活死者，不恢复
+    //     生者血量——残血入场曾让 boss 白字一刀秒满血池 bot）。
+    // 均世界线程非阻塞（transition-time）。
     static bool ResetInstance(RunContext& ctx);
+    static void RestoreRoster(RunContext& ctx);
 
 private:
     enum class Stage : uint8 { Idle, TeleportAndPosition, Pull, Observing, Done };
