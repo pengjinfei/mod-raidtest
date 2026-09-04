@@ -1,0 +1,18 @@
+# mod-raidtest: naxx-loatheb 场景
+# 验证目标: LoathebPositionAction 已激活（坦克站 mainTankPos / 远程站 rangePos）
+#   —— 验证站位机制是否让 bot 按角色正确分位（而非像 Patchwerk 那样全叠近战）
+# Loatheb entry=16011, 出生 (2909, -3997.41, 274.188)
+# rangePos=(2896.96, -3980.61) 远程位目标; mainTankPos=(2877.57, -3967.00)
+# EngagePoint 选 rangePos 附近: 让远程/坦克从站位目标点开局
+
+[Scenario]
+MapId           = 533
+BossEntry       = 16011
+RosterFile      = "mod-raidtest-roster-naxx-patchwerk.conf"
+GearProfile     = epic
+EngageX         = 2896.96
+EngageY         = -3980.61
+EngageZ         = 274.188
+EngageO         = 0.0
+TimeoutSeconds  = 300
+EngageTrigger   = pull

@@ -4,6 +4,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
+#include "StringFormat.h"
 #include <algorithm>
 
 namespace
@@ -20,6 +21,7 @@ void AttemptObserver::Reset()
     _wipeSamples = 0;
     _timeoutSamples = 0;
     _abortSamples = 0;
+    _lastPositionSampleMs = 0;
 }
 
 void AttemptObserver::ResolveBoss(RunContext& ctx)
@@ -54,6 +56,35 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
         hp.actorEntry = ctx.scenario ? ctx.scenario->GetBossEntry() : 0;
         hp.value = static_cast<int32>(hpPct);           // 0-100
         CombatEventBus::instance().Push(hp);
+    }
+
+    // ---- 位置采样（B2-3）：每 kPositionSampleMs 记录全队 + boss 坐标 ----
+    if (ctx.attemptElapsedMs - _lastPositionSampleMs >= kPositionSampleMs)
+    {
+        _lastPositionSampleMs = ctx.attemptElapsedMs;
+        for (Player* member : ctx.bots)
+        {
+            if (!member || !member->IsInWorld())
+                continue;
+            CombatEvent pos;
+            pos.type = CombatEventType::State;
+            pos.source = member->GetGUID();
+            pos.value = static_cast<int32>(member->GetMapId());
+            pos.detail = Acore::StringFormat("pos:{:.2f},{:.2f},{:.2f}",
+                member->GetPositionX(), member->GetPositionY(), member->GetPositionZ());
+            CombatEventBus::instance().Push(pos);
+        }
+        if (ctx.boss && ctx.boss->IsInWorld())
+        {
+            CombatEvent bossPos;
+            bossPos.type = CombatEventType::State;
+            bossPos.source = ctx.boss->GetGUID();
+            bossPos.actorEntry = ctx.scenario ? ctx.scenario->GetBossEntry() : 0;
+            bossPos.value = static_cast<int32>(ctx.boss->GetMapId());
+            bossPos.detail = Acore::StringFormat("pos:{:.2f},{:.2f},{:.2f}",
+                ctx.boss->GetPositionX(), ctx.boss->GetPositionY(), ctx.boss->GetPositionZ());
+            CombatEventBus::instance().Push(bossPos);
+        }
     }
 
     // ---- 判定（优先级 Kill > Wipe > Timeout > Aborted）----
