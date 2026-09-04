@@ -1,0 +1,17 @@
+# mod-raidtest: naxx-gluth 场景
+# 验证目标: 缺陷②修复效果 —— 小/中型体型 BOSS，近战距离判定不被体型放大
+#   Gluth 出生 (3283.09, -3156.96, 297.788); mainTankPos10=(3278.29,-3162.06)
+#   EngagePoint 选主坦位附近: 让坦克进场即就位，观察近战是否真正走近/贴脸输出
+#   预期: 若缺陷②修复有效 → 近战应站到近战位输出、boss血真实下降（而非 Patchwerk 的 5 码外站桩）
+
+[Scenario]
+MapId           = 533
+BossEntry       = 15932
+RosterFile      = "mod-raidtest-roster-naxx-patchwerk.conf"
+GearProfile     = epic
+EngageX         = 3278.29
+EngageY         = -3162.06
+EngageZ         = 297.788
+EngageO         = 0.0
+TimeoutSeconds  = 300
+EngageTrigger   = pull
