@@ -1,7 +1,8 @@
 # mod-raidtest 自动化团测模块
 RaidTest.Enabled = 1
 RaidTest.AccountPrefix = "raidtest"
-RaidTest.PartySize = 10
+# 每场景起人上限（10 人场景的 roster 蓝图只有 10 槽，RosterManager 会 min 到 10）。
+RaidTest.PartySize = 25
 RaidTest.DefaultAttempts = 5
 RaidTest.AttemptTimeout = 300
 RaidTest.ForceRecreateOnRun = 0

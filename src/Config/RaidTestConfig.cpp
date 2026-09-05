@@ -11,7 +11,7 @@ void RaidTestConfig::Initialize()
 {
     _enabled = sConfigMgr->GetOption<bool>("RaidTest.Enabled", true);
     _accountPrefix = sConfigMgr->GetOption<std::string>("RaidTest.AccountPrefix", "raidtest");
-    _partySize = sConfigMgr->GetOption<uint8>("RaidTest.PartySize", 10);
+    _partySize = sConfigMgr->GetOption<uint8>("RaidTest.PartySize", 25);
     _defaultAttempts = sConfigMgr->GetOption<uint32>("RaidTest.DefaultAttempts", 5);
     _attemptTimeoutSeconds = sConfigMgr->GetOption<uint32>("RaidTest.AttemptTimeout", 300);
     _forceRecreateOnRun = sConfigMgr->GetOption<bool>("RaidTest.ForceRecreateOnRun", false);

@@ -60,6 +60,11 @@ public:
     Position const& GetEngagePoint() const { return _engagePoint; }
     uint32 GetTimeoutSeconds() const { return _timeoutSeconds; }
     EncounterTrigger GetEngageTrigger() const { return _engageTrigger; }
+    // 团队副本难度（RAID_DIFFICULTY_10MAN_NORMAL=0 / 25MAN_NORMAL=1，DBCEnums.h）。
+    // 场景 conf 可选键 RaidDifficulty = 10|25（缺省 10）。影响：①进本前全队
+    // Player::SetRaidDifficulty → 实例按对应难度加载；②roster 实际起人数量（由
+    // RaidTest.PartySize 控制，场景级 diff 不自动改 party size，见 Orchestrator）。
+    uint8 GetRaidDifficulty() const { return _raidDifficulty; }
 
     // 行为钩子（阶段 B 特殊判定/机制用）。Task 7 默认流：用 GetTimeoutSeconds /
     // GetEngageTrigger 构造 Encounter 后调用本钩子做额外定制；默认空实现。
@@ -74,6 +79,7 @@ protected:
     Position _engagePoint{};
     uint32 _timeoutSeconds{0};
     EncounterTrigger _engageTrigger{EncounterTrigger::Pull};
+    uint8 _raidDifficulty{0};   // RAID_DIFFICULTY_10MAN_NORMAL（缺省 10 人）
 };
 
 // 场景注册表（design §6）：name -> Scenario 的进程内目录。

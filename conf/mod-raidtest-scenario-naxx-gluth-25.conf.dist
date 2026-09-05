@@ -1,0 +1,18 @@
+# mod-raidtest: naxx-gluth-25 场景（25 人 Gluth）
+# 验证目标: Gluth 僵尸处理策略是 25 人打法 —— 25 人模式 Decimate 90s、3 坦克
+#   （副坦 index1 可拦僵尸）、猎人左右减速点，三个分支都该激活。
+#   若 25 人下僵尸被处理/血量真实下降 → 坐实"僵尸逻辑只适配 25 人"的缺陷结论
+#   （10 人标准阵容三个分支全落空，见 docs/07 缺陷③）。
+
+[Scenario]
+MapId           = 533
+BossEntry       = 15932
+RosterFile      = "mod-raidtest-roster-naxx-25.conf"
+RaidDifficulty  = 25
+GearProfile     = epic
+EngageX         = 3278.29
+EngageY         = -3162.06
+EngageZ         = 297.788
+EngageO         = 0.0
+TimeoutSeconds  = 300
+EngageTrigger   = pull

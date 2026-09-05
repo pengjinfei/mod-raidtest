@@ -1,0 +1,180 @@
+# mod-raidtest: NAXX 25 人 roster（Gluth 25 人验证用）
+# 要点：3 坦克（主坦 + 2 血DK 副坦 → IsAssistTankOfIndex(bot,1) 存在，可触发
+# Gluth 拦僵尸分支）；6 治疗；16 DPS 含 2 射击猎（25 人 Gluth 需要猎人在左右
+# 减速点放冰霜陷阱）。装备留空走 BIS 最高档兜底（B1-2）。
+# 槽位 0-24；RaidTest.PartySize=25 时 EnsureRoster 全建。
+
+[Roster.0]                    # 主坦（战士）
+Name            = "P25-Tank"
+Race            = "human"
+Class           = "warrior"
+Role            = "tank"
+TalentSpec      = "warrior_tank"
+
+[Roster.1]                    # 副坦（血DK，index 0）
+Name            = "P25-DK1"
+Race            = "human"
+Class           = "deathknight"
+Role            = "tank"
+TalentSpec      = "dk_blood"
+
+[Roster.2]                    # 副坦（血DK，index 1 → 拦僵尸）
+Name            = "P25-DK2"
+Race            = "human"
+Class           = "deathknight"
+Role            = "tank"
+TalentSpec      = "dk_blood"
+
+[Roster.3]                    # 治疗（神牧）
+Name            = "P25-Priest1"
+Race            = "dwarf"
+Class           = "priest"
+Role            = "heal"
+TalentSpec      = "priest_holy"
+
+[Roster.4]                    # 治疗（恢复德）
+Name            = "P25-Druid1"
+Race            = "nightelf"
+Class           = "druid"
+Role            = "heal"
+TalentSpec      = "druid_resto"
+
+[Roster.5]                    # 治疗（恢复萨）
+Name            = "P25-Shaman1"
+Race            = "draenei"
+Class           = "shaman"
+Role            = "heal"
+TalentSpec      = "shaman_resto"
+
+[Roster.6]                    # 治疗（神牧）
+Name            = "P25-Priest2"
+Race            = "dwarf"
+Class           = "priest"
+Role            = "heal"
+TalentSpec      = "priest_holy"
+
+[Roster.7]                    # 治疗（奶骑）
+Name            = "P25-Pally1"
+Race            = "bloodelf"
+Class           = "paladin"
+Role            = "heal"
+TalentSpec      = "paladin_holy"
+
+[Roster.8]                    # 治疗（恢复德）
+Name            = "P25-Druid2"
+Race            = "nightelf"
+Class           = "druid"
+Role            = "heal"
+TalentSpec      = "druid_resto"
+
+[Roster.9]                    # DPS 射击猎（减速/点名僵尸）
+Name            = "P25-Hunter1"
+Race            = "nightelf"
+Class           = "hunter"
+Role            = "dps"
+TalentSpec      = "hunter_marksman"
+
+[Roster.10]                   # DPS 射击猎
+Name            = "P25-Hunter2"
+Race            = "nightelf"
+Class           = "hunter"
+Role            = "dps"
+TalentSpec      = "hunter_marksman"
+
+[Roster.11]                   # DPS 火法
+Name            = "P25-Mage1"
+Race            = "human"
+Class           = "mage"
+Role            = "dps"
+TalentSpec      = "mage_fire"
+
+[Roster.12]                   # DPS 火法
+Name            = "P25-Mage2"
+Race            = "human"
+Class           = "mage"
+Role            = "dps"
+TalentSpec      = "mage_fire"
+
+[Roster.13]                   # DPS 毁灭术
+Name            = "P25-Warlock1"
+Race            = "gnome"
+Class           = "warlock"
+Role            = "dps"
+TalentSpec      = "warlock_destroy"
+
+[Roster.14]                   # DPS 毁灭术
+Name            = "P25-Warlock2"
+Race            = "gnome"
+Class           = "warlock"
+Role            = "dps"
+TalentSpec      = "warlock_destroy"
+
+[Roster.15]                   # DPS 战斗贼
+Name            = "P25-Rogue1"
+Race            = "human"
+Class           = "rogue"
+Role            = "dps"
+TalentSpec      = "rogue_combat"
+
+[Roster.16]                   # DPS 战斗贼
+Name            = "P25-Rogue2"
+Race            = "human"
+Class           = "rogue"
+Role            = "dps"
+TalentSpec      = "rogue_combat"
+
+[Roster.17]                   # DPS 惩戒骑
+Name            = "P25-RetPally"
+Race            = "bloodelf"
+Class           = "paladin"
+Role            = "dps"
+TalentSpec      = "paladin_retri"
+
+[Roster.18]                   # DPS 元素萨
+Name            = "P25-ElemSham"
+Race            = "draenei"
+Class           = "shaman"
+Role            = "dps"
+TalentSpec      = "shaman_elemental"
+
+[Roster.19]                   # DPS 平衡德
+Name            = "P25-Boomkin"
+Race            = "nightelf"
+Class           = "druid"
+Role            = "dps"
+TalentSpec      = "druid_balance"
+
+[Roster.20]                   # DPS 暗牧
+Name            = "P25-Shadow"
+Race            = "dwarf"
+Class           = "priest"
+Role            = "dps"
+TalentSpec      = "priest_shadow"
+
+[Roster.21]                   # DPS 冰 DK
+Name            = "P25-FrostDK"
+Race            = "human"
+Class           = "deathknight"
+Role            = "dps"
+TalentSpec      = "dk_frost"
+
+[Roster.22]                   # DPS 邪 DK
+Name            = "P25-UnholyDK"
+Race            = "human"
+Class           = "deathknight"
+Role            = "dps"
+TalentSpec      = "dk_unholy"
+
+[Roster.23]                   # DPS 武器战
+Name            = "P25-ArmsWar"
+Race            = "human"
+Class           = "warrior"
+Role            = "dps"
+TalentSpec      = "warrior_arms"
+
+[Roster.24]                   # DPS 生存猎
+Name            = "P25-SurvHunter"
+Race            = "nightelf"
+Class           = "hunter"
+Role            = "dps"
+TalentSpec      = "hunter_survival"

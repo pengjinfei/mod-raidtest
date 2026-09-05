@@ -1,6 +1,7 @@
 #include "RaidTestOrchestrator.h"
 #include "CombatEventBus.h"
 #include "Config.h"
+#include "DBCEnums.h"          // Difficulty / RAID_DIFFICULTY_*
 #include "DatabaseEnv.h"
 #include "Group.h"
 #include "Log.h"
@@ -347,6 +348,21 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
     if (!RosterLogin::FormGroup(_ctx.bots))
         LOG_WARN("raidtest", "Orchestrator: FormGroup failed for {} bot(s) - continuing "
             "(best effort)", _ctx.bots.size());
+
+    // 25 人场景：组队后、传送前给全队设 raid 难度（缺省 10 人是 0，SetRaidDifficulty
+    // 同样安全）。必须在 TeleportToRaid 前设置——实例难度在玩家进本时按 m_raidDifficulty
+    // 决定（Map.cpp 的 GetDifficulty(isRaid)）。场景 conf RaidDifficulty = 25 时生效。
+    {
+        uint8 const diff = _scenario ? _scenario->GetRaidDifficulty() : 0;
+        for (Player* bot : _ctx.bots)
+        {
+            if (bot)
+                bot->SetRaidDifficulty(Difficulty(diff));
+        }
+        if (diff != 0)
+            LOG_INFO("raidtest", "Orchestrator: set raid difficulty {} for {} bot(s) (scenario '{}')",
+                uint32(diff), _ctx.bots.size(), _scenarioKey);
+    }
 
     // B1-2 方案 C：登录齐后按蓝图槽位逐 bot 装配（蓝图显式件 + 缺省槽 BIS 最高档 +
     // 工厂兜底）。一次性登录动作（非 tick 路径），与 StartRun 的 ROSTER_ENSURE 同步段

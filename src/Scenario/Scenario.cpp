@@ -266,6 +266,26 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 failed = true;
             }
         }
+        else if (key == "RaidDifficulty")
+        {
+            uint32 diff = 0;
+            if (!ParseUint32(value, diff))
+            {
+                LOG_ERROR("raidtest", "Scenario: non-numeric RaidDifficulty '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
+                failed = true;
+            }
+            else if (diff == 10)
+                _raidDifficulty = 0;   // RAID_DIFFICULTY_10MAN_NORMAL
+            else if (diff == 25)
+                _raidDifficulty = 1;   // RAID_DIFFICULTY_25MAN_NORMAL
+            else
+            {
+                LOG_ERROR("raidtest", "Scenario: unsupported RaidDifficulty '{}' (expected 10 or 25) "
+                    "at line {} in '{}'", value, lineNumber, filePath);
+                failed = true;
+            }
+        }
         else
         {
             LOG_WARN("raidtest", "Scenario: unknown key '{}' ignored (line {} in '{}')",
