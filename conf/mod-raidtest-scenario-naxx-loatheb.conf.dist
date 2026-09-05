@@ -2,16 +2,18 @@
 # 验证目标: LoathebPositionAction 已激活（坦克站 mainTankPos / 远程站 rangePos）
 #   —— 验证站位机制是否让 bot 按角色正确分位（而非像 Patchwerk 那样全叠近战）
 # Loatheb entry=16011, 出生 (2909, -3997.41, 274.188)
-# rangePos=(2896.96, -3980.61) 远程位目标; mainTankPos=(2877.57, -3967.00)
-# EngagePoint 选 rangePos 附近: 让远程/坦克从站位目标点开局
+# B2-9 调整: engage 点从 rangePos(2896,-3980) 改到出生点附近 —— 原 engage 距出生点
+#   26 码，坦克被拉到 mainTankPos(2877,-3967) 距出生点 43.7 码，接近 boss_loatheb.cpp
+#   IsInRoom() 的 50 码脱战阈值（run52: boss 打到 74% 后被拉远 EnterEvadeMode 回满血）。
+#   改到出生点旁让团队开局就近接怪、减少 boss 移动。
 
 [Scenario]
 MapId           = 533
 BossEntry       = 16011
 RosterFile      = "mod-raidtest-roster-naxx-patchwerk.conf"
 GearProfile     = epic
-EngageX         = 2896.96
-EngageY         = -3980.61
+EngageX         = 2909.0
+EngageY         = -3991.0
 EngageZ         = 274.188
 EngageO         = 0.0
 TimeoutSeconds  = 300
