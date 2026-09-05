@@ -370,6 +370,16 @@ CreatedChar RosterBuilder::CreateCharacter(RosterSlot const& slot, std::string c
     }
     botFactory.InitClassSpells();
 
+    // B2-7：补学全量职业法术。InitClassSpells 只给每个职业 2-6 个 rank1 法术
+    // （如法师只有火球133/寒冰箭168、牧师只有惩击585/次级治疗2050），远不足以打
+    // NAXX 满级 raid（实测 Loatheb run48：法师全场只用 rank1 火球、牧师只会
+    // 次级治疗，团队 74s 只打 173k）。InitAvailableSpells 遍历训练师把该职业全部
+    // 可用法术学到（正常 80 级角色 300+ 法术），补上后 bot 才有完整输出/治疗循环。
+    // 注意：InitAvailableSpells 是 PlayerbotFactory 的成员方法（非 static），复用
+    // 上面同一 botFactory 实例即可；它内部用 CastSpell 学习，世界线程外（建号流程）
+    // 调用安全。
+    botFactory.InitAvailableSpells();
+
     // ---- 5) 落库 + 角色缓存 ----
     player->SaveToDB(true, false);
 
