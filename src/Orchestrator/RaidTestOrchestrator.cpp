@@ -349,19 +349,29 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
         LOG_WARN("raidtest", "Orchestrator: FormGroup failed for {} bot(s) - continuing "
             "(best effort)", _ctx.bots.size());
 
-    // 25 人场景：组队后、传送前给全队设 raid 难度（缺省 10 人是 0，SetRaidDifficulty
-    // 同样安全）。必须在 TeleportToRaid 前设置——实例难度在玩家进本时按 m_raidDifficulty
-    // 决定（Map.cpp 的 GetDifficulty(isRaid)）。场景 conf RaidDifficulty = 25 时生效。
+    // 25 人场景：组队后、传送前给全队设 raid 难度（缺省 10 人是 0，同样安全）。
+    // 必须在 TeleportToRaid 前设置——进本创建实例时难度取「组的难度」而非玩家个人：
+    // MapInstanced::CreateInstanceForPlayer 用 player->GetGroup() ? group->GetDifficulty()
+    // : player->GetDifficulty()（MapInstanced.cpp:198）。因此必须调 Group::SetRaidDifficulty
+    // （它会同时广播给所有成员，个人难度也同步），否则组难度留 10 人默认，25 人场景实际
+    // 进的是 10 人实例（run42 实测：boss 施放 10 人 ID 的 28371 而非 25 人映射 54427、
+    //   白字伤害只比 10 人高 25%、24/25 bot 拉怪失败）。
     {
         uint8 const diff = _scenario ? _scenario->GetRaidDifficulty() : 0;
-        for (Player* bot : _ctx.bots)
+        Player* leader = _ctx.bots.empty() ? nullptr : _ctx.bots[0];
+        if (diff != 0 && leader)
         {
-            if (bot)
-                bot->SetRaidDifficulty(Difficulty(diff));
+            if (Group* group = leader->GetGroup())
+            {
+                group->SetRaidDifficulty(Difficulty(diff));
+                LOG_INFO("raidtest", "Orchestrator: set raid difficulty {} on group {} ({} member(s), "
+                    "scenario '{}')", uint32(diff), group->GetGUID().ToString(), _ctx.bots.size(),
+                    _scenarioKey);
+            }
+            else
+                LOG_WARN("raidtest", "Orchestrator: no group on leader {} - raid difficulty {} "
+                    "not applied (fallback: per-bot)", leader->GetName(), uint32(diff));
         }
-        if (diff != 0)
-            LOG_INFO("raidtest", "Orchestrator: set raid difficulty {} for {} bot(s) (scenario '{}')",
-                uint32(diff), _ctx.bots.size(), _scenarioKey);
     }
 
     // B1-2 方案 C：登录齐后按蓝图槽位逐 bot 装配（蓝图显式件 + 缺省槽 BIS 最高档 +
