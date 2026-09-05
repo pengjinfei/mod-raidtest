@@ -108,10 +108,10 @@ Role            = "dps"
 TalentSpec      = "paladin_retri"
 Professions     = "blacksmithing,mining"
 
-[Roster.9]                    # DPS 冰 DK
+[Roster.9]                    # 副坦 血 DK（Gluth 拦僵尸/分摊仇恨；血DK恒判IsTank）
 Name            = "Patch-DK"
 Race            = "human"
 Class           = "deathknight"
-Role            = "dps"
-TalentSpec      = "dk_frost"
+Role            = "tank"
+TalentSpec      = "dk_blood"
 Professions     = "blacksmithing,mining"
