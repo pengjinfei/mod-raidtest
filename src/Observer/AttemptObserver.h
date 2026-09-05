@@ -12,7 +12,9 @@
 //     → Kill；单凭 boss 指针消失（evade/reset/瞬时失效）不得判 kill；
 //   - 全团 isDead() → Wipe；
 //   - attemptElapsed >= attemptTimeoutMs → Timeout；
-//   - boss 仍在场但脱离战斗、且全团存活（pull 未确认 / 战斗中 reset）→ Aborted。
+//   - boss 仍在场但脱离战斗、且全团仍存活（无人阵亡，pull 未落地 / 战前卡壳）
+//     → Aborted。B2-6：有人阵亡后 boss 脱战不再判 aborted（战斗已实质发生），
+//     终态让给 wipe/timeout。
 // 观察期间对 boss 血量逐 tick 采样：更新 RunContext::bossHpMin，并向
 // CombatEventBus 推送 BossHp 事件 —— Task 7 是 BossHp 事件的唯一生产方。
 // B2-3 起，每 kPositionSampleMs 再推一组 State(pos:x,y,z) 事件（全队 + boss），

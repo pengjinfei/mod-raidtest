@@ -111,6 +111,13 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     {
         return !bot || bot->isDead();
     });
+    // B2-6：anyDead = 已有至少一个 bot 阵亡（战斗已实质发生）。stuck-abort 判定
+    // 用它区分「战前卡壳（无人伤亡）」与「战斗中 boss 脱战（有人阵亡）」，后者不
+    // 再 abort，把全灭交给 wipe 分支。与 allDead 同源，仅量词不同。
+    bool const anyDead = std::any_of(ctx.bots.begin(), ctx.bots.end(), [](Player* bot)
+    {
+        return bot && bot->isDead();
+    });
     if (allDead)
     {
         if (++_wipeSamples >= kSampleConfirmTicks)
@@ -137,13 +144,17 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
 
     // 战前/战中卡壳：boss 在场但脱离战斗、且全团存活（pull 未落地 / 战斗中 reset
     // 回满血不再接战）→ aborted（不是 wipe，避免把流程 bug 记成战斗失败）。
+    // B2-6 修正：原实现用「!allDead（还有人活）」当「全团存活」，战斗已有 bot 死亡时
+    // boss 脱战仍误判 aborted（run36：9 死、坦克独活 19s 后 boss 脱战，abort 抢先于
+    // wipe——全灭事实被吞）。改为「!anyDead（无人死亡）」——一旦有人阵亡即视为战斗已
+    // 实质发生，boss 脱战不再判 aborted，把终态让给 wipe（全员死亡）/ timeout。
     bool const bossInCombat = ctx.boss && ctx.boss->IsInCombat();
-    if (bossKnown && !bossInCombat && !allDead)
+    if (bossKnown && !bossInCombat && !anyDead)
     {
         if (++_abortSamples >= kStuckAbortTicks)
         {
             LOG_WARN("raidtest", "AttemptObserver: boss lost combat state (hp={}%, {} consecutive sample(s)) - "
-                "aborted (stuck)", hpPct, _abortSamples);
+                "aborted (stuck, no deaths yet)", hpPct, _abortSamples);
             ctx.notes = "boss lost combat state (stuck/reset)";
             return AttemptResult::Aborted;
         }
