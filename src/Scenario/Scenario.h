@@ -70,11 +70,18 @@ public:
     uint8 GetPartySize() const { return _partySize; }
     std::string const& GetStrategy() const { return _strategy; }
 
+    std::vector<uint32> const& GetPrerequisiteSpawns() const { return _prerequisiteSpawns; }
+    Position const& GetPreparationPoint() const { return _preparationPoint; }
+    uint32 GetPrerequisiteTimeoutSeconds() const { return _prerequisiteTimeoutSeconds; }
+
     // 行为钩子（阶段 B 特殊判定/机制用）。Task 7 默认流：用 GetTimeoutSeconds /
     // GetEngageTrigger 构造 Encounter 后调用本钩子做额外定制；默认空实现。
     virtual void ApplyEncounterCustomizations(Encounter& /*encounter*/) const {}
 
 protected:
+    std::vector<uint32> _prerequisiteSpawns;
+    Position _preparationPoint{};
+    uint32 _prerequisiteTimeoutSeconds{180};
     std::string _name;
     uint32 _mapId{0};
     uint32 _bossEntry{0};

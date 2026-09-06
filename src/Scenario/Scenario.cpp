@@ -1,5 +1,7 @@
 #include "Scenario.h"
 #include "Config.h"
+#include "Tokenize.h"
+#include <set>
 #include "Log.h"
 #include "StringConvert.h"   // Acore::StringTo
 #include "StringFormat.h"    // Acore::String::Trim
@@ -109,6 +111,8 @@ bool Scenario::LoadFromFile(std::string const& filePath)
 
     bool inScenarioSection = false;
     bool failed = false;
+    float preparation[4]{};
+    uint32 preparationMask = 0;
     float engageX = 0.0f, engageY = 0.0f, engageZ = 0.0f, engageO = 0.0f;
     std::string line;
     uint32 lineNumber = 0;
@@ -266,6 +270,31 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 failed = true;
             }
         }
+        else if (key == "PrerequisiteSpawns")
+        {
+            std::set<uint32> seen;
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                uint32 spawn = 0;
+                if (!ParseUint32(Acore::String::Trim(std::string(token)), spawn) || !spawn || !seen.insert(spawn).second)
+                    failed = true;
+                else
+                    _prerequisiteSpawns.push_back(spawn);
+            }
+        }
+        else if (key == "PrerequisiteTimeoutSeconds")
+        {
+            if (!ParseUint32(value, _prerequisiteTimeoutSeconds) || !_prerequisiteTimeoutSeconds ||
+                _prerequisiteTimeoutSeconds > 1800)
+                failed = true;
+        }
+        else if (key == "PreparationX" || key == "PreparationY" || key == "PreparationZ" || key == "PreparationO")
+        {
+            uint32 const index = key.back() == 'X' ? 0 : key.back() == 'Y' ? 1 : key.back() == 'Z' ? 2 : 3;
+            if (!ParseFloat(value, preparation[index]))
+                failed = true;
+            preparationMask |= 1u << index;
+        }
         else if (key == "PartySize")
         {
             uint32 size = 0;
@@ -327,6 +356,16 @@ bool Scenario::LoadFromFile(std::string const& filePath)
 
     // 坐标分量都解析完才落盘（键顺序任意）；Relocate 会归一化朝向。
     _engagePoint.Relocate(engageX, engageY, engageZ, engageO);
+    _preparationPoint = _engagePoint;
+    if (!_prerequisiteSpawns.empty())
+    {
+        if ((preparationMask & 7) != 7 || !_dungeonScenario)
+        {
+            LOG_ERROR("raidtest", "Scenario: prerequisite clearing requires dungeon mode and PreparationX/Y/Z");
+            failed = true;
+        }
+        _preparationPoint.Relocate(preparation[0], preparation[1], preparation[2], preparation[3]);
+    }
 
     LOG_INFO("raidtest", "Scenario: loaded '{}' from '{}' (map={}, boss={}, engage=({}, {}, {}, {}), "
         "timeout={}s, trigger={}, gear={}, roster='{}')",

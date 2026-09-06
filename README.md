@@ -83,3 +83,24 @@ Snapshots include actual effective cheat masks, defense skill and supply counts.
 required supplies block a later attempt; this is not automatic unlimited combat replenishment.
 The new fixture requires `AiPlayerbot.BotCheats = ""` in the actual runtime configuration;
 build/install may overwrite this setting, so check it again before starting the server.
+
+### Prerequisite clearing and scoped reset
+
+Dungeon scenarios may declare `PrerequisiteSpawns` (comma-separated DB creature spawn IDs),
+`PreparationX/Y/Z/O`, and `PrerequisiteTimeoutSeconds` (default 180, maximum 1800).
+The roster first stages at the preparation point. Each attempt restores the boss's original
+DB spawn(s) and these declared spawns in the current instance, and writes a
+`raidtest-scenes/run-N-attempt-M.tsv` snapshot. Other instance spawns are outside the reset scope.
+Invalid or incomplete restoration blocks the attempt.
+
+Bots clear the prerequisites through their normal combat AI. All declared units must produce
+real death events; disappearance is not completion. Early boss engagement blocks the boss trial.
+The roster then has up to 120 seconds to recover naturally: everyone alive, out of combat,
+and at least 90% health and mana. The framework positions the out-of-combat party at the
+boss engage point and verifies that no prerequisite has respawned before pulling.
+This is staged boss testing, not autonomous whole-dungeon navigation.
+
+State events record `prerequisites_start`, `prerequisites_complete`, `recovery_complete`,
+`boss_start`, and each member's boss-start resources. Overall duration includes preparation;
+the boss timeout applies only after boss start. Native boss AI reset handles its owned summons;
+arbitrary other summons, doors, and multi-boss progression are not covered.

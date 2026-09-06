@@ -2,6 +2,10 @@
 #include "CombatEventBus.h"
 #include "CombatTrigger.h"
 #include "Creature.h"
+#include "CreatureAI.h"
+#include <filesystem>
+#include <fstream>
+#include <set>
 #include "DatabaseEnv.h"
 #include "InstanceSaveMgr.h"
 #include "Group.h"
@@ -80,6 +84,9 @@ char const* AttemptRunner::StageName() const
     case Stage::Idle:               return "idle";
     case Stage::TeleportAndPosition: return "teleport";
     case Stage::Pull:               return "pull";
+    case Stage::Prerequisites:      return "prerequisites";
+    case Stage::Recovery:           return "recovery";
+    case Stage::BossPosition:       return "boss_position";
     case Stage::Observing:          return "observing";
     case Stage::Done:               return "done";
     }
@@ -108,6 +115,9 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _stage = Stage::TeleportAndPosition;
     _pullStep = PullStep::FindBoss;
     _teleportSent = false;
+    _prerequisiteGuids.clear();
+    _preBossElapsed = _preparationElapsed = _recoveryElapsed = 0;
+    _prerequisitePullSent = false;
     _stuckTicks = 0;
     _rowResolveTicks = 0;
     _confirmTicks = 0;
@@ -152,7 +162,7 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         {
             ReviveDead(ctx);
             bool const ok = RosterLogin::TeleportToRaid(ctx.bots, ctx.scenario->GetMapId(),
-                                                        ctx.scenario->GetEngagePoint());
+                                                        ctx.scenario->GetPreparationPoint());
             _teleportSent = true;
             _stuckTicks = 0;
             if (!ok)
@@ -211,7 +221,11 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             return;
         }
 
-        ResetInstance(ctx);
+        if (!ResetInstance(ctx))
+        {
+            Abort("scene_invalid: reset scope could not be restored");
+            return;
+        }
         RestoreRoster(ctx);
 
         _stage = Stage::Pull;
@@ -314,34 +328,35 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             _observer.Reset();
             ctx.attemptElapsedMs = 0;
 
-            Player* leader = ctx.bots.empty() ? nullptr : ctx.bots[0];
-            // 方案 b（B1-Task1）：全 roster 广播拉怪 —— 每个 bot 都经 AttackAction::
-            // Attack(boss) 拿到 current target 并切入自身 COMBAT 引擎（不只 leader）。
-            if (!CombatTrigger::BeginPullForAll(ctx.bots, ctx.boss))
+            if (!ctx.scenario->GetPrerequisiteSpawns().empty())
             {
-                _result = AttemptResult::Aborted;
-                _notes = "pull failed (boss not engaged)";
-                _stage = Stage::Done;
-                LOG_WARN("raidtest", "AttemptRunner: attempt {} aborted - BeginPullForAll failed (leader {})",
-                    ctx.attemptSeq, leader ? leader->GetName() : "?");
+                Map* map = ctx.bots.front()->GetMap();
+                for (uint32 spawn : ctx.scenario->GetPrerequisiteSpawns())
+                {
+                    Creature* unit = nullptr;
+                    auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawn);
+                    for (auto it = bounds.first; it != bounds.second; ++it)
+                        if (it->second && it->second->IsAlive())
+                            unit = it->second;
+                    if (!unit || unit->IsInCombat())
+                    {
+                        Abort("prerequisite_invalid: missing or already engaged spawn");
+                        return;
+                    }
+                    _prerequisiteGuids.push_back(unit->GetGUID());
+                    CombatEventBus::instance().TrackUnit(unit->GetGUID());
+                    CombatEvent state;
+                    state.type = CombatEventType::State;
+                    state.source = unit->GetGUID();
+                    state.actorEntry = unit->GetEntry();
+                    state.detail = "prerequisite_spawn=" + std::to_string(spawn);
+                    CombatEventBus::instance().Push(state);
+                }
+                RecordPhase("prerequisites_start", 0);
+                _stage = Stage::Prerequisites;
                 return;
             }
-
-            // 拉怪上下文从此刻起视为「钉」在 leader 上，所有离开 Pull 的终态都要
-            // 清掉（ConfirmAndEnterObserving 的 ClearHeldPullContext / 确认超时路径）。
-            _pullContextHeld = true;
-            _pullLeader = leader ? leader->GetGUID() : ObjectGuid();
-
-            // SetInCombatWith 已同步置位战斗标旗 → 正常情形本 tick 立即确认；退化
-            // 情形（如 CanBeginCombat 边界拒绝）才进入 AwaitCombatConfirm 跨 tick 泵。
-            if (CombatTrigger::ConfirmBossInCombat(ctx.boss))
-            {
-                ConfirmAndEnterObserving(ctx);
-                return;
-            }
-
-            _confirmTicks = 1;   // 本 tick 已检查过一次（退化起点）
-            _pullStep = PullStep::AwaitCombatConfirm;
+            StartBossPull(ctx);
             return;
         }
 
@@ -373,9 +388,84 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         return;
     }
 
+    case Stage::Prerequisites:
+        TickPrerequisites(ctx, diff);
+        return;
+
+    case Stage::Recovery:
+    {
+        ctx.attemptElapsedMs += diff;
+        _recoveryElapsed += diff;
+        ResolveBoss(ctx);
+        if (!ctx.boss || ctx.boss->IsInCombat())
+        {
+            Abort("prerequisite_invalid: boss entered combat during recovery");
+            return;
+        }
+        bool ready = true;
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot || !bot->IsAlive())
+            {
+                Abort("prerequisite_failed: roster casualty before boss pull");
+                return;
+            }
+            if (bot->IsInCombat() || bot->GetHealthPct() < 90.0f ||
+                (bot->GetMaxPower(POWER_MANA) && bot->GetPowerPct(POWER_MANA) < 90.0f))
+            {
+                ready = false;
+                if (_recoveryElapsed / 15000 != (_recoveryElapsed - diff) / 15000)
+                {
+                    CombatEvent state;
+                    state.type = CombatEventType::State;
+                    state.source = bot->GetGUID();
+                    state.detail = "recovery_wait:combat=" + std::to_string(bot->IsInCombat()) +
+                        " hp=" + std::to_string(bot->GetHealth()) + "/" + std::to_string(bot->GetMaxHealth()) +
+                        " mana=" + std::to_string(bot->GetPower(POWER_MANA)) + "/" +
+                        std::to_string(bot->GetMaxPower(POWER_MANA));
+                    CombatEventBus::instance().Push(state);
+                    LOG_INFO("raidtest", "AttemptRunner: {} {}", bot->GetName(), state.detail);
+                }
+            }
+        }
+        if (!ready)
+        {
+            if (_recoveryElapsed >= 120000)
+                Abort("prerequisite_failed: natural recovery timeout");
+            return;
+        }
+        RecordPhase("recovery_complete", _recoveryElapsed);
+        if (!RosterLogin::TeleportToRaid(ctx.bots, ctx.scenario->GetMapId(), ctx.scenario->GetEngagePoint()))
+        {
+            Abort("prerequisite_failed: boss positioning failed");
+            return;
+        }
+        _stage = Stage::BossPosition;
+        return;
+    }
+
+    case Stage::BossPosition:
+        RosterLogin::PumpTeleportAcks(ctx.bots);
+        if (!RosterLogin::AllOnMapNow(ctx.bots, ctx.scenario->GetMapId()))
+        {
+            if (++_stuckTicks >= kTeleportStageTicks)
+                Abort("prerequisite_failed: boss positioning timeout");
+            return;
+        }
+        if (!ValidateRaid(ctx, "before_pull"))
+        {
+            Abort("raid_invalid: group lost after prerequisite clearing");
+            return;
+        }
+        ResolveBoss(ctx);
+        StartBossPull(ctx);
+        return;
+
     case Stage::Observing:
     {
+        ctx.attemptElapsedMs -= _preBossElapsed;
         AttemptResult const r = _observer.Tick(ctx, diff);
+        ctx.attemptElapsedMs += _preBossElapsed;
         if (r != AttemptResult::Ongoing)
         {
             _result = r;
@@ -475,10 +565,28 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
     // Loading the original DB spawn also avoids Respawn(true)'s deferred queue,
     // whose linked-respawn/group gates can leave a completed encounter absent.
     uint32 const bossEntry = ctx.scenario->GetBossEntry();
+    std::set<uint32> const prerequisites(ctx.scenario->GetPrerequisiteSpawns().begin(),
+        ctx.scenario->GetPrerequisiteSpawns().end());
+    for (uint32 spawn : prerequisites)
+    {
+        auto const* data = sObjectMgr->GetCreatureData(spawn);
+        if (!data || data->mapid != map->GetId() || data->id == bossEntry ||
+            !(data->spawnMask & (1u << map->GetSpawnMode())))
+            return false;
+    }
+    std::error_code error;
+    std::filesystem::create_directories("raidtest-scenes", error);
+    std::ofstream snapshot("raidtest-scenes/run-" + std::to_string(ctx.runId) + "-attempt-" +
+        std::to_string(ctx.attemptSeq) + ".tsv");
+    if (error || !snapshot)
+        return false;
+    snapshot << "spawn\tentry\tguid\thealth\tmax_health\tcombat\tmap\tinstance\tdifficulty\tx\ty\tz\n";
     bool found = false;
+    bool valid = true;
+    uint32 restoredPrerequisites = 0;
     for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
     {
-        if (data.mapid != map->GetId() || data.id != bossEntry ||
+        if (data.mapid != map->GetId() || (data.id != bossEntry && !prerequisites.count(spawnId)) ||
             !(data.spawnMask & (1u << map->GetSpawnMode())))
             continue;
         map->LoadGrid(data.posX, data.posY);
@@ -501,25 +609,44 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
                 delete restored;
                 LOG_ERROR("raidtest", "AttemptRunner: failed to restore boss spawn {} in instance {}",
                     spawnId, map->GetInstanceId());
+                valid = false;
                 continue;
             }
             alive = restored;
             LOG_INFO("raidtest", "AttemptRunner: restored original boss spawn {} in instance {} guid {}",
                 spawnId, map->GetInstanceId(), alive->GetGUID().ToString());
         }
+        if (alive->AI())
+            alive->AI()->EnterEvadeMode();
         alive->RemoveAllAuras();
         alive->SetFullHealth();
         alive->CombatStop();
         alive->GetThreatMgr().ClearAllThreat();
         alive->ClearUnitState(UNIT_STATE_EVADE);
         alive->GetMotionMaster()->MoveTargetedHome();
+        if (!prerequisites.empty())
+        {
+            alive->NearTeleportTo(data.posX, data.posY, data.posZ, data.orientation);
+            if (alive->AI())
+                alive->AI()->Reset();
+        }
+        if (prerequisites.count(spawnId))
+            ++restoredPrerequisites;
+        snapshot << spawnId << '\t' << data.id << '\t' << alive->GetGUID().ToString() << '\t'
+            << alive->GetHealth() << '\t' << alive->GetMaxHealth() << '\t' << alive->IsInCombat() << '\t'
+            << map->GetId() << '\t' << map->GetInstanceId() << '\t' << uint32(map->GetDifficulty()) << '\t'
+            << alive->GetPositionX() << '\t' << alive->GetPositionY() << '\t' << alive->GetPositionZ() << '\n';
+        if (!alive->IsAlive() || alive->IsInCombat() || alive->GetHealth() != alive->GetMaxHealth())
+            valid = false;
         LOG_INFO("raidtest", "AttemptRunner: clean boss spawn {} in instance {} guid {}",
             spawnId, map->GetInstanceId(), alive->GetGUID().ToString());
-        found = true;
+        if (data.id == bossEntry)
+            found = true;
     }
     ctx.bossGuid.Clear();
     ctx.boss = nullptr;
-    return found;
+    snapshot.flush();
+    return found && valid && restoredPrerequisites == prerequisites.size() && bool(snapshot);
 }
 
 void AttemptRunner::ResolveBoss(RunContext& ctx)
@@ -561,4 +688,136 @@ void AttemptRunner::ClearHeldPullContext()
         CombatTrigger::EndPullContext(leader);
     _pullContextHeld = false;
     _pullLeader.Clear();
+}
+void AttemptRunner::RecordPhase(char const* phase, uint32 elapsed)
+{
+    CombatEvent event;
+    event.type = CombatEventType::State;
+    event.value = int32(elapsed);
+    event.detail = std::string("phase=") + phase;
+    CombatEventBus::instance().Push(event);
+    LOG_INFO("raidtest", "AttemptRunner: phase={} elapsed={}ms", phase, elapsed);
+}
+
+bool AttemptRunner::StartBossPull(RunContext& ctx)
+{
+    if (!ctx.boss || !ctx.boss->IsAlive())
+    {
+        Abort("boss_invalid: missing or dead before pull");
+        return false;
+    }
+    if (!_prerequisiteGuids.empty())
+    {
+        for (ObjectGuid const& guid : _prerequisiteGuids)
+            if (!CombatEventBus::instance().DeathSeen(guid))
+            {
+                Abort("prerequisite_invalid: missing death evidence before boss pull");
+                return false;
+            }
+    }
+    for (uint32 spawn : ctx.scenario->GetPrerequisiteSpawns())
+    {
+        Map* map = ctx.bots.front()->GetMap();
+        auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawn);
+        for (auto it = bounds.first; it != bounds.second; ++it)
+            if (it->second && it->second->IsAlive())
+            {
+                Abort("prerequisite_invalid: cleared spawn alive again before boss pull");
+                return false;
+            }
+    }
+    _preBossElapsed = ctx.attemptElapsedMs;
+    RecordPhase("boss_start", _preBossElapsed);
+    for (Player* bot : ctx.bots)
+    {
+        CombatEvent state;
+        state.type = CombatEventType::State;
+        state.source = bot->GetGUID();
+        state.detail = "boss_start_roster:hp=" + std::to_string(bot->GetHealth()) + "/" +
+            std::to_string(bot->GetMaxHealth()) + " mana=" + std::to_string(bot->GetPower(POWER_MANA)) + "/" +
+            std::to_string(bot->GetMaxPower(POWER_MANA));
+        CombatEventBus::instance().Push(state);
+    }
+    Player* leader = ctx.bots.front();
+    if (!CombatTrigger::BeginPullForAll(ctx.bots, ctx.boss))
+    {
+        Abort("pull failed (boss not engaged)");
+        return false;
+    }
+    _pullContextHeld = true;
+    _pullLeader = leader->GetGUID();
+    if (CombatTrigger::ConfirmBossInCombat(ctx.boss))
+        ConfirmAndEnterObserving(ctx);
+    else
+    {
+        _confirmTicks = 1;
+        _stage = Stage::Pull;
+        _pullStep = PullStep::AwaitCombatConfirm;
+    }
+    return true;
+}
+
+void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
+{
+    ctx.attemptElapsedMs += diff;
+    _preparationElapsed += diff;
+    ResolveBoss(ctx);
+    if (!ValidateRaid(ctx, "before_pull"))
+    {
+        Abort("prerequisite_failed: group lost");
+        return;
+    }
+    if (!ctx.boss || !ctx.boss->IsAlive() || ctx.boss->IsInCombat())
+    {
+        Abort("prerequisite_invalid: boss missing or engaged before clearing completed");
+        return;
+    }
+    if (_preparationElapsed >= ctx.scenario->GetPrerequisiteTimeoutSeconds() * 1000)
+    {
+        Abort("prerequisite_failed: clearing timeout");
+        return;
+    }
+    if (std::none_of(ctx.bots.begin(), ctx.bots.end(), [](Player* bot) { return bot && bot->IsAlive(); }))
+    {
+        _result = AttemptResult::Wipe;
+        _notes = "prerequisite_failed: roster wiped during clearing";
+        _stage = Stage::Done;
+        ClearHeldPullContext();
+        return;
+    }
+    Map* map = ctx.bots.front()->GetMap();
+    Creature* next = nullptr;
+    for (ObjectGuid const& guid : _prerequisiteGuids)
+    {
+        if (CombatEventBus::instance().DeathSeen(guid))
+            continue;
+        Creature* unit = map->GetCreature(guid);
+        if (!unit || !unit->IsAlive())
+        {
+            Abort("prerequisite_invalid: spawn disappeared without a recorded death");
+            return;
+        }
+        if (!next)
+            next = unit;
+    }
+    if (!next)
+    {
+        RecordPhase("prerequisites_complete", _preparationElapsed);
+        _stage = Stage::Recovery;
+        return;
+    }
+    if (_prerequisitePullSent && std::none_of(ctx.bots.begin(), ctx.bots.end(),
+        [](Player* bot) { return bot && bot->IsInCombat(); }))
+        _prerequisitePullSent = false;
+    if (!_prerequisitePullSent)
+    {
+        // One ordinary encounter-start instruction; combat target selection remains with the AI.
+        if (!CombatTrigger::BeginPullForAll(ctx.bots, next))
+        {
+            Abort("prerequisite_failed: initial pull rejected");
+            return;
+        }
+        CombatTrigger::EndPullContext(ctx.bots.front());
+        _prerequisitePullSent = true;
+    }
 }

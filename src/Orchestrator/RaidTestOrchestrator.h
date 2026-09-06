@@ -100,7 +100,7 @@ private:
     // SERIALIZE_RESULT 的逐 tick 落库子步骤（Task 7 review Fix 1：把曾经的
     // 「DrainDbQueue + 同步 Query」改为跨 tick 泵，读可见性屏障 = 队列排空）：
     //   WaitEventFlush    —— EndAttempt 事件流已异步入队（每 run 一次）；
-    //   ReadDeaths        —— 队列排空后的 tick 同步读 death 明细（attemptId!=0）；
+    //   ReadDeaths        —— 已从内存中的完整 roster GUID 采集死亡，选择后续落库步骤；
     //   EnsureAttemptRow  —— attemptId==0：异步排队占位 INSERT（仅此一步排队）；
     //   ResolveAttemptRow —— 队列排空后的 tick 同步读回占位行 id；
     //   Finalize          —— FinishAttemptRow（异步 UPDATE）+ 计数 + 续跑/收尾。

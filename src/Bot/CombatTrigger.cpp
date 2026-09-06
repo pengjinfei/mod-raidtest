@@ -94,6 +94,13 @@ bool CombatTrigger::BeginPullForAll(std::vector<Player*> const& bots, Creature* 
             {
                 // 发起被拒：拉怪上下文在此统一清掉，避免钉死在 rejected 的靶标上。
                 EndPullContext(leader);
+                LOG_WARN("raidtest", "pull_rejected: leader={} target={} distance={} los={} valid={} alive={} "
+                    "in_world={} evade={} leader_pos=({},{},{}) target_pos=({},{},{})",
+                    leader->GetGUID().ToString(), boss->GetGUID().ToString(), leader->GetDistance(boss),
+                    leader->IsWithinLOSInMap(boss), leader->IsValidAttackTarget(boss), boss->IsAlive(),
+                    boss->IsInWorld(), boss->HasUnitState(UNIT_STATE_EVADE), leader->GetPositionX(),
+                    leader->GetPositionY(), leader->GetPositionZ(), boss->GetPositionX(), boss->GetPositionY(),
+                    boss->GetPositionZ());
                 LOG_ERROR("raidtest", "CombatTrigger::BeginPullForAll: leader {} could not "
                           "initiate attack on {} (dead/friendly/out of range/no LOS/invalid target)",
                           leader->GetName(), boss->GetName());

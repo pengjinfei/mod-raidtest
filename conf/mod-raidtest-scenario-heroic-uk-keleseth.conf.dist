@@ -13,3 +13,10 @@ EngageZ = 40.815
 EngageO = 0.0
 TimeoutSeconds = 300
 EngageTrigger = pull
+# Restore this exact linked pack and require real kills before the boss phase.
+PrerequisiteSpawns = 126032,126041,126042,126046
+PreparationX = 221.0
+PreparationY = 225.0
+PreparationZ = 40.9
+PreparationO = 4.7
+PrerequisiteTimeoutSeconds = 180

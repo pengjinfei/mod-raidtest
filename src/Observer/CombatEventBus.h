@@ -44,6 +44,9 @@ public:
     void StartAttempt(uint32 attemptId, std::vector<ObjectGuid> const& botGuids,
                       ObjectGuid const& bossGuid, uint32 bossEntry);
 
+    void TrackUnit(ObjectGuid const& guid) { _observedGuids.insert(guid); }
+    bool DeathSeen(ObjectGuid const& guid) const { return _deadGuids.count(guid) != 0; }
+
     // 结束当前 attempt：FlushToStore() 把剩余缓冲落库，复位采集状态并 LOG 分型
     // 统计（冒烟/诊断用）。清掉 boss 关联，等待下次 StartAttempt。
     void EndAttempt();
@@ -91,6 +94,8 @@ private:
     void BumpCounters(CombatEvent const& e);
 
     bool _active{false};
+    std::unordered_set<ObjectGuid> _observedGuids;
+    std::unordered_set<ObjectGuid> _deadGuids;
     uint32 _attemptId{0};
     uint32 _bossEntry{0};
     ObjectGuid _bossGuid;

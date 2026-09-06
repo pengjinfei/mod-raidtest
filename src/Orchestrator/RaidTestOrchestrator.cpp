@@ -421,6 +421,12 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
     {
         // 事件流收尾：EndAttempt 落 CombatEnd + flush 缓冲到 raidtest_events
         // （异步事务入队；本步只触发一次，由 Update 的 Running→Serializing 转入）。
+        // Count typed roster GUIDs before EndAttempt clears the in-memory death latch.
+        // Creature low GUIDs can overlap player IDs; SQL low GUIDs alone are not identities.
+        for (ObjectGuid const& guid : _ctx.botGuids)
+            if (CombatEventBus::instance().DeathSeen(guid))
+                _deadGuids.push_back(guid);
+        _ctx.deaths = static_cast<uint32>(_deadGuids.size());
         CombatEventBus::instance().EndAttempt();
         _serialStep = SerializeStep::ReadDeaths;
         _serialTicks = 0;
@@ -428,59 +434,9 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
     }
 
     case SerializeStep::ReadDeaths:
-    {
-        // attemptId!=0 才需要读 death 明细，且要求 EndAttempt 的异步 flush 已排空
-        // （另一连接的 SELECT 才能看到）。attemptId==0（传送/找 boss 超时中止）时
-        // 跳过读，直接走占位行分支，无需等队列。
-        if (_ctx.attemptId && CharacterDatabase.QueueSize() != 0)
-        {
-            if (++_serialTicks >= kSerializeDrainTicks)
-            {
-                // Task 8 review Fix (i)：排空预算耗尽 = 真·跳过读取，下一 tick 直接
-                // 进 Finalize 按 0 death 继续。旧代码日志写「跳过」却仍执行了同步
-                // SELECT —— 队列忙时读不到前序 EndAttempt flush 落库的数据，执行了
-                // 也是旧数据；「已跳过」与执行结果相互矛盾，已改为真正跳过。
-                LOG_WARN("raidtest", "Orchestrator: attempt {} death-row read skipped - db queue "
-                    "stayed busy for {} tick(s), continuing with 0 deaths", _ctx.attemptId,
-                    _serialTicks);
-                _ctx.deaths = 0;
-                _deadGuids.clear();
-                _serialStep = SerializeStep::Finalize;
-                return;
-            }
-            return;   // 预算内：继续等队列排空（逐 tick 快路径，不 sleep）
-        }
-
-        // settle 窗口（复用 kAttemptRowResolveSettleTicks，与 ResolveAttemptRow /
-        // AttemptRunner 同法）：空队列只代表 async worker 已从队首取走 flush，不代表
-        // 已 commit；队列空满窗口后再做同步 SELECT，避免错失 EndAttempt 末次 flush
-        // 的死亡事件（此前仅在 QueueSize()==0 时单次抢跑读取）。
-        if (_ctx.attemptId && ++_serialTicks < kAttemptRowResolveSettleTicks)
-            return;
-
-        _serialTicks = 0;
-        if (_ctx.attemptId)
-        {
-            QueryResult deathRows = CharacterDatabase.Query(Acore::StringFormat(
-                "SELECT source_guid FROM raidtest_events "
-                "WHERE attempt_id = {} AND event_type = 'death' AND source_guid != {}",
-                _ctx.attemptId,
-                _ctx.bossGuid ? _ctx.bossGuid.GetCounter() : 0u));
-            if (deathRows)
-            {
-                do
-                {
-                    Field* fields = deathRows->Fetch();
-                    _deadGuids.emplace_back(
-                        ObjectGuid::Create<HighGuid::Player>(fields[0].Get<uint32>()));
-                } while (deathRows->NextRow());
-            }
-        }
-        _ctx.deaths = static_cast<uint32>(_deadGuids.size());
-
+        // Death totals are captured from typed events, independent of async SQL visibility.
         _serialStep = _ctx.attemptId ? SerializeStep::Finalize : SerializeStep::EnsureAttemptRow;
         return;
-    }
 
     case SerializeStep::EnsureAttemptRow:
     {

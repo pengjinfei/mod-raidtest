@@ -63,7 +63,7 @@ bool CombatEventBus::IsMember(ObjectGuid const& guid) const
 {
     if (!guid)
         return false;
-    if (guid == _bossGuid)
+    if (guid == _bossGuid || _observedGuids.count(guid))
         return true;
     return _botGuids.find(guid) != _botGuids.end();
 }
@@ -141,6 +141,8 @@ void CombatEventBus::StartAttempt(uint32 attemptId, std::vector<ObjectGuid> cons
     _attemptId = attemptId;
     _bossGuid = bossGuid;
     _bossEntry = bossEntry;
+    _observedGuids.clear();
+    _deadGuids.clear();
     _botGuids.clear();
     _botGuids.insert(botGuids.begin(), botGuids.end());
     _attemptStart = std::chrono::steady_clock::now();
@@ -183,6 +185,8 @@ void CombatEventBus::EndAttempt()
     _attemptId = 0;
     _bossGuid.Clear();
     _bossEntry = 0;
+    _observedGuids.clear();
+    _deadGuids.clear();
     _botGuids.clear();
 }
 
@@ -204,6 +208,8 @@ void CombatEventBus::Push(CombatEvent const& event)
     // 只认真实死亡事件 —— 指针丢失 / despawn 不会经过这条路径，杜绝把「boss
     // 暂时找不到」误当成「boss 已击杀」（AttemptObserver 以此区分 kill 与
     // evade/reset/瞬时失效）。
+    if (event.type == CombatEventType::Death)
+        _deadGuids.insert(event.source);
     if (event.type == CombatEventType::Death && event.source == _bossGuid)
         _bossDeathSeen = true;
 
