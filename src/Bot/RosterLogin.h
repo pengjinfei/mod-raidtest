@@ -60,6 +60,14 @@ public:
     // 世界线程安全（登录完成后调用一次，非 tick 热路径）。全部应用成功返回 true。
     static bool ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots);
 
+    // B2-8 run 级状态卫生：run 收尾时强制登出全部在线 bot，使下次 run 从干净会话
+    // 重新登录。根因：bot 全灭（wipe/timeout）后 mod-playerbots 引擎停在残留状态
+    // （current target / 战斗引擎 / 策略状态），run 间只复用在线 bot（不重新登录）时
+    // DPS 不再进入攻击循环、只跑 buff 策略（实测 Loatheb run49 全队输出 1.52M、
+    // run50 复用在线 bot 只剩血 DK 输出 726k、其余 0）。登出会销毁 Player/PlayerbotAI
+    // 对象，下次 Start->LoginAll 重建干净会话。
+    static void LogoutAll(std::vector<ObjectGuid> const& guids);
+
     // 服务端远距离传送（Player::TeleportTo）。远传异步完成，需要世界线程对仍在
     // IsBeingTeleported() 的 bot 调 PlayerbotAI::HandleTeleportAck() 推进 worldport
     // （见 AllOnMap）。本函数只负责发起，全部发起成功返回 true。

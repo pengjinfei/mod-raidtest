@@ -84,6 +84,20 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
             bossPos.detail = Acore::StringFormat("pos:{:.2f},{:.2f},{:.2f}",
                 ctx.boss->GetPositionX(), ctx.boss->GetPositionY(), ctx.boss->GetPositionZ());
             CombatEventBus::instance().Push(bossPos);
+
+            // run55: 未正式脱战也可能因无法追到目标而拒绝攻击；与位置同频采样。
+            CombatEvent status;
+            status.type = CombatEventType::State;
+            status.source = ctx.bossGuid;
+            status.actorEntry = bossPos.actorEntry;
+            if (Unit* victim = ctx.boss->GetVictim())
+                status.target = victim->GetGUID();
+            status.detail = Acore::StringFormat(
+                "boss_state:combat={} evade={} unreachable={} evading_attacks={} regen={} unreachable_guid={}",
+                ctx.boss->IsInCombat(), ctx.boss->IsInEvadeMode(), ctx.boss->CanNotReachTarget(),
+                ctx.boss->IsEvadingAttacks(), ctx.boss->IsNotReachableAndNeedRegen(),
+                ctx.boss->GetCannotReachTarget().GetCounter());
+            CombatEventBus::instance().Push(status);
         }
     }
 

@@ -5,12 +5,12 @@
 # 宝石 = socket 宝石 item_id（RosterBuilder 经 GemProperties 转为附魔 id 插入）；
 # 附魔 = SpellItemEnchantment.dbc 附魔 id（示例 3856/3858，占位）。
 
-[Roster.0]                    # 主坦（战士）
+[Roster.0]                    # 主坦（血DK；BloodDKStrategy 自带输出循环，引擎稳定 vs 战士）
 Name            = "Patch-Tank"
 Race            = "human"
-Class           = "warrior"
+Class           = "deathknight"
 Role            = "tank"
-TalentSpec      = "warrior_tank"
+TalentSpec      = "dk_blood"
 Professions     = "mining,jewelcrafting"
 MainHand        = 40491
 OffHand         = 40491
@@ -100,18 +100,18 @@ Role            = "dps"
 TalentSpec      = "shaman_elemental"
 Professions     = "alchemy,herbalism"
 
-[Roster.8]                    # DPS 惩戒骑
+[Roster.8]                    # 副坦 防骑（TankPaladinStrategy，引擎稳定）
 Name            = "Patch-Paladin"
 Race            = "bloodelf"
 Class           = "paladin"
-Role            = "dps"
-TalentSpec      = "paladin_retri"
+Role            = "tank"
+TalentSpec      = "paladin_prot"
 Professions     = "blacksmithing,mining"
 
-[Roster.9]                    # 副坦 血 DK（Gluth 拦僵尸/分摊仇恨；血DK恒判IsTank）
+[Roster.9]                    # DPS 冰 DK
 Name            = "Patch-DK"
 Race            = "human"
 Class           = "deathknight"
-Role            = "tank"
-TalentSpec      = "dk_blood"
+Role            = "dps"
+TalentSpec      = "dk_frost"
 Professions     = "blacksmithing,mining"

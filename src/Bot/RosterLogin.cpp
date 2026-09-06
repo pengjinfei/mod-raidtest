@@ -153,6 +153,25 @@ bool RosterLogin::ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots
     return true;
 }
 
+// B2-8 run 级状态卫生：强制登出全部在线 bot。见 RosterLogin.h 注释——run 间复用
+// 在线 bot（不重新登录）会让全灭后的 mod-playerbots 引擎残留污染下一 run 的战斗
+// 行为（DPS 只跑 buff 不攻击）。LogoutPlayer(true) 会销毁 Player/PlayerbotAI 对象，
+// 下次 run 的 Start->LoginAll 重建干净会话。世界线程 transition-time 调用，不阻塞。
+void RosterLogin::LogoutAll(std::vector<ObjectGuid> const& guids)
+{
+    uint32 logged = 0;
+    for (ObjectGuid const& guid : guids)
+    {
+        Player* bot = ObjectAccessor::FindPlayer(guid);
+        if (!bot || !bot->GetSession())
+            continue;
+        bot->GetSession()->LogoutPlayer(true);
+        ++logged;
+    }
+    LOG_INFO("raidtest", "RosterLogin: logged out {}/{} bot(s) at run end (clean session for next run)",
+        logged, guids.size());
+}
+
 bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos)
 {
     if (bots.empty())

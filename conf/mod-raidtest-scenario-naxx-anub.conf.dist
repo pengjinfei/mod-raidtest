@@ -1,0 +1,19 @@
+# mod-raidtest: naxx-anub 场景（Anub'Rekhan）
+# 验证目标: 隔离 Gluth 僵尸回血变量后的纯输出/仇恨瓶颈。
+#   Anub'Rekhan(15956) 无召唤回血机制（只有 Impale 穿刺 / Locust Swarm 蝗虫群 /
+#   死亡召 Scarabs 尸体甲虫；Crypt Guards 仅 25 人模式）。
+#   若纯输出/仇恨下 boss 血能真实下降 → 坐实"Gluth 打不过=僵尸回血"
+#   （缺陷③）；若 Anub 也打不动 → 纯输出/仇恨本身有独立瓶颈（B2 深挖对象）。
+#   EngagePoint 用 boss 出生点(3308.59,-3476.29)附近，让坦克就近就位。
+
+[Scenario]
+MapId           = 533
+BossEntry       = 15956
+RosterFile      = "mod-raidtest-roster-naxx-patchwerk.conf"
+GearProfile     = epic
+EngageX         = 3308.59
+EngageY         = -3470.29
+EngageZ         = 287.161
+EngageO         = 0.0
+TimeoutSeconds  = 300
+EngageTrigger   = pull

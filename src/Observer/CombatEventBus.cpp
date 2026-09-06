@@ -4,6 +4,7 @@
 #include "Errors.h"
 #include "Log.h"
 #include "Spell.h"
+#include "StringFormat.h"
 #include "Unit.h"
 #include "UnitScript.h"
 #include <algorithm>
@@ -18,6 +19,8 @@ public:
     RaidTestSpellScript();
     void OnSpellCast(Spell* spell, Unit* caster, SpellInfo const* spellInfo,
                      bool skipCheck) override;
+    void OnSpellCastCancel(Spell* spell, Unit* caster, SpellInfo const* spellInfo,
+                           bool bySelf) override;
 };
 
 class RaidTestUnitScript : public UnitScript
@@ -240,11 +243,11 @@ bool CombatEventBus::FlushToStore()
 
 // ============ core hooks ============
 
-// 施法采集：AllSpellScript::OnSpellCast（Spell.cpp:4086，每次施法成功回调）。
+// 施法采集：AllSpellScript::OnSpellCast（执行路径末端，不等于命中或造成伤害）。
 // 不绑定 entry（IsDatabaseBound() == false），世界全部施法都会进来；
 // 成员过滤在 Push 内完成，hook 只负责类型转换。
 RaidTestSpellScript::RaidTestSpellScript()
-    : AllSpellScript("RaidTestSpellScript", { ALLSPELLHOOK_ON_CAST })
+    : AllSpellScript("RaidTestSpellScript", { ALLSPELLHOOK_ON_CAST, ALLSPELLHOOK_ON_CAST_CANCEL })
 {
 }
 
@@ -266,6 +269,36 @@ void RaidTestSpellScript::OnSpellCast(Spell* spell, Unit* caster, SpellInfo cons
     }
     if (Unit* target = spell->m_targets.GetUnitTarget())
         e.target = target->GetGUID();
+    e.detail = Acore::StringFormat("cast:cast_ms={}", spell->GetCastTime());
+    // 只关联显式目标；没有匹配时保留未知，不能把它当作命中。
+    for (auto const& targetInfo : *spell->GetUniqueTargetInfo())
+        if (e.target && targetInfo.targetGUID == e.target)
+        {
+            e.detail += Acore::StringFormat(" miss={} reflect={}",
+                uint32(targetInfo.missCondition), uint32(targetInfo.reflectResult));
+            break;
+        }
+    bus.Push(e);
+}
+
+void RaidTestSpellScript::OnSpellCastCancel(Spell* spell, Unit* caster,
+                                           SpellInfo const* spellInfo, bool bySelf)
+{
+    CombatEventBus& bus = CombatEventBus::instance();
+    if (!bus.IsActive())
+        return;
+    ObjectGuid const target = spell->m_targets.GetUnitTargetGUID();
+    // State 事件不经成员过滤，必须在 hook 处限制到本 attempt。
+    if ((!caster || !bus.IsMember(caster->GetGUID())) && !bus.IsMember(target))
+        return;
+    CombatEvent e;
+    e.type = CombatEventType::State;
+    if (caster)
+        e.source = caster->GetGUID();
+    e.target = target;
+    e.spellId = spellInfo->Id;
+    e.detail = Acore::StringFormat("cast_cancel:by_self={} cast_ms={} remaining_ms={}",
+        bySelf, spell->GetCastTime(), spell->GetCastTimeRemaining());
     bus.Push(e);
 }
 

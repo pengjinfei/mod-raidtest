@@ -580,6 +580,11 @@ void RaidTestOrchestrator::FinishRun()
         "timeouts={}", runId, _scenarioKey, _ctx.attemptsDone, _ctx.attemptsTotal,
         _ctx.kills, _ctx.wipes, _ctx.timeouts);
 
+    // B2-8 run 级状态卫生：run 收尾强制登出全部在线 bot，使下次 run 重新登录得到
+    // 干净会话（全灭后 mod-playerbots 引擎残留会让复用的 bot 只跑 buff 不攻击）。
+    // 在 _ctx 清空前取 botGuids（Start 时按 guid 登录）。
+    RosterLogin::LogoutAll(_ctx.botGuids);
+
     // 复位到 Idle（工作区整体丢弃）。
     _ctx = RunContext{};
     _scenarioKey.clear();
