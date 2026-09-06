@@ -23,7 +23,10 @@ namespace
     bool ValidateRaid(RunContext const& ctx, char const* phase)
     {
         Group* group = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetGroup();
-        bool valid = group && group->isRaidGroup() && group->GetMembersCount() == ctx.bots.size();
+        bool const dungeon = ctx.scenario->IsDungeonScenario();
+        bool valid = group && group->isRaidGroup() != dungeon && group->GetMembersCount() == ctx.bots.size();
+        if (group && dungeon && group->GetDungeonDifficulty() != Difficulty(ctx.scenario->GetDungeonDifficulty()))
+            valid = false;
         if (group && sGroupMgr->GetGroupByGUID(group->GetGUID().GetCounter()) != group)
             valid = false;
         bool tankChecked = false;
@@ -35,7 +38,7 @@ namespace
             if (!tankChecked && i < ctx.rosterSlots.size() && ctx.rosterSlots[i].role == "tank")
             {
                 PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
-                if (!ai || !ai->IsExplicitMainTank(bot))
+                if (!ai || (dungeon ? !ai->IsTank(bot) : !ai->IsExplicitMainTank(bot)))
                     valid = false;
                 tankChecked = true;
             }
@@ -537,12 +540,9 @@ void AttemptRunner::ConfirmAndEnterObserving(RunContext& ctx)
     LOG_INFO("raidtest", "AttemptRunner: attempt {} - boss {} engaged (guid {})",
         ctx.attemptSeq, ctx.boss ? ctx.boss->GetName() : "?", ctx.bossGuid.ToString());
 
-    if (CombatTrigger::IsRaidStrategyActive(leader, "naxx"))
-        LOG_INFO("raidtest", "AttemptRunner: attempt {} - naxx raid strategy active on leader {}",
-            ctx.attemptSeq, leader ? leader->GetName() : "?");
-    else
-        LOG_WARN("raidtest", "AttemptRunner: attempt {} - naxx raid strategy NOT active on "
-            "leader {} (observation only)", ctx.attemptSeq, leader ? leader->GetName() : "?");
+    std::string const& strategy = ctx.scenario->GetStrategy();
+    LOG_INFO("raidtest", "AttemptRunner: strategy='{}' active={} on leader {}",
+        strategy, CombatTrigger::IsRaidStrategyActive(leader, strategy), leader ? leader->GetName() : "?");
 
     _stuckTicks = 0;
     _confirmTicks = 0;

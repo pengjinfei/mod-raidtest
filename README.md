@@ -66,3 +66,20 @@ Snapshots are written relative to the worldserver working directory:
 Compare the actual talent/spell/equipment records when changing templates or testing another boss;
 a changed roster is a changed experimental baseline. The 25-player roster still uses automatic
 fallback and has not been certified as the same pinned fixture.
+
+### Five-player heroic fixtures
+
+Scenario keys `PartySize = 5`, `DungeonDifficulty = heroic` (or `normal`) and `Strategy = wotlk-uk`
+select a normal party, set group dungeon difficulty before teleport, and label strategy observations.
+Existing raid scenarios retain the global party-size default and RaidDifficulty behavior.
+The map type, roster size and party size must agree before any characters are created.
+Five-player tank validation uses the bot tank role; explicit raid main-tank flags are raid-only.
+
+`mod-raidtest-roster-heroic5-v1.conf.dist` pins early WLK ilvl-200 gear for protection paladin,
+holy priest, combat rogue, fire mage and elemental shaman. Roster keys `MaxItemLevel`,
+`MinDefenseSkill`, `RequireNoCheats` and `Supplies` add preflight requirements. Supplies are
+non-equippable items topped up to one stack (maximum 20) during first-attempt preparation.
+Snapshots include actual effective cheat masks, defense skill and supply counts. Exhausted
+required supplies block a later attempt; this is not automatic unlimited combat replenishment.
+The new fixture requires `AiPlayerbot.BotCheats = ""` in the actual runtime configuration;
+build/install may overwrite this setting, so check it again before starting the server.

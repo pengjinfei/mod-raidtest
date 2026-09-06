@@ -65,6 +65,10 @@ public:
     // Player::SetRaidDifficulty → 实例按对应难度加载；②roster 实际起人数量（由
     // RaidTest.PartySize 控制，场景级 diff 不自动改 party size，见 Orchestrator）。
     uint8 GetRaidDifficulty() const { return _raidDifficulty; }
+    bool IsDungeonScenario() const { return _dungeonScenario; }
+    uint8 GetDungeonDifficulty() const { return _dungeonDifficulty; }
+    uint8 GetPartySize() const { return _partySize; }
+    std::string const& GetStrategy() const { return _strategy; }
 
     // 行为钩子（阶段 B 特殊判定/机制用）。Task 7 默认流：用 GetTimeoutSeconds /
     // GetEngageTrigger 构造 Encounter 后调用本钩子做额外定制；默认空实现。
@@ -79,6 +83,10 @@ protected:
     Position _engagePoint{};
     uint32 _timeoutSeconds{0};
     EncounterTrigger _engageTrigger{EncounterTrigger::Pull};
+    bool _dungeonScenario{false};
+    uint8 _dungeonDifficulty{0};
+    uint8 _partySize{0}; // Zero preserves the global legacy default.
+    std::string _strategy{"naxx"};
     uint8 _raidDifficulty{0};   // RAID_DIFFICULTY_10MAN_NORMAL（缺省 10 人）
 };
 

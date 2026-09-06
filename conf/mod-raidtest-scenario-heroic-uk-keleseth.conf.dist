@@ -1,0 +1,15 @@
+# heroic5-v1: separate characters from Naxx, early heroic equipment.
+[Scenario]
+MapId = 574
+BossEntry = 23953
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-uk
+RosterFile = "mod-raidtest-roster-heroic5-v1.conf"
+GearProfile = none
+EngageX = 188.0
+EngageY = 197.5
+EngageZ = 40.815
+EngageO = 0.0
+TimeoutSeconds = 300
+EngageTrigger = pull

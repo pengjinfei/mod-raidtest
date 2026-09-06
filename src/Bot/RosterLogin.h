@@ -51,7 +51,7 @@ public:
 
     // 服务端组队（Group，不依赖 bot AI）：首个 bot 为 leader；>1 人转成 raid。
     // 失败（空输入 / leader 已在组）返回 false。
-    static bool FormGroup(std::vector<Player*> const& bots);
+    static bool FormGroup(std::vector<Player*> const& bots, bool raid = true);
 
     // 无 master 自治 bot 的目标合法性修复（B2-1）：
     // 对 loot-tagged boss，AttackersValue::IsPossibleTarget 对无 master 非 leader bot

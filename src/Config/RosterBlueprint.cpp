@@ -106,9 +106,20 @@ namespace
             return true;
         }
 
-        if (key == "Glyphs" || key == "RequiredSpells")
+        if (key == "RequireNoCheats")
         {
-            auto& ids = key == "Glyphs" ? slot.glyphs : slot.requiredSpells;
+            if (value != "true" && value != "false")
+                return false;
+            slot.requireNoCheats = value == "true";
+            return true;
+        }
+        if (key == "MinDefenseSkill")
+            return ParseItemId(value, slot.minDefenseSkill);
+        if (key == "MaxItemLevel")
+            return ParseItemId(value, slot.maxItemLevel) && slot.maxItemLevel > 0;
+        if (key == "Glyphs" || key == "RequiredSpells" || key == "Supplies")
+        {
+            auto& ids = key == "Glyphs" ? slot.glyphs : (key == "Supplies" ? slot.supplies : slot.requiredSpells);
             ids.clear();
             for (std::string_view view : Acore::Tokenize(value, ',', false))
             {

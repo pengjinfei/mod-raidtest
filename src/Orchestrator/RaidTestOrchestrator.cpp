@@ -1,6 +1,7 @@
 #include "RaidTestOrchestrator.h"
 #include "CombatEventBus.h"
 #include "Config.h"
+#include "DBCStores.h"
 #include "DBCEnums.h"          // Difficulty / RAID_DIFFICULTY_*
 #include "DatabaseEnv.h"
 #include "Group.h"
@@ -82,7 +83,17 @@ uint32 RaidTestOrchestrator::StartRun(std::string const& scenarioKey, uint32 att
     }
     _rosterSlots = blueprint.Slots();   // 登录齐后 ApplyGear 按同位序装配（B1-2）
 
-    uint8 const partySize = RaidTestConfig::instance().PartySize();
+    uint8 const partySize = scenario->GetPartySize() ? scenario->GetPartySize() :
+        RaidTestConfig::instance().PartySize();
+    auto const* mapEntry = sMapStore.LookupEntry(scenario->GetMapId());
+    if (!mapEntry || !mapEntry->IsDungeon() ||
+        mapEntry->IsNonRaidDungeon() != scenario->IsDungeonScenario() ||
+        (scenario->IsDungeonScenario() && partySize != 5) || blueprint.Size() != partySize)
+    {
+        _state = RunState::Error;
+        LOG_ERROR("raidtest", "Orchestrator: scenario map/type/party/roster mismatch for '{}'", scenarioKey);
+        return 0;
+    }
     RosterManager roster;
     // gearProfile 一并下发（scenario 数据驱动）：注入 RosterBuilder 供缺槽工厂兜底选品。
     if (!roster.EnsureRoster(scenarioKey, blueprint, partySize, forceRecreate,
@@ -345,7 +356,7 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
         _groupDirty = false;
     }
 
-    if (!RosterLogin::FormGroup(_ctx.bots))
+    if (!RosterLogin::FormGroup(_ctx.bots, !_scenario->IsDungeonScenario()))
     {
         FailRun("failed to form raid group");
         return true;
@@ -353,7 +364,7 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
 
     // Blueprint order determines the designated main tank, not GroupReference order.
     for (size_t i = 0; i < std::min(_ctx.bots.size(), _rosterSlots.size()); ++i)
-        if (_rosterSlots[i].role == "tank")
+        if (!_scenario->IsDungeonScenario() && _rosterSlots[i].role == "tank")
         {
             Player* tank = _ctx.bots[i];
             tank->GetGroup()->SetGroupMemberFlag(tank->GetGUID(), true, MEMBER_FLAG_MAINTANK);
@@ -362,29 +373,18 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
             break;
         }
 
-    // 25 人场景：组队后、传送前给全队设 raid 难度（缺省 10 人是 0，同样安全）。
-    // 必须在 TeleportToRaid 前设置——进本创建实例时难度取「组的难度」而非玩家个人：
-    // MapInstanced::CreateInstanceForPlayer 用 player->GetGroup() ? group->GetDifficulty()
-    // : player->GetDifficulty()（MapInstanced.cpp:198）。因此必须调 Group::SetRaidDifficulty
-    // （它会同时广播给所有成员，个人难度也同步），否则组难度留 10 人默认，25 人场景实际
-    // 进的是 10 人实例（run42 实测：boss 施放 10 人 ID 的 28371 而非 25 人映射 54427、
-    //   白字伤害只比 10 人高 25%、24/25 bot 拉怪失败）。
+    // Instance creation reads group difficulty; set it before teleport for both party types.
+    if (Group* group = _ctx.bots.front()->GetGroup())
     {
-        uint8 const diff = _scenario ? _scenario->GetRaidDifficulty() : 0;
-        Player* leader = _ctx.bots.empty() ? nullptr : _ctx.bots[0];
-        if (diff != 0 && leader)
-        {
-            if (Group* group = leader->GetGroup())
-            {
-                group->SetRaidDifficulty(Difficulty(diff));
-                LOG_INFO("raidtest", "Orchestrator: set raid difficulty {} on group {} ({} member(s), "
-                    "scenario '{}')", uint32(diff), group->GetGUID().ToString(), _ctx.bots.size(),
-                    _scenarioKey);
-            }
-            else
-                LOG_WARN("raidtest", "Orchestrator: no group on leader {} - raid difficulty {} "
-                    "not applied (fallback: per-bot)", leader->GetName(), uint32(diff));
-        }
+        bool const dungeon = _scenario->IsDungeonScenario();
+        Difficulty const difficulty = Difficulty(dungeon ? _scenario->GetDungeonDifficulty() :
+            _scenario->GetRaidDifficulty());
+        if (dungeon)
+            group->SetDungeonDifficulty(difficulty);
+        else
+            group->SetRaidDifficulty(difficulty);
+        LOG_INFO("raidtest", "Orchestrator: group type={} difficulty={} members={} scenario='{}'",
+            dungeon ? "party" : "raid", uint32(difficulty), _ctx.bots.size(), _scenarioKey);
     }
 
     _ctx.rosterSlots = _rosterSlots;

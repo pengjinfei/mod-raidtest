@@ -11,6 +11,7 @@
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "PlayerbotFactory.h"
+#include "Playerbots.h"
 #include "RaidTestConfig.h"
 #include "Random.h"
 #include "SharedDefines.h"
@@ -926,6 +927,16 @@ bool RosterBuilder::PrepareCharacter(Player* bot, RosterSlot const& slot)
     else
         factory.InitGlyphs(false);
     ApplyGear(bot, slot);
+    for (uint32 id : slot.supplies)
+    {
+        auto const* item = sObjectMgr->GetItemTemplate(id);
+        if (!item || item->InventoryType != INVTYPE_NON_EQUIP)
+            return false;
+        uint32 const desired = std::min<uint32>(20, item->GetMaxStackSize());
+        uint32 const count = bot->GetItemCount(id);
+        if (count < desired && !bot->AddItem(id, desired - count))
+            return false;
+    }
     bot->SaveToDB(false, false);
     return true;
 }
@@ -956,6 +967,14 @@ bool RosterBuilder::ValidateAndSnapshot(Player* bot, RosterSlot const& slot, uin
     };
     if (bot->GetLevel() != 80 || bot->getClass() != GetClassId(slot.charClass))
         reject("level/class mismatch");
+    PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+    uint32 const cheats = uint32(sPlayerbotAIConfig.botCheatMask) | (ai ? uint32(ai->GetCheat()) : 0);
+    snapshot << "effective_cheats\t" << cheats << "\ndefense_skill\t" << bot->GetDefenseSkillValue()
+        << "\nmax_health\t" << bot->GetMaxHealth() << '\n';
+    if (slot.requireNoCheats && (!ai || cheats != 0))
+        reject(Acore::StringFormat("nonzero or unknown effective cheats={}", cheats));
+    if (bot->GetDefenseSkillValue() < slot.minDefenseSkill)
+        reject(Acore::StringFormat("defense skill {} below {}", bot->GetDefenseSkillValue(), slot.minDefenseSkill));
     uint32 points = 0;
     for (auto const& [spell, talent] : bot->GetTalentMap())
     {
@@ -989,6 +1008,13 @@ bool RosterBuilder::ValidateAndSnapshot(Player* bot, RosterSlot const& slot, uin
             snapshot << "profession\t" << profession << '\t' << bot->GetSkillValue(it->second)
                 << '\t' << bot->GetMaxSkillValue(it->second) << '\n';
     }
+    for (uint32 id : slot.supplies)
+    {
+        snapshot << "supply_item\t" << id << '\n';
+        snapshot << "supply_count\t" << id << '\t' << bot->GetItemCount(id) << '\n';
+        if (!bot->GetItemCount(id))
+            reject(Acore::StringFormat("missing supply item={}", id));
+    }
     std::set<uint32> glyphs;
     for (uint8 index = 0; index < MAX_GLYPH_SLOT_INDEX; ++index)
     {
@@ -1021,6 +1047,8 @@ bool RosterBuilder::ValidateAndSnapshot(Player* bot, RosterSlot const& slot, uin
             continue;
         }
         auto const* proto = item->GetTemplate();
+        if (slot.maxItemLevel && proto->ItemLevel > slot.maxItemLevel)
+            reject(Acore::StringFormat("item level {} exceeds fixture ceiling {}", proto->ItemLevel, slot.maxItemLevel));
         snapshot << "item\t" << uint32(index) << '\t' << item->GetEntry() << '\t' << proto->ItemLevel;
         for (uint8 enchant = 0; enchant < MAX_ENCHANTMENT_SLOT; ++enchant)
             snapshot << '\t' << item->GetEnchantmentId(EnchantmentSlot(enchant));

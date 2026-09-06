@@ -73,7 +73,7 @@ bool RosterLogin::LoginAll(std::vector<ObjectGuid> const& guids, uint32 waitTick
     return false;
 }
 
-bool RosterLogin::FormGroup(std::vector<Player*> const& bots)
+bool RosterLogin::FormGroup(std::vector<Player*> const& bots, bool raid)
 {
     if (bots.empty())
     {
@@ -102,8 +102,8 @@ bool RosterLogin::FormGroup(std::vector<Player*> const& bots)
     // lookups require the same registration as the normal group accept path.
     sGroupMgr->AddGroup(group);
 
-    // Create 内部会 ASSERT(AddMember(leader))，leader 已是成员；1 人以上转成 raid。
-    if (bots.size() > 1)
+    // Five-player dungeon parties must retain the normal party type.
+    if (raid && bots.size() > 1)
         group->ConvertToRaid();
 
     std::size_t failed = 0;

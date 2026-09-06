@@ -266,6 +266,32 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 failed = true;
             }
         }
+        else if (key == "PartySize")
+        {
+            uint32 size = 0;
+            if (!ParseUint32(value, size) || (size != 5 && size != 10 && size != 25))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid PartySize '{}' in '{}'", value, filePath);
+                failed = true;
+            }
+            else
+                _partySize = uint8(size);
+        }
+        else if (key == "DungeonDifficulty")
+        {
+            _dungeonScenario = true;
+            if (ToLower(value) == "heroic")
+                _dungeonDifficulty = 1;
+            else if (ToLower(value) == "normal")
+                _dungeonDifficulty = 0;
+            else
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid DungeonDifficulty '{}' in '{}'", value, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "Strategy")
+            _strategy = value;
         else if (key == "RaidDifficulty")
         {
             uint32 diff = 0;

@@ -11,6 +11,10 @@
 // Ring1/Ring2/Trinket1/Trinket2；宝石 <slot>.Gem1/<slot>.Gem2/...；附魔 <slot>.Enchant。
 struct RosterSlot
 {
+    bool requireNoCheats{false};
+    uint32 minDefenseSkill{0};
+    uint32 maxItemLevel{0};                // Optional fixture ceiling; zero leaves legacy behavior.
+    std::vector<uint32> supplies;           // One stack, capped at 20, prepared before the run.
     std::vector<uint32> glyphs;             // GlyphProperties IDs in real slot order (0..5).
     std::vector<uint32> requiredSpells;     // Mandatory spell IDs for this fixture.
     uint8 slot{0};                          // 槽位索引（段名 [Roster.N] 里的 N）
