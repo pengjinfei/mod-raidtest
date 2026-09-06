@@ -304,7 +304,7 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
     for (ObjectGuid const& guid : _ctx.botGuids)
     {
         Player* player = ObjectAccessor::FindPlayer(guid);
-        if (!player || !player->IsInWorld())
+        if (!RosterLogin::IsReadyForGroup(player))
         {
             allIn = false;
             continue;
@@ -387,20 +387,7 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
         }
     }
 
-    // B1-2 方案 C：登录齐后按蓝图槽位逐 bot 装配（蓝图显式件 + 缺省槽 BIS 最高档 +
-    // 工厂兜底）。一次性登录动作（非 tick 路径），与 StartRun 的 ROSTER_ENSURE 同步段
-    // 同属「世界线程上的既定同步预算」；ApplyGear 内部逐槽独立，单槽失败只记日志。
-    {
-        RosterBuilder builder;
-        builder.SetGearProfile(_scenario->GetGearProfile());
-        size_t const n = std::min(_ctx.bots.size(), _rosterSlots.size());
-        for (size_t i = 0; i < n; ++i)
-        {
-            if (!_ctx.bots[i])
-                continue;
-            builder.ApplyGear(_ctx.bots[i], _rosterSlots[i]);
-        }
-    }
+    _ctx.rosterSlots = _rosterSlots;
 
     // B2-1：登录后启用 attack tagged，使 loot-tagged boss 对无 master bot 成为合法目标
     // （AttackersValue::IsPossibleTarget 豁免，见 RosterLogin::ApplyMasterlessCombatStrategy）。
@@ -499,7 +486,11 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
     {
         // 若 attempt 在占位行落地前就中止（传送/找 boss 超时等，attemptId==0），
         // 异步排队补一条占位行再收尾，保证「attempt 行存在」不变量。
-        ResultStore::QueueStartAttemptRow(_ctx.runId, _ctx.attemptsDone + 1);
+        if (!_ctx.attemptRowQueued)
+        {
+            ResultStore::QueueStartAttemptRow(_ctx.runId, _ctx.attemptsDone + 1);
+            _ctx.attemptRowQueued = true;
+        }
         _serialTicks = 0;
         _serialStep = SerializeStep::ResolveAttemptRow;
         return;
@@ -525,6 +516,8 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
             return;
 
         _ctx.attemptId = ResultStore::ResolveStartAttemptRowId(_ctx.runId, _ctx.attemptsDone + 1);
+        if (!_ctx.attemptId && _serialTicks < kSerializeDrainTicks)
+            return;
         if (!_ctx.attemptId)
             LOG_ERROR("raidtest", "Orchestrator: attempt placeholder row resolve failed for run {} "
                 "seq {} (row will be missing, invariant degraded)", _ctx.runId,

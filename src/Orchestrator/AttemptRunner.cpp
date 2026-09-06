@@ -4,6 +4,9 @@
 #include "Creature.h"
 #include "DatabaseEnv.h"
 #include "InstanceSaveMgr.h"
+#include "Group.h"
+#include "GroupMgr.h"
+#include "Playerbots.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
@@ -11,11 +14,47 @@
 #include "Player.h"
 #include "ResultStore.h"
 #include "RosterLogin.h"
+#include "RosterBuilder.h"
 #include <algorithm>
 #include <limits>
 
 namespace
 {
+    bool ValidateRaid(RunContext const& ctx, char const* phase)
+    {
+        Group* group = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetGroup();
+        bool valid = group && group->isRaidGroup() && group->GetMembersCount() == ctx.bots.size();
+        if (group && sGroupMgr->GetGroupByGUID(group->GetGUID().GetCounter()) != group)
+            valid = false;
+        bool tankChecked = false;
+        for (size_t i = 0; i < ctx.bots.size(); ++i)
+        {
+            Player* bot = ctx.bots[i];
+            if (!bot || !bot->IsInWorld() || !group || bot->GetGroup() != group)
+                valid = false;
+            if (!tankChecked && i < ctx.rosterSlots.size() && ctx.rosterSlots[i].role == "tank")
+            {
+                PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+                if (!ai || !ai->IsExplicitMainTank(bot))
+                    valid = false;
+                tankChecked = true;
+            }
+        }
+        if (!valid)
+            for (Player* bot : ctx.bots)
+            {
+                PlayerbotAI* ai = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+                LOG_ERROR("raidtest", "raid_invalid: run={} phase={} bot={} group={} grouper={}",
+                    ctx.runId, phase, bot ? bot->GetName() : "missing",
+                    bot && bot->GetGroup() ? bot->GetGroup()->GetGUID().ToString() : "none",
+                    ai ? int(ai->GetGrouperType()) : -1);
+            }
+        else if (std::string(phase) != "before_pull")
+            LOG_INFO("raidtest", "Raid preflight: run={} phase={} group={} members={}",
+                ctx.runId, phase, group->GetGUID().ToString(), group->GetMembersCount());
+        return valid;
+    }
+
     // 传送拉满预算（世界 tick 名义 ~100ms）。
     constexpr uint32 kTeleportStageTicks = 400;   // ~40s
     // 找 boss 重试窗口（地图/实例内 creature 可能尚未加载）。
@@ -78,6 +117,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     ClearHeldPullContext();
 
     ctx.attemptId = 0;
+    ctx.attemptRowQueued = false;
     ctx.attemptSeq = seq;
     ctx.attemptElapsedMs = 0;
     // 注意：attemptTimeoutMs 由 Orchestrator 在登录完成时统一设定（场景优先，
@@ -137,6 +177,37 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         // 先重置 boss 到干净态（复活/清 enrage/清残留战斗/add/回满血），再把全队
         // bot 回满血/资源。消除「带状态进 attempt」的归因污染（Gluth run34：boss
         // 继承上一场 enrage、bot 残血入场）。纯编排，不改任何 bot 行为。
+        if (ctx.bots.size() != ctx.rosterSlots.size())
+        {
+            Abort("fixture_invalid: roster size mismatch");
+            return;
+        }
+        if (!ValidateRaid(ctx, "before_fixture"))
+        {
+            Abort("raid_invalid: group lost before character preparation");
+            return;
+        }
+        RosterBuilder builder;
+        builder.SetGearProfile(ctx.scenario->GetGearProfile());
+        bool valid = true;
+        for (size_t i = 0; i < ctx.bots.size(); ++i)
+        {
+            if (ctx.attemptSeq == 1 && !builder.PrepareCharacter(ctx.bots[i], ctx.rosterSlots[i]))
+                valid = false;
+            if (!builder.ValidateAndSnapshot(ctx.bots[i], ctx.rosterSlots[i], ctx.runId, ctx.attemptSeq))
+                valid = false;
+        }
+        if (!ValidateRaid(ctx, "after_fixture"))
+        {
+            Abort("raid_invalid: group lost during character preparation");
+            return;
+        }
+        if (!valid)
+        {
+            Abort("fixture_invalid: see roster snapshot and raidtest log; no pull performed");
+            return;
+        }
+
         ResetInstance(ctx);
         RestoreRoster(ctx);
 
@@ -148,6 +219,11 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
 
     case Stage::Pull:
     {
+        if (!ValidateRaid(ctx, "before_pull"))
+        {
+            Abort("raid_invalid: group lost while waiting to pull");
+            return;
+        }
         switch (_pullStep)
         {
         case PullStep::FindBoss:
@@ -184,6 +260,7 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             // 先异步入队 attempt 占位 INSERT（不阻塞）；id 等队列排空后的 tick 再取
             // （raidtest_events 需要 attempt 归属，见 ResultStore 两段式 API）。
             ResultStore::QueueStartAttemptRow(ctx.runId, ctx.attemptSeq);
+            ctx.attemptRowQueued = true;
             _rowResolveTicks = 0;
             _pullStep = PullStep::AwaitAttemptRow;
             return;
@@ -215,11 +292,18 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             ctx.attemptId = ResultStore::ResolveStartAttemptRowId(ctx.runId, ctx.attemptSeq);
             if (!ctx.attemptId)
             {
+                if (_rowResolveTicks < kAttemptRowResolveTicks)
+                    return; // Queue emptiness is not a commit acknowledgement; wait for actual visibility.
                 _result = AttemptResult::Aborted;
                 _notes = "failed to create attempt row";
                 _stage = Stage::Done;
                 LOG_ERROR("raidtest", "AttemptRunner: attempt {} - ResolveStartAttemptRowId failed",
                     ctx.attemptSeq);
+                return;
+            }
+            if (!ValidateRaid(ctx, "before_pull"))
+            {
+                Abort("raid_invalid: group lost before combat start");
                 return;
             }
             CombatEventBus::instance().StartAttempt(ctx.attemptId, ctx.botGuids, ctx.bossGuid,

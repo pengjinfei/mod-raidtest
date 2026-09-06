@@ -50,3 +50,19 @@ AzerothCore 3.3.5 WotLK Playerbot fork 的自动化团队副本验证模块：�
   raidtest_events。模块对 raidtest_* 表不做自动清理；长跑环境建议按
   `raidtest_runs.finished_at` / run 维度定期删除或保留最近 N 轮。`dump` 默认封顶
   2000 行/次。
+### Character preflight and fixed roster (fixture-v1)
+
+The ten-player roster now pins equipment, gems, enchants and glyphs. `Glyphs` contains six
+GlyphProperties.dbc IDs in real slot order; `RequiredSpells` contains mandatory learned spell IDs.
+`Ranged` is an explicit equipment slot. This is a high-gear capability baseline, not progression-tier Naxx gear.
+
+Preparation runs after teleport: rebuild the normal level-80 talent template, learn class spells,
+apply glyphs, and equip the final items before applying gems/enchants. Complete equipment blueprints
+skip random factory equipment. Every attempt validates the actual roster before pulling; failure
+produces `aborted` with `fixture_invalid`, with no combat-start event.
+
+Snapshots are written relative to the worldserver working directory:
+`raidtest-rosters/run-N-attempt-M-slot-K.tsv`. Failure to write a snapshot also blocks the pull.
+Compare the actual talent/spell/equipment records when changing templates or testing another boss;
+a changed roster is a changed experimental baseline. The 25-player roster still uses automatic
+fallback and has not been certified as the same pinned fixture.

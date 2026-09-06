@@ -1,5 +1,9 @@
 #include "RosterBuilder.h"
 #include "AccountMgr.h"
+#include "DBCStores.h"
+#include <filesystem>
+#include <fstream>
+#include <set>
 #include "CharacterCache.h"
 #include "DatabaseEnv.h"
 #include "Item.h"
@@ -78,6 +82,7 @@ namespace
     std::map<std::string, EquipmentSlots> const GetEquipSlotMap()
     {
         return {
+            { "Ranged", EQUIPMENT_SLOT_RANGED },
             { "MainHand", EQUIPMENT_SLOT_MAINHAND }, { "OffHand",     EQUIPMENT_SLOT_OFFHAND },
             { "Head",     EQUIPMENT_SLOT_HEAD },     { "Shoulder",    EQUIPMENT_SLOT_SHOULDERS },
             { "Neck",     EQUIPMENT_SLOT_NECK },     { "Chest",       EQUIPMENT_SLOT_CHEST },
@@ -568,7 +573,10 @@ void RosterBuilder::ApplyBlueprintGems(Player* bot, RosterSlot const& slot)
             continue;
         }
 
-        Item* item = FindEquippedItem(bot, gearIt->second);
+        auto const slots = GetEquipSlotMap();
+        auto const equippedSlot = slots.find(slotKey);
+        Item* item = equippedSlot == slots.end() ? nullptr :
+            bot->GetItemByPos(INVENTORY_SLOT_BAG_0, equippedSlot->second);
         if (!item)
         {
             LOG_WARN("raidtest", "RosterBuilder: cannot find equipped item {} for gem slot '{}'",
@@ -591,6 +599,7 @@ void RosterBuilder::ApplyGemsToItem(Player* bot, Item* item, std::vector<uint32>
         return;
     }
 
+    bot->ToggleMetaGemsActive(item->GetSlot(), false);
     uint8 socketIndex = 0;
     for (uint32 gemItemId : gemIds)
     {
@@ -618,6 +627,15 @@ void RosterBuilder::ApplyGemsToItem(Player* bot, Item* item, std::vector<uint32>
             continue;
         }
 
+        uint8 const socket = socketIndex - 1;
+        uint32 const color = item->GetTemplate()->Socket[socket].Color;
+        if (!color || ((gemProperties->color == 1) != (color == 1)))
+        {
+            LOG_ERROR("raidtest", "RosterBuilder: incompatible gem {} in item {} socket {}",
+                gemItemId, item->GetEntry(), socket);
+            continue;
+        }
+
         bot->ApplyEnchantment(item, enchantSlot, false);
         item->SetEnchantment(enchantSlot, gemProperties->spellitemenchantement, 0, 0,
             bot->GetGUID());
@@ -626,6 +644,12 @@ void RosterBuilder::ApplyGemsToItem(Player* bot, Item* item, std::vector<uint32>
         LOG_DEBUG("raidtest", "RosterBuilder: socketed gem {} into item {}", gemItemId,
             item->GetEntry());
     }
+    bot->ApplyEnchantment(item, BONUS_ENCHANTMENT_SLOT, false);
+    item->SetEnchantment(BONUS_ENCHANTMENT_SLOT,
+        item->GemsFitSockets() ? item->GetTemplate()->socketBonus : 0, 0, 0, bot->GetGUID());
+    bot->ApplyEnchantment(item, BONUS_ENCHANTMENT_SLOT, true);
+    bot->ToggleMetaGemsActive(item->GetSlot(), true);
+
 }
 
 void RosterBuilder::ApplyBlueprintEnchants(Player* bot, RosterSlot const& slot)
@@ -639,7 +663,10 @@ void RosterBuilder::ApplyBlueprintEnchants(Player* bot, RosterSlot const& slot)
             continue;
         }
 
-        Item* item = FindEquippedItem(bot, gearIt->second);
+        auto const slots = GetEquipSlotMap();
+        auto const equippedSlot = slots.find(slotKey);
+        Item* item = equippedSlot == slots.end() ? nullptr :
+            bot->GetItemByPos(INVENTORY_SLOT_BAG_0, equippedSlot->second);
         if (!item)
         {
             LOG_WARN("raidtest", "RosterBuilder: cannot find equipped item {} for enchant slot '{}'",
@@ -678,16 +705,30 @@ std::string RosterBuilder::BisSlotName(std::string const& blueprintSlotKey)
 bool RosterBuilder::FetchBisForSlot(uint8 classId, std::string const& specName,
                                     std::string const& slotName, uint32& itemId)
 {
-    (void)specName;   // B1-2 决策：最高档 = ilvl 最高史诗装，按 class+slot 取，不按 spec 过滤
-                      // （实测各 spec 顶档件共享同一批 ilvl 284/277 装；表内 spec_name 命名与
-                      //  蓝图 TalentSpec 不一致，过滤反而引入空结果/降档风险）。
+    static std::map<std::string, std::string> const specs = {
+        {"warrior_arms", "Arms"}, {"warrior_fury", "Fury"}, {"warrior_tank", "Protection"},
+        {"paladin_holy", "Holy"}, {"paladin_prot", "Protection"}, {"paladin_retri", "Retribution"},
+        {"priest_disc", "Discipline"}, {"priest_holy", "Holy"}, {"priest_shadow", "Shadow"},
+        {"dk_blood", "Blood Tank"}, {"dk_frost", "Frost"}, {"dk_unholy", "Unholy"},
+        {"mage_arcane", "Arcane"}, {"mage_fire", "Fire"}, {"mage_frost", "Frost"},
+        {"warlock_affliction", "Affliction"}, {"warlock_demonology", "Demonology"},
+        {"warlock_destroy", "Destruction"}, {"hunter_beast", "Beast Mastery"},
+        {"hunter_marksman", "Marksmanship"}, {"hunter_survival", "Survival"},
+        {"rogue_assassination", "Assassination"}, {"rogue_combat", "Combat"}, {"rogue_subtlety", "Subtlety"},
+        {"shaman_elemental", "Elemental"}, {"shaman_enhancement", "Enhancement"},
+        {"shaman_resto", "Restoration"}, {"druid_balance", "Balance"},
+        {"druid_feral", "Feral Cat"}, {"druid_resto", "Restoration"}
+    };
+    auto const spec = specs.find(specName);
+    if (spec == specs.end())
+        return false;
 
     // 跨库无法 JOIN：先取 playerbots_bis_gear（PlayerbotsDatabase）该 职业+槽位 的候选
     // item_id，再回 item_template（WorldDatabase）按 Quality>=4 + ItemLevel DESC 取顶。
     QueryResult candidates = PlayerbotsDatabase.Query(Acore::StringFormat(
         "SELECT item_id FROM playerbots_bis_gear "
-        "WHERE class = {} AND slot_name = '{}'",
-        uint32(classId), slotName));
+        "WHERE class = {} AND slot_name = '{}' AND spec_name IN ('{}', '{}')",
+        uint32(classId), slotName, spec->second, specName == "dk_blood" ? "BloodTank" : spec->second));
     if (!candidates)
     {
         LOG_DEBUG("raidtest", "RosterBuilder: no BIS candidates for class {} slot '{}'",
@@ -810,12 +851,7 @@ uint32 RosterBuilder::EquipBisItems(Player* bot, RosterSlot const& slot)
 
 uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
 {
-    // 装配顺序：清空现有装备 -> 工厂档位配装填满全槽 -> 工厂附魔+宝石
-    // -> 蓝图物品精确覆盖指定槽位 -> BIS 最高档装备填充蓝图未指定槽位（方案 C）
-    // -> 蓝图宝石 -> 蓝图附魔。
-    // 工厂 InitEquipment 会把已装备的旧件挪进背包再换新，所以蓝图件必须先做“覆盖”
-    // 而非“先于工厂入场”，否则工厂会把蓝图件全部挤进包里、蓝图宝石/附魔随之失配。
-    // BIS 件同理在工厂之后入场（工厂件作为失败兜底留在槽内）。
+    // Enhancements belong to the final equipped items, never to discarded factory fallback.
     PlayerbotFactory::DestroyEquippedGear(bot);
 
     // 兜底配装档位：epic -> 工厂 itemQuality=ITEM_QUALITY_EPIC(4)（蓝图显式装备优先，
@@ -823,11 +859,17 @@ uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
     // 通常 3=稀有）。镜像 PlayerbotFactory `init=epic` 的 itemQuality 语义。
     uint32 const factoryItemQuality = _gearProfile == GearProfile::Epic ? ITEM_QUALITY_EPIC : 0u;
     PlayerbotFactory factory(bot, bot->GetLevel(), factoryItemQuality);
-    factory.InitEquipment(false);
-    factory.ApplyEnchantAndGemsNew(true);
-
+    auto const slots = GetEquipSlotMap();
+    bool const pinned = std::all_of(slots.begin(), slots.end(), [&](auto const& entry)
+    {
+        return entry.first == "OffHand" || slot.gear.count(entry.first) != 0;
+    });
+    if (!pinned)
+        factory.InitEquipment(false);
     uint32 blueprintEquipped = EquipBlueprintItems(bot, slot);
-    uint32 bisEquipped = EquipBisItems(bot, slot);
+    uint32 bisEquipped = pinned ? 0 : EquipBisItems(bot, slot);
+    if (!pinned)
+        factory.ApplyEnchantAndGemsNew(true);
 
     ApplyBlueprintGems(bot, slot);
     ApplyBlueprintEnchants(bot, slot);
@@ -850,4 +892,212 @@ uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
     // 或紧随其后的装配查询（验收 SQL）会看到旧装备。create=false（角色已存在）。
     bot->SaveToDB(false, false);
     return totalEquipped;
+}
+
+bool RosterBuilder::PrepareCharacter(Player* bot, RosterSlot const& slot)
+{
+    int32 const spec = GetTalentSpecNo(slot.talentSpec);
+    if (!bot || bot->GetLevel() != 80 || bot->GetMapId() == MAP_EBON_HOLD || spec < 0)
+        return false;
+    bot->resetTalents(true);
+    bot->InitTalentForLevel();
+    PlayerbotFactory::InitTalentsBySpecNo(bot, spec, false);
+    PlayerbotFactory factory(bot, 80);
+    factory.InitSkills();
+    ApplyBlueprintProfessions(bot, slot);
+    factory.InitClassSpells();
+    factory.InitAvailableSpells();
+    if (slot.glyphs.size() == MAX_GLYPH_SLOT_INDEX)
+    {
+        bot->InitGlyphsForLevel();
+        for (uint8 index = 0; index < MAX_GLYPH_SLOT_INDEX; ++index)
+        {
+            auto const* oldGlyph = sGlyphPropertiesStore.LookupEntry(bot->GetGlyph(index));
+            if (oldGlyph)
+                bot->RemoveAurasDueToSpell(oldGlyph->SpellId);
+            auto const* glyph = sGlyphPropertiesStore.LookupEntry(slot.glyphs[index]);
+            auto const* glyphSlot = sGlyphSlotStore.LookupEntry(bot->GetGlyphSlot(index));
+            if (!glyph || !glyphSlot || glyph->TypeFlags != glyphSlot->TypeFlags)
+                return false;
+            bot->SetGlyph(index, slot.glyphs[index], true);
+            bot->CastSpell(bot, glyph->SpellId, true);
+        }
+    }
+    else
+        factory.InitGlyphs(false);
+    ApplyGear(bot, slot);
+    bot->SaveToDB(false, false);
+    return true;
+}
+
+bool RosterBuilder::ValidateAndSnapshot(Player* bot, RosterSlot const& slot, uint32 runId, uint32 attemptSeq)
+{
+    if (!bot)
+        return false;
+    std::error_code error;
+    std::filesystem::path directory("raidtest-rosters");
+    std::filesystem::create_directories(directory, error);
+    auto const path = directory / Acore::StringFormat("run-{}-attempt-{}-slot-{}.tsv", runId, attemptSeq, slot.slot);
+    std::ofstream snapshot(path);
+    if (error || !snapshot)
+    {
+        LOG_ERROR("raidtest", "fixture_invalid: cannot write snapshot {}", path.string());
+        return false;
+    }
+    snapshot << "fixture_version\t1\nrun\t" << runId << "\nattempt\t" << attemptSeq
+        << "\nguid\t" << bot->GetGUID().ToString() << "\nspec\t" << slot.talentSpec
+        << "\nlevel\t" << uint32(bot->GetLevel()) << '\n';
+    bool valid = true;
+    auto reject = [&](std::string const& reason)
+    {
+        valid = false;
+        snapshot << "error\t" << reason << '\n';
+        LOG_ERROR("raidtest", "fixture_invalid: run={} bot={} {}", runId, bot->GetName(), reason);
+    };
+    if (bot->GetLevel() != 80 || bot->getClass() != GetClassId(slot.charClass))
+        reject("level/class mismatch");
+    uint32 points = 0;
+    for (auto const& [spell, talent] : bot->GetTalentMap())
+    {
+        if (talent->State == PLAYERSPELL_REMOVED || !talent->IsInSpec(bot->GetActiveSpec()))
+            continue;
+        auto const* entry = sTalentStore.LookupEntry(talent->talentID);
+        if (!entry)
+        {
+            reject("invalid talent record");
+            continue;
+        }
+        for (uint32 rank = 0; rank < MAX_TALENT_RANK; ++rank)
+            if (entry->RankID[rank] == spell)
+                points += rank + 1;
+        snapshot << "talent\t" << spell << '\n';
+    }
+    snapshot << "talent_points\t" << points << "\nfree_talent_points\t" << bot->GetFreeTalentPoints() << '\n';
+    if (points != 71 || bot->GetFreeTalentPoints() != 0)
+        reject(Acore::StringFormat("talent points allocated={} free={} expected=71/0",
+            points, bot->GetFreeTalentPoints()));
+    for (uint32 spell : slot.requiredSpells)
+        if (!bot->HasSpell(spell))
+            reject(Acore::StringFormat("missing required spell={}", spell));
+    for (std::string const& profession : slot.professions)
+    {
+        auto const skills = GetProfessionSkillIdMap();
+        auto const it = skills.find(profession);
+        if (it == skills.end() || !bot->HasSkill(it->second))
+            reject(Acore::StringFormat("missing profession={}", profession));
+        else
+            snapshot << "profession\t" << profession << '\t' << bot->GetSkillValue(it->second)
+                << '\t' << bot->GetMaxSkillValue(it->second) << '\n';
+    }
+    std::set<uint32> glyphs;
+    for (uint8 index = 0; index < MAX_GLYPH_SLOT_INDEX; ++index)
+    {
+        uint32 const glyph = bot->GetGlyph(index);
+        snapshot << "glyph\t" << uint32(index) << '\t' << glyph << '\n';
+        if (!slot.glyphs.empty() && slot.glyphs[index] != glyph)
+            reject(Acore::StringFormat("glyph blueprint mismatch slot={}", index));
+        auto const* entry = sGlyphPropertiesStore.LookupEntry(glyph);
+        auto const* glyphSlot = sGlyphSlotStore.LookupEntry(bot->GetGlyphSlot(index));
+        if (!entry || !glyphSlot || entry->TypeFlags != glyphSlot->TypeFlags || !glyphs.insert(glyph).second)
+            reject(Acore::StringFormat("invalid/missing/duplicate glyph slot={}", index));
+    }
+    for (auto const& [spell, data] : bot->GetSpellMap())
+        if (data->State != PLAYERSPELL_REMOVED && data->IsInSpec(bot->GetActiveSpec()))
+            snapshot << "spell\t" << spell << '\t' << data->Active << '\n';
+    Item* mainHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+    Item* offHand = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_OFFHAND);
+    if (mainHand && offHand && mainHand->GetTemplate()->InventoryType == INVTYPE_2HWEAPON && !bot->CanTitanGrip())
+        reject("two-handed weapon conflicts with offhand");
+    std::map<uint32, uint32> gemCategories;
+    for (uint8 index = EQUIPMENT_SLOT_START; index < EQUIPMENT_SLOT_END; ++index)
+    {
+        if (index == EQUIPMENT_SLOT_BODY || index == EQUIPMENT_SLOT_TABARD)
+            continue;
+        Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, index);
+        if (!item)
+        {
+            if (index != EQUIPMENT_SLOT_OFFHAND && index != EQUIPMENT_SLOT_RANGED)
+                reject(Acore::StringFormat("missing equipment slot={}", index));
+            continue;
+        }
+        auto const* proto = item->GetTemplate();
+        snapshot << "item\t" << uint32(index) << '\t' << item->GetEntry() << '\t' << proto->ItemLevel;
+        for (uint8 enchant = 0; enchant < MAX_ENCHANTMENT_SLOT; ++enchant)
+            snapshot << '\t' << item->GetEnchantmentId(EnchantmentSlot(enchant));
+        snapshot << '\n';
+        if (!proto->ItemLevel || proto->Quality < ITEM_QUALITY_UNCOMMON || proto->RequiredLevel > bot->GetLevel())
+            reject(Acore::StringFormat("invalid equipment slot={} item={}", index, item->GetEntry()));
+        bool const needsEnchant = index == EQUIPMENT_SLOT_HEAD || index == EQUIPMENT_SLOT_SHOULDERS ||
+            index == EQUIPMENT_SLOT_BACK || index == EQUIPMENT_SLOT_CHEST || index == EQUIPMENT_SLOT_WRISTS ||
+            index == EQUIPMENT_SLOT_HANDS || index == EQUIPMENT_SLOT_LEGS || index == EQUIPMENT_SLOT_FEET ||
+            index == EQUIPMENT_SLOT_MAINHAND || (index == EQUIPMENT_SLOT_OFFHAND &&
+                (proto->Class == ITEM_CLASS_WEAPON || proto->InventoryType == INVTYPE_SHIELD));
+        if (bot->CanUseItem(item) != EQUIP_ERR_OK)
+            reject(Acore::StringFormat("item requirements not met slot={}", index));
+        if (auto const* enchant = sSpellItemEnchantmentStore.LookupEntry(item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT)))
+            if (enchant->requiredLevel > bot->GetLevel() || (enchant->requiredSkill &&
+                bot->GetSkillValue(enchant->requiredSkill) < enchant->requiredSkillValue))
+                reject(Acore::StringFormat("enchant requirements not met slot={}", index));
+        if (needsEnchant && !item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT))
+            reject(Acore::StringFormat("missing permanent enchant slot={}", index));
+        for (uint8 socket = 0; socket < MAX_GEM_SOCKETS; ++socket)
+        {
+            if (!proto->Socket[socket].Color)
+                continue;
+            uint32 const id = item->GetEnchantmentId(EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + socket));
+            auto const* enchant = sSpellItemEnchantmentStore.LookupEntry(id);
+            auto const* gem = enchant ? sObjectMgr->GetItemTemplate(enchant->GemID) : nullptr;
+            auto const* properties = gem ? sGemPropertiesStore.LookupEntry(gem->GemProperties) : nullptr;
+            if (!properties || ((properties->color == 1) != (proto->Socket[socket].Color == 1)))
+                reject(Acore::StringFormat("missing/invalid gem slot={} socket={}", index, socket));
+            if (gem && bot->CanUseItem(gem) != EQUIP_ERR_OK)
+                reject(Acore::StringFormat("gem requirements not met item={}", gem->ItemId));
+            if (gem && gem->ItemLimitCategory)
+            {
+                auto const* limit = sItemLimitCategoryStore.LookupEntry(gem->ItemLimitCategory);
+                if (!limit || ++gemCategories[gem->ItemLimitCategory] > limit->maxCount)
+                    reject(Acore::StringFormat("gem category limit exceeded category={}", gem->ItemLimitCategory));
+            }
+            if (enchant && enchant->EnchantmentCondition &&
+                !bot->EnchantmentFitsRequirements(enchant->EnchantmentCondition, -1))
+                reject(Acore::StringFormat("inactive meta gem slot={} socket={}", index, socket));
+        }
+    }
+    for (auto const& [key, id] : slot.gear)
+    {
+        auto const slots = GetEquipSlotMap();
+        auto const it = slots.find(key);
+        Item* actual = it == slots.end() ? nullptr : bot->GetItemByPos(INVENTORY_SLOT_BAG_0, it->second);
+        if (!actual || actual->GetEntry() != id)
+            reject(Acore::StringFormat("blueprint mismatch slot={} expected={}", key, id));
+    }
+    for (auto const& [key, ids] : slot.gems)
+    {
+        auto const slots = GetEquipSlotMap();
+        auto const it = slots.find(key);
+        Item* item = it == slots.end() ? nullptr : bot->GetItemByPos(INVENTORY_SLOT_BAG_0, it->second);
+        for (size_t socket = 0; socket < ids.size(); ++socket)
+        {
+            auto const* gem = sObjectMgr->GetItemTemplate(ids[socket]);
+            auto const* properties = gem ? sGemPropertiesStore.LookupEntry(gem->GemProperties) : nullptr;
+            if (!item || !properties || socket >= MAX_GEM_SOCKETS ||
+                item->GetEnchantmentId(EnchantmentSlot(SOCK_ENCHANTMENT_SLOT + socket)) !=
+                    properties->spellitemenchantement)
+                reject(Acore::StringFormat("gem blueprint mismatch slot={} socket={}", key, socket));
+        }
+    }
+    for (auto const& [key, id] : slot.enchants)
+    {
+        auto const slots = GetEquipSlotMap();
+        auto const it = slots.find(key);
+        Item* item = it == slots.end() ? nullptr : bot->GetItemByPos(INVENTORY_SLOT_BAG_0, it->second);
+        if (!item || item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT) != id)
+            reject(Acore::StringFormat("enchant blueprint mismatch slot={}", key));
+    }
+    snapshot << "valid\t" << valid << '\n';
+    snapshot.flush();
+    if (!snapshot)
+        return false;
+    LOG_INFO("raidtest", "Roster snapshot: {} valid={}", path.string(), valid);
+    return valid;
 }

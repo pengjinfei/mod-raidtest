@@ -34,13 +34,12 @@ public:
     // prefix = 场景缩写（仅用于角色名前缀，保证跨场景字符名唯一）。
     CreatedChar CreateCharacter(RosterSlot const& slot, std::string const& prefix);
 
-    // 装配：清空当前装备 -> 工厂档位配装填满全槽 -> 工厂附魔+宝石
-    // -> 蓝图物品覆盖显式槽位 -> BIS 最高档装备填充蓝图未指定槽位（方案 C）
-    // -> 蓝图槽位宝石/附魔（含落在 BIS 件上的）。逐槽位独立，单槽失败记日志不中断。
-    // 返回装配后已穿装备件数（用于日志/冒烟断言）。
-    // 工厂兜底档位取自 SetGearProfile（Scenario::GetGearProfile -> RosterManager ->
-    // RosterBuilder 注入；epic=4，None=0 跟随工厂配置默认档）。
+    // Equip factory fallback, explicit items and spec-filtered BIS, then apply enhancements.
+    // PrepareCharacter runs after teleport so DK talent allocation uses the normal level budget.
+    // ValidateAndSnapshot fails closed before pull and writes a per-run, per-attempt artifact.
     uint32 ApplyGear(Player* bot, RosterSlot const& slot);
+    bool PrepareCharacter(Player* bot, RosterSlot const& slot);
+    bool ValidateAndSnapshot(Player* bot, RosterSlot const& slot, uint32 runId, uint32 attemptSeq);
 
     // 兜底配装档位（数据驱动：场景声明缺槽兜底质量，见 Scenario::GetGearProfile）。
     // 该 setter 由 RosterManager::EnsureRoster 在每次 run 前注入场景档位。
@@ -73,14 +72,8 @@ private:
     static void ApplyBlueprintEnchants(Player* bot, RosterSlot const& slot);
     static Item* FindEquippedItem(Player* bot, uint32 itemId);
 
-    // B1-2 方案 C：蓝图未指定槽位 -> 从 mod-playerbots 的 playerbots_bis_gear 提
-    // 最高档 BIS（联 acore_world.item_template 取 ilvl 最高的史诗装，ilvl 284 档）。
-    // 查 acore_playerbots.playerbots_bis_gear（PlayerbotsDatabase 句柄）取候选
-    // item_id，再回 acore_world.item_template（WorldDatabase 句柄）按 Quality>=4 +
-    // ItemLevel DESC 过滤（跨库无法 JOIN，分两步）。specName 仅作接口兼容（最高档
-    // 件各 spec 共享同一批装，不按 spec 过滤；表内 spec_name 命名与蓝图不一致）。
-    // faction 不参与过滤：该签名无 bot 上下文，且 item_template 无阵营装备限制，
-    // 不过滤可取到更高 ilvl。找不到（该职业/槽位无史诗 BIS）返回 false，落回工厂兜底。
+    // Select the highest-quality candidates within the explicitly mapped specialization.
+    // Unknown mappings never broaden to another specialization.
     static bool FetchBisForSlot(uint8 classId, std::string const& specName,
                                 std::string const& slotName, uint32& itemId);
 

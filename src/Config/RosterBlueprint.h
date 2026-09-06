@@ -11,6 +11,8 @@
 // Ring1/Ring2/Trinket1/Trinket2；宝石 <slot>.Gem1/<slot>.Gem2/...；附魔 <slot>.Enchant。
 struct RosterSlot
 {
+    std::vector<uint32> glyphs;             // GlyphProperties IDs in real slot order (0..5).
+    std::vector<uint32> requiredSpells;     // Mandatory spell IDs for this fixture.
     uint8 slot{0};                          // 槽位索引（段名 [Roster.N] 里的 N）
     std::string name;                       // 角色名（模块会自动加前缀避免与真实玩家冲突）
     std::string race;                       // 种族，如 "human"

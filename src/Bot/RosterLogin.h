@@ -38,7 +38,8 @@ public:
     // 返回要点：调用前请先确认 guid 对应角色存在（GetSlotGuids 即可）。
     static void Start(std::vector<ObjectGuid> const& guids);
 
-    // 轮询：所有 guid 对应的 Player 都已进入世界（ObjectAccessor::FindPlayer + IsInWorld）。
+    // Wait for world entry, holder registration, and completion of login-time client packets.
+    static bool IsReadyForGroup(Player* player);
     static bool AllLoggedIn(std::vector<ObjectGuid> const& guids);
 
     // 阻塞便捷变体（brief 接口）：Start + 最多等待 waitTicks * 100ms

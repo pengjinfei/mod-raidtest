@@ -15,7 +15,7 @@ namespace
     std::unordered_set<std::string> const g_gearSlots = {
         "MainHand", "OffHand", "Head", "Shoulder", "Neck", "Chest", "Back",
         "Wrist", "Hands", "Waist", "Legs", "Feet", "Ring1", "Ring2",
-        "Trinket1", "Trinket2"};
+        "Trinket1", "Trinket2", "Ranged"};
 
     bool IsAllDigits(std::string const& text)
     {
@@ -104,6 +104,20 @@ namespace
                     slot.professions.emplace_back(std::move(profession));
             }
             return true;
+        }
+
+        if (key == "Glyphs" || key == "RequiredSpells")
+        {
+            auto& ids = key == "Glyphs" ? slot.glyphs : slot.requiredSpells;
+            ids.clear();
+            for (std::string_view view : Acore::Tokenize(value, ',', false))
+            {
+                uint32 id = 0;
+                if (!ParseItemId(Acore::String::Trim(std::string(view)), id) || !id)
+                    return false;
+                ids.push_back(id);
+            }
+            return key != "Glyphs" || ids.size() == 6;
         }
 
         if (g_gearSlots.find(key) != g_gearSlots.end())

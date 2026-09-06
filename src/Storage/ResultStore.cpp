@@ -63,15 +63,14 @@ void ResultStore::QueueStartAttemptRow(uint32 runId, uint32 seq)
 
 uint32 ResultStore::ResolveStartAttemptRowId(uint32 runId, uint32 seq)
 {
-    // 前置条件：调用方已确认 CharacterDatabase.QueueSize()==0（前一步 INSERT 已
-    // 由数据库线程执行完毕），此 SELECT 在同一连接之外可见。逐 tick 驱动方保证该
-    // 前置；此处只做一次同步读。
+    // Probe actual database visibility. QueueSize()==0 does not acknowledge a commit;
+    // callers retry within their bounded stage budget and never insert a second placeholder.
     QueryResult result = CharacterDatabase.Query(Acore::StringFormat(
         "SELECT id FROM raidtest_attempts WHERE run_id = {} AND seq = {} ORDER BY id DESC LIMIT 1",
         runId, seq));
     if (!result)
     {
-        LOG_ERROR("raidtest", "ResultStore: SELECT after queued attempt INSERT returned nothing "
+        LOG_DEBUG("raidtest", "ResultStore: SELECT after queued attempt INSERT not yet visible "
             "(run_id={}, seq={})", runId, seq);
         return 0;
     }

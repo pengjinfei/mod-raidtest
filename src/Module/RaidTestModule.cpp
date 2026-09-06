@@ -9,6 +9,11 @@
 #include "Log.h"
 #include "PlayerbotMgr.h"        // 验证跨模块 include 已通
 #include "ScriptMgr.h"
+#include "Group.h"
+#if defined(__APPLE__) || defined(__linux__)
+#include <execinfo.h>
+#include <cstdlib>
+#endif
 
 // 世界线程驱动（design §10）：把 RaidTestOrchestrator 的逐 tick 状态机接进世界循环。
 // OnUpdate 每个世界 tick 调用一次 instance().Update(diff) —— 非阻塞、逐 tick 推进。
@@ -26,12 +31,58 @@ public:
     }
 };
 
+// Observe group lifecycle without changing membership or AI decisions.
+class RaidTestGroupScript : public GroupScript
+{
+public:
+    RaidTestGroupScript() : GroupScript("RaidTestGroupScript", { GROUPHOOK_ON_REMOVE_MEMBER, GROUPHOOK_ON_DISBAND }) { }
+
+    void OnRemoveMember(Group* group, ObjectGuid guid, RemoveMethod method,
+                        ObjectGuid kicker, char const* reason) override
+    {
+        if (!RaidTestOrchestrator::instance().IsRunning())
+            return;
+        LOG_WARN("raidtest", "group_remove: state={} group={} member={} method={} kicker={} reason={}",
+            RaidTestOrchestrator::instance().Status(), group->GetGUID().ToString(), guid.ToString(),
+            uint32(method), kicker.ToString(), reason ? reason : "");
+        Trace();
+    }
+
+    void OnDisband(Group* group) override
+    {
+        if (!RaidTestOrchestrator::instance().IsRunning())
+            return;
+        LOG_WARN("raidtest", "group_disband: state={} group={} members={}",
+            RaidTestOrchestrator::instance().Status(), group->GetGUID().ToString(), group->GetMembersCount());
+        Trace();
+    }
+
+private:
+    static void Trace()
+    {
+        if (RaidTestConfig::instance().LogLevel() < 3)
+            return;
+#if defined(__APPLE__) || defined(__linux__)
+        void* frames[24];
+        int const count = backtrace(frames, 24);
+        char** names = backtrace_symbols(frames, count);
+        if (names)
+        {
+            for (int i = 0; i < count; ++i)
+                LOG_WARN("raidtest", "group_trace: {}", names[i]);
+            std::free(names);
+        }
+#endif
+    }
+};
+
 void AddRaidTestScripts()
 {
     RaidTestConfig::instance().Initialize();
     RegisterRaidTestCombatHooks();   // 施法/伤害/死亡全局 hooks（Task 5）
     RegisterAllScenarios();          // 扫描 conf 目录 mod-raidtest-scenario-*.conf 并登记（Task 6）
     AddRaidTestCommandScripts();     // .raidtest 命令面（Task 8）
+    new RaidTestGroupScript();
     new RaidTestWorldScript();       // run 状态机逐 tick 驱动（Task 7）
     LOG_INFO("raidtest", ">> mod-raidtest loaded (prefix={}, party={})",
         RaidTestConfig::instance().AccountPrefix(),

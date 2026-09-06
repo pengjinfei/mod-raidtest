@@ -2,6 +2,7 @@
 #define PLAYERBOTS_RAIDTEST_RUN_CONTEXT_H
 
 #include "ObjectGuid.h"
+#include "RosterBlueprint.h"
 #include "Scenario.h"
 #include <string>
 #include <vector>
@@ -25,6 +26,7 @@ enum class AttemptResult : uint8
 struct RunContext
 {
     // ---- run 级（StartRun 生成，FinishRun 后清空）----
+    std::vector<RosterSlot> rosterSlots;
     std::string scenarioKey;
     Scenario* scenario = nullptr;
     std::vector<ObjectGuid> botGuids;   // 槽位升序（raidtest_accounts）
@@ -37,6 +39,7 @@ struct RunContext
     uint32 timeouts = 0;
 
     // ---- 当前 attempt 运行态 ----
+    bool attemptRowQueued = false;
     uint32 attemptId = 0;               // raidtest_attempts.id（QueueStartAttemptRow + ResolveStartAttemptRowId 后有效）
     uint32 attemptSeq = 0;              // 1-based
     uint32 attemptElapsedMs = 0;        // 开战（bus StartAttempt）起累计（world diff）

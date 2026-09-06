@@ -7,6 +7,7 @@
 #include "Player.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotMgr.h"
+#include "WorldSession.h"
 #include "Playerbots.h"   // GET_PLAYERBOT_AI / sRandomPlayerbotMgr
 #include <algorithm>
 #include <chrono>
@@ -23,12 +24,22 @@ void RosterLogin::Start(std::vector<ObjectGuid> const& guids)
         sRandomPlayerbotMgr.AddPlayerBot(guid, 0);
 }
 
+bool RosterLogin::IsReadyForGroup(Player* player)
+{
+    // World entry precedes the deferred OnBotLoginOperation. That operation can enqueue
+    // CMSG_GROUP_DISBAND for the saved group. Let normal UpdateSessions consume it before
+    // forming a new raid, otherwise the stale leave request removes the new membership.
+    return player && player->IsInWorld() && !player->IsBeingTeleported() &&
+        sRandomPlayerbotMgr.GetPlayerBot(player->GetGUID()) == player && GET_PLAYERBOT_AI(player) &&
+        player->GetSession() && player->GetSession()->GetPacketQueue().empty();
+}
+
 bool RosterLogin::AllLoggedIn(std::vector<ObjectGuid> const& guids)
 {
     for (ObjectGuid const& guid : guids)
     {
         Player* bot = ObjectAccessor::FindPlayer(guid);
-        if (!bot || !bot->IsInWorld())
+        if (!IsReadyForGroup(bot))
             return false;
     }
     return true;
