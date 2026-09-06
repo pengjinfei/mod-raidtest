@@ -160,6 +160,24 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
     {
         if (!_teleportSent)
         {
+            // Discard the previous encounter's casts/ground effects/AI targets only when there
+            // was one. On a fresh run (attempt 1) the bots are freshly logged in and the reset
+            // disrupts their initial positioning/engagement: run87/88 never engaged the first
+            // pull target and stalled at the clearing timeout, run86 (no reset) cleared 4/4.
+            if (ctx.attemptSeq > 1)
+            {
+                for (Player* bot : ctx.bots)
+                {
+                    if (!bot || !bot->IsInWorld())
+                        continue;
+                    bot->InterruptNonMeleeSpells(true);
+                    bot->AttackStop();
+                    bot->CombatStop();
+                    bot->RemoveAllDynObjects();
+                    if (PlayerbotAI* ai = GET_PLAYERBOT_AI(bot))
+                        ai->Reset();
+                }
+            }
             ReviveDead(ctx);
             bool const ok = RosterLogin::TeleportToRaid(ctx.bots, ctx.scenario->GetMapId(),
                                                         ctx.scenario->GetPreparationPoint());
@@ -762,6 +780,18 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     ctx.attemptElapsedMs += diff;
     _preparationElapsed += diff;
     ResolveBoss(ctx);
+    if (_preparationElapsed / 15000 != (_preparationElapsed - diff) / 15000)
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot)
+                continue;
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+            Unit* target = ai ? ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() : nullptr;
+            LOG_INFO("raidtest", "preclear_status: bot={} alive={} combat={} ai={} target={} pos={:.2f},{:.2f},{:.2f}",
+                bot->GetName(), bot->IsAlive(), bot->IsInCombat(), ai ? int(ai->GetState()) : -1,
+                target ? target->GetGUID().ToString() : "none", bot->GetPositionX(), bot->GetPositionY(),
+                bot->GetPositionZ());
+        }
     if (!ValidateRaid(ctx, "before_pull"))
     {
         Abort("prerequisite_failed: group lost");
@@ -769,6 +799,17 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     }
     if (!ctx.boss || !ctx.boss->IsAlive() || ctx.boss->IsInCombat())
     {
+        if (ctx.boss)
+        {
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = ctx.boss->GetGUID();
+            state.actorEntry = ctx.boss->GetEntry();
+            state.detail = Acore::StringFormat("preclear_boss_invalid:alive={} combat={} pos={:.2f},{:.2f},{:.2f}",
+                ctx.boss->IsAlive(), ctx.boss->IsInCombat(), ctx.boss->GetPositionX(),
+                ctx.boss->GetPositionY(), ctx.boss->GetPositionZ());
+            CombatEventBus::instance().Push(state);
+        }
         Abort("prerequisite_invalid: boss missing or engaged before clearing completed");
         return;
     }
@@ -806,8 +847,34 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
         _stage = Stage::Recovery;
         return;
     }
+    // 15s 步进诊断：记录下一个拉怪目标的位置，以及每个 bot 对它的 LOS 与距离，
+    // 用于判断目标不可达到底是几何阻挡还是 bot 行为。
+    if (_preparationElapsed / 15000 != (_preparationElapsed - diff) / 15000)
+    {
+        LOG_INFO("raidtest", "preclear_target: guid={} entry={} pos={:.2f},{:.2f},{:.2f} combat={} evade={}",
+            next->GetGUID().ToString(), next->GetEntry(), next->GetPositionX(), next->GetPositionY(),
+            next->GetPositionZ(), next->IsInCombat(), next->HasUnitState(UNIT_STATE_EVADE));
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot)
+                continue;
+            LOG_INFO("raidtest", "preclear_target: bot={} dist={:.2f} los={} valid={}",
+                bot->GetName(), bot->GetDistance(next), bot->IsWithinLOSInMap(next),
+                bot->IsValidAttackTarget(next));
+        }
+    }
+    // Re-pull only once no bot's AI engine is in combat. bot->IsInCombat() (unit flag)
+    // stays set by a residual combat relationship (a pulled prerequisite mob forced into
+    // combat via SetInCombatWith but never actually engaged), which deadlocked the clearing:
+    // run87/88/90 killed 2/4 trash then stalled on the flag until the clearing timeout.
     if (_prerequisitePullSent && std::none_of(ctx.bots.begin(), ctx.bots.end(),
-        [](Player* bot) { return bot && bot->IsInCombat(); }))
+        [](Player* bot)
+        {
+            if (!bot)
+                return false;
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+            return ai && ai->GetState() == BOT_STATE_COMBAT;
+        }))
         _prerequisitePullSent = false;
     if (!_prerequisitePullSent)
     {

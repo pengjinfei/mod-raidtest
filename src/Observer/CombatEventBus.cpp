@@ -276,6 +276,12 @@ void RaidTestSpellScript::OnSpellCast(Spell* spell, Unit* caster, SpellInfo cons
     if (Unit* target = spell->m_targets.GetUnitTarget())
         e.target = target->GetGUID();
     e.detail = Acore::StringFormat("cast:cast_ms={}", spell->GetCastTime());
+    if (spell->m_targets.HasDst())
+    {
+        auto const* dst = spell->m_targets.GetDstPos();
+        e.detail += Acore::StringFormat(" dst={:.2f},{:.2f},{:.2f}",
+            dst->GetPositionX(), dst->GetPositionY(), dst->GetPositionZ());
+    }
     // 只关联显式目标；没有匹配时保留未知，不能把它当作命中。
     for (auto const& targetInfo : *spell->GetUniqueTargetInfo())
         if (e.target && targetInfo.targetGUID == e.target)
