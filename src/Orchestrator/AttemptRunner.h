@@ -36,7 +36,7 @@ public:
     void Abort(std::string const& why);
 
     // 每次 attempt 开始前（传送到位后、pull 前）调用，保证干净起点：
-    //   - ResetInstance：boss 复活 + 清实例保存 + 清残留 combat/enrage/add，使
+    //   - ResetInstance：按原始数据库spawn恢复boss、清该spawn重生计时与残留combat/buff，使
     //     下次 FindBoss 找到满血无 buff 的活 boss（首个 attempt 也覆盖——此前只
     //     在 attempt 之间调用，导致首个 attempt 可能继承上一场残留 enrage/僵尸，
     //     见 Gluth run34 归因）。仅影响 raidtest 所在实例。返回 false = 无可重置。

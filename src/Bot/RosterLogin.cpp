@@ -2,6 +2,7 @@
 #include "Group.h"
 #include "GroupMgr.h"
 #include "Log.h"
+#include "MapMgr.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
@@ -85,6 +86,10 @@ bool RosterLogin::FormGroup(std::vector<Player*> const& bots)
         delete group;
         return false;
     }
+
+    // Group::Create does not register the group. Loot ownership and other GUID
+    // lookups require the same registration as the normal group accept path.
+    sGroupMgr->AddGroup(group);
 
     // Create 内部会 ASSERT(AddMember(leader))，leader 已是成员；1 人以上转成 raid。
     if (bots.size() > 1)
@@ -185,8 +190,12 @@ bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId,
         if (!bot->TeleportTo(mapId, pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(),
                              pos.GetOrientation()))
         {
-            LOG_ERROR("raidtest", "RosterLogin::TeleportToRaid: TeleportTo rejected for {} to map {}",
-                      bot->GetName(), mapId);
+            LOG_ERROR("raidtest", "RosterLogin::TeleportToRaid: rejected {} to map {}: enter_reason={} "
+                "from_map={} instance={} alive={} teleporting={} group={} raid={} difficulty={}",
+                bot->GetName(), mapId, uint32(sMapMgr->PlayerCannotEnter(mapId, bot, false)),
+                bot->GetMapId(), bot->GetInstanceId(), bot->IsAlive(), bot->IsBeingTeleported(),
+                bot->GetGroup() ? bot->GetGroup()->GetGUID().GetCounter() : 0,
+                bot->GetGroup() && bot->GetGroup()->isRaidGroup(), uint32(bot->GetRaidDifficulty()));
             all = false;
         }
     }
@@ -206,9 +215,13 @@ void RosterLogin::PumpTeleportAcks(std::vector<Player*> const& bots)
 
 bool RosterLogin::AllOnMapNow(std::vector<Player*> const& bots, uint32 mapId)
 {
+    if (bots.empty() || !bots.front())
+        return false;
+    Map* destination = bots.front()->GetMap();
     for (Player* bot : bots)
     {
-        if (!bot || bot->IsBeingTeleported() || bot->GetMapId() != mapId)
+        if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() ||
+            bot->GetMapId() != mapId || bot->GetMap() != destination)
             return false;
     }
     return true;

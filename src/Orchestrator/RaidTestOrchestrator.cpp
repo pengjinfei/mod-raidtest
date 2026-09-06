@@ -346,8 +346,21 @@ bool RaidTestOrchestrator::TickLoginAndGroup()
     }
 
     if (!RosterLogin::FormGroup(_ctx.bots))
-        LOG_WARN("raidtest", "Orchestrator: FormGroup failed for {} bot(s) - continuing "
-            "(best effort)", _ctx.bots.size());
+    {
+        FailRun("failed to form raid group");
+        return true;
+    }
+
+    // Blueprint order determines the designated main tank, not GroupReference order.
+    for (size_t i = 0; i < std::min(_ctx.bots.size(), _rosterSlots.size()); ++i)
+        if (_rosterSlots[i].role == "tank")
+        {
+            Player* tank = _ctx.bots[i];
+            tank->GetGroup()->SetGroupMemberFlag(tank->GetGUID(), true, MEMBER_FLAG_MAINTANK);
+            LOG_INFO("raidtest", "Orchestrator: designated main tank {} (guid {}) from roster slot {}",
+                tank->GetName(), tank->GetGUID().ToString(), i);
+            break;
+        }
 
     // 25 人场景：组队后、传送前给全队设 raid 难度（缺省 10 人是 0，同样安全）。
     // 必须在 TeleportToRaid 前设置——进本创建实例时难度取「组的难度」而非玩家个人：

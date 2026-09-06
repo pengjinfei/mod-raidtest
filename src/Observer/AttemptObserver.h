@@ -2,6 +2,7 @@
 #define PLAYERBOTS_RAIDTEST_ATTEMPT_OBSERVER_H
 
 #include "RunContext.h"
+#include <unordered_map>
 
 // 每 tick 战斗判定（design §10 / brief Task 7 Step 2）：boss 血 0=kill /
 // 全员死亡=wipe / 超时=timeout / 战前卡壳=aborted。
@@ -44,6 +45,9 @@ private:
     uint32 _timeoutSamples = 0;
     uint32 _abortSamples = 0;
     uint32 _lastPositionSampleMs{0};    // 上次位置采样时刻（attemptElapsedMs 口径）
+    uint32 _lastTankSampleMs{0};
+    std::unordered_map<uint64, std::string> _tankStrategies;
+    std::unordered_map<uint64, std::string> _tankActions;
 };
 
 #endif

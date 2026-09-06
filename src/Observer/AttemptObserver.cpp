@@ -1,9 +1,12 @@
 #include "AttemptObserver.h"
 #include "CombatEventBus.h"
 #include "Creature.h"
+#include "Group.h"
+#include "GroupMgr.h"
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
+#include "Playerbots.h"
 #include "StringFormat.h"
 #include <algorithm>
 
@@ -22,6 +25,9 @@ void AttemptObserver::Reset()
     _timeoutSamples = 0;
     _abortSamples = 0;
     _lastPositionSampleMs = 0;
+    _lastTankSampleMs = 0;
+    _tankStrategies.clear();
+    _tankActions.clear();
 }
 
 void AttemptObserver::ResolveBoss(RunContext& ctx)
@@ -41,6 +47,74 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
 
     if (ctx.bots.empty())
         return AttemptResult::Ongoing;   // 无 raid 成员可判定（防御：不应发生）
+
+    // 只读诊断：开局15秒加密采样，此后每秒。避免调用可能改变决策的 isUseful/CheckCast。
+    uint32 const tankInterval = ctx.attemptElapsedMs <= 15000 ? 250 : 1000;
+    if (ctx.attemptElapsedMs - _lastTankSampleMs >= tankInterval)
+    {
+        _lastTankSampleMs = ctx.attemptElapsedMs;
+        for (Player* member : ctx.bots)
+        {
+            if (!member || !member->IsInWorld())
+                continue;
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(member);
+            if (!ai || (member != ctx.bots.front() && !ai->IsTank(member)))
+                continue;
+            Unit* target = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+            Unit* victim = member->GetVictim();
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = member->GetGUID();
+            if (target)
+                state.target = target->GetGUID();
+            state.value = static_cast<int32>(member->GetMapId());
+            state.detail = Acore::StringFormat(
+                "tank_state:engine={} combat={} alive={} hp={} victim={} melee={} select={} moving={} tank={} mt={} explicit={} entry={}",
+                uint32(ai->GetState()), member->IsInCombat(), member->IsAlive(), member->GetHealth(),
+                victim ? victim->GetGUID().GetCounter() : 0,
+                member->HasUnitState(UNIT_STATE_MELEE_ATTACKING), member->GetTarget().GetCounter(),
+                member->isMoving(), ai->IsTank(member), ai->IsMainTank(member), ai->IsExplicitMainTank(member),
+                target && target->IsCreature() ? target->GetEntry() : 0);
+            CombatEventBus::instance().Push(state);
+
+            if (ctx.boss && member->GetMap() == ctx.boss->GetMap())
+            {
+                state.detail = Acore::StringFormat("tank_range:boss_dist={:.3f} melee_range={} facing={} orientation={:.3f}",
+                    member->GetDistance2d(ctx.boss), member->IsWithinMeleeRange(ctx.boss),
+                    member->HasInArc(3.14159265f, ctx.boss), member->GetOrientation());
+                CombatEventBus::instance().Push(state);
+                Group* group = member->GetGroup();
+                Group* lootGroup = ctx.boss->GetLootRecipientGroup();
+                state.detail = Acore::StringFormat(
+                    "tank_ownership:group={} registered={} loot_group={} has_loot={} tapped={} attack_tagged={} master={}",
+                    group ? group->GetGUID().GetCounter() : 0,
+                    group && sGroupMgr->GetGroupByGUID(group->GetGUID().GetCounter()) == group,
+                    lootGroup ? lootGroup->GetGUID().GetCounter() : 0,
+                    ctx.boss->hasLootRecipient(), ctx.boss->isTappedBy(member),
+                    ai->HasStrategy("attack tagged", BOT_STATE_NON_COMBAT),
+                    ai->GetMaster() ? ai->GetMaster()->GetGUID().GetCounter() : 0);
+                CombatEventBus::instance().Push(state);
+            }
+
+            // detail列上限255；分片保存，避免动作历史/策略名被数据库截断。
+            auto recordChanged = [&](char const* prefix, std::string const& text,
+                                     std::unordered_map<uint64, std::string>& previous)
+            {
+                uint64 const guid = member->GetGUID().GetCounter();
+                auto const found = previous.find(guid);
+                if (found != previous.end() && found->second == text)
+                    return;
+                previous[guid] = text;
+                for (std::size_t offset = 0; offset < std::max<std::size_t>(text.size(), 1); offset += 220)
+                {
+                    state.detail = Acore::StringFormat("{}:{}:{}", prefix, offset / 220, text.substr(offset, 220));
+                    CombatEventBus::instance().Push(state);
+                }
+            };
+            recordChanged("tank_strategies", ai->HandleRemoteCommand("strategy"), _tankStrategies);
+            recordChanged("tank_actions", ai->HandleRemoteCommand("action"), _tankActions);
+        }
+    }
 
     // ---- boss 血量采样（Task 7 = BossHp 生产者）----
     uint32 hpPct = 100;
