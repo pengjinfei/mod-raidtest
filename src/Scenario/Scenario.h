@@ -71,6 +71,9 @@ public:
     std::string const& GetStrategy() const { return _strategy; }
 
     std::vector<uint32> const& GetPrerequisiteSpawns() const { return _prerequisiteSpawns; }
+    // 双 boss 等：BossEntry 死后仍需击杀的第二个必死生成点（0 = 无）。击杀判定
+    // 要求它也收到真实死亡事件，卡壳判定在它死亡前挂起。
+    uint32 GetKillGateSpawn() const { return _killGateSpawn; }
     Position const& GetPreparationPoint() const { return _preparationPoint; }
     uint32 GetPrerequisiteTimeoutSeconds() const { return _prerequisiteTimeoutSeconds; }
 
@@ -80,6 +83,7 @@ public:
 
 protected:
     std::vector<uint32> _prerequisiteSpawns;
+    uint32 _killGateSpawn{0};
     Position _preparationPoint{};
     uint32 _prerequisiteTimeoutSeconds{180};
     std::string _name;

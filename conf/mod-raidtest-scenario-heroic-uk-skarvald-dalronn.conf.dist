@@ -1,0 +1,19 @@
+# heroic5-v1: separate characters from Naxx, early heroic equipment.
+# 斯卡瓦德(24200) & 达尔隆(24201) 双 boss：BossEntry 死后需 KillGateSpawn 也死才判 Kill。
+# 首次验证隔离 boss 战（无房间小怪清理）。
+[Scenario]
+MapId = 574
+BossEntry = 24200
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-uk
+RosterFile = "mod-raidtest-roster-heroic5-v1.conf"
+GearProfile = none
+EngageX = 112.0
+EngageY = -33.0
+EngageZ = 118.9
+EngageO = 0.0
+TimeoutSeconds = 300
+EngageTrigger = pull
+# 双 boss 第二个必死目标：达尔隆生成点 126024。
+KillGateSpawn = 126024

@@ -181,7 +181,11 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     // reset/瞬时失效）不得判 Kill —— 指针找不到 ≠ boss 已死；击杀后 boss 尸体
     // 仍在场且血量读 0，配合 Death 事件才是确凿信号（击杀后 despawn 需守卫确认）。
     bool const bossDeathSeen = CombatEventBus::instance().BossDeathSeen();
-    bool const bossDown = hpPct == 0 && bossDeathSeen;
+    // 双 boss（KillGateSpawn）：BossEntry 死后还需第二个必死目标收到真实死亡才判
+    // Kill；gate 存活期间不算击杀（uk 斯卡瓦德先死会变幽灵，须等达尔隆也死）。
+    bool const gatePending = !ctx.killGateGuid.IsEmpty() &&
+        !CombatEventBus::instance().DeathSeen(ctx.killGateGuid);
+    bool const bossDown = hpPct == 0 && bossDeathSeen && !gatePending;
     if (bossDown)
     {
         if (++_killSamples >= kSampleConfirmTicks)
@@ -237,7 +241,9 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     // wipe——全灭事实被吞）。改为「!anyDead（无人死亡）」——一旦有人阵亡即视为战斗已
     // 实质发生，boss 脱战不再判 aborted，把终态让给 wipe（全员死亡）/ timeout。
     bool const bossInCombat = ctx.boss && ctx.boss->IsInCombat();
-    if (bossKnown && !bossInCombat && !anyDead)
+    // 双 boss：gate 未死期间 encounter 仍进行（BossEntry 可能已死变幽灵），卡壳判定
+    // 挂起，终态交给 Kill（gate 死）/ Wipe / Timeout。
+    if (bossKnown && !bossInCombat && !anyDead && !gatePending)
     {
         if (++_abortSamples >= kStuckAbortTicks)
         {

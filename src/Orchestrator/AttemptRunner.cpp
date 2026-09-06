@@ -138,6 +138,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     ctx.bossHpMin = 100;
     ctx.bossGuid.Clear();
     ctx.boss = nullptr;
+    ctx.killGateGuid.Clear();
     ctx.deaths = 0;
     ctx.deathNames.clear();
     ctx.notes.clear();
@@ -345,6 +346,26 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                                                     ctx.scenario->GetBossEntry());
             _observer.Reset();
             ctx.attemptElapsedMs = 0;
+
+            // 双 boss：BossEntry 之外第二个必死生成点。解析其 creature 并登记死亡跟踪，
+            // 击杀判定与卡壳判定都以此为准（见 AttemptObserver）。gate 是必打目标，
+            // 若已因 bots 邻近参战也接受——不因此阻断。
+            if (uint32 const gateSpawn = ctx.scenario->GetKillGateSpawn())
+            {
+                Map* map = ctx.bots.front()->GetMap();
+                Creature* gate = nullptr;
+                auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(gateSpawn);
+                for (auto it = bounds.first; it != bounds.second; ++it)
+                    if (it->second && it->second->IsAlive())
+                        gate = it->second;
+                if (!gate)
+                {
+                    Abort("prerequisite_invalid: kill gate spawn missing");
+                    return;
+                }
+                ctx.killGateGuid = gate->GetGUID();
+                CombatEventBus::instance().TrackUnit(gate->GetGUID());
+            }
 
             if (!ctx.scenario->GetPrerequisiteSpawns().empty())
             {
@@ -583,11 +604,19 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
     // Loading the original DB spawn also avoids Respawn(true)'s deferred queue,
     // whose linked-respawn/group gates can leave a completed encounter absent.
     uint32 const bossEntry = ctx.scenario->GetBossEntry();
+    uint32 const killGateSpawn = ctx.scenario->GetKillGateSpawn();
     std::set<uint32> const prerequisites(ctx.scenario->GetPrerequisiteSpawns().begin(),
         ctx.scenario->GetPrerequisiteSpawns().end());
     for (uint32 spawn : prerequisites)
     {
         auto const* data = sObjectMgr->GetCreatureData(spawn);
+        if (!data || data->mapid != map->GetId() || data->id == bossEntry ||
+            !(data->spawnMask & (1u << map->GetSpawnMode())))
+            return false;
+    }
+    if (killGateSpawn)
+    {
+        auto const* data = sObjectMgr->GetCreatureData(killGateSpawn);
         if (!data || data->mapid != map->GetId() || data->id == bossEntry ||
             !(data->spawnMask & (1u << map->GetSpawnMode())))
             return false;
@@ -604,7 +633,8 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
     uint32 restoredPrerequisites = 0;
     for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
     {
-        if (data.mapid != map->GetId() || (data.id != bossEntry && !prerequisites.count(spawnId)) ||
+        if (data.mapid != map->GetId() ||
+            (data.id != bossEntry && !prerequisites.count(spawnId) && spawnId != killGateSpawn) ||
             !(data.spawnMask & (1u << map->GetSpawnMode())))
             continue;
         map->LoadGrid(data.posX, data.posY);

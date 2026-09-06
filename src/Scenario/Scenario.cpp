@@ -282,6 +282,14 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _prerequisiteSpawns.push_back(spawn);
             }
         }
+        else if (key == "KillGateSpawn")
+        {
+            uint32 spawn = 0;
+            if (!ParseUint32(value, spawn) || !spawn)
+                failed = true;
+            else
+                _killGateSpawn = spawn;
+        }
         else if (key == "PrerequisiteTimeoutSeconds")
         {
             if (!ParseUint32(value, _prerequisiteTimeoutSeconds) || !_prerequisiteTimeoutSeconds ||
