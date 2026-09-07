@@ -72,7 +72,8 @@ public:
     // 服务端远距离传送（Player::TeleportTo）。远传异步完成，需要世界线程对仍在
     // IsBeingTeleported() 的 bot 调 PlayerbotAI::HandleTeleportAck() 推进 worldport
     // （见 AllOnMap）。本函数只负责发起，全部发起成功返回 true。
-    static bool TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos);
+    static bool TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos,
+                               Player* instanceTarget = nullptr);
 
     // 测试 bot 上一轮遗留的临时副本绑定会在重启后从 character_instance 恢复，并让
     // 同一队伍被分派到不同实例。传送前只清理当前场景对应地图/难度的临时绑定；永久

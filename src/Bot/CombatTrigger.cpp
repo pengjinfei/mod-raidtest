@@ -74,8 +74,26 @@ bool CombatTrigger::BeginAssistForAll(std::vector<Player*> const& bots, Player* 
         RaidPullAction assist(botAI);
         if (!assist.Attack(boss))
         {
-            LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: bot {} could not begin assist",
-                bot->GetName());
+            Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+            bool const alreadyAssisting = bot->IsInCombat() && botAI->GetState() == BOT_STATE_COMBAT &&
+                current == boss && bot->GetVictim() == boss;
+            if (alreadyAssisting)
+            {
+                // Unit::SetInCombatWith(tank) 会使同组 bot 进入战斗并保留同一目标。
+                // AttackAction 对“已在攻击相同目标”按设计返回 false；这不是 assist
+                // 失败，继续把它当作失败会把一场已开始的正常战斗误报为框架中止。
+                ++assisted;
+                LOG_INFO("raidtest", "CombatTrigger::BeginAssistForAll: bot {} already assisting {}",
+                    bot->GetName(), boss->GetName());
+                continue;
+            }
+            LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: bot {} could not begin assist "
+                "(combat={} ai={} current={} victim={} dist={} los={} valid={} tagged={})",
+                bot->GetName(), bot->IsInCombat(), uint32(botAI->GetState()),
+                current ? current->GetGUID().ToString() : "none",
+                bot->GetVictim() ? bot->GetVictim()->GetGUID().ToString() : "none",
+                bot->GetDistance(boss), bot->IsWithinLOSInMap(boss), bot->IsValidAttackTarget(boss),
+                botAI->HasStrategy("attack tagged", BOT_STATE_NON_COMBAT));
             continue;
         }
 

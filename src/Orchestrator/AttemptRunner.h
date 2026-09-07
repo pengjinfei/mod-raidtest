@@ -84,10 +84,11 @@ private:
     Stage _stage{Stage::Idle};
     PullStep _pullStep{PullStep::FindBoss};
     bool _teleportSent{false};
+    bool _followersTeleportSent{false};
     bool _pullContextHeld{false};   // BeginPull 后拉怪上下文处于生效窗口
     ObjectGuid _pullLeader;         // 生效窗口对应的 leader（兜底清理用）
     uint32 _stuckTicks{0};          // 阶段内无进展采样（传送/找 boss）
-    uint32 _rowResolveTicks{0};     // 占位行等队列排空的粘滞计数（跨 tick）
+    uint32 _rowResolveElapsedMs{0}; // 占位行等队列排空/提交的真实经过时间
     uint32 _confirmTicks{0};        // 进战斗确认泵（仅计算确实检查了战斗态的 tick）
     uint32 _tankAggroElapsedMs{0};  // Boss 连续锁定 tank 的 lead 时间（真实经过毫秒）
     uint32 _tankAggroAcquireMs{0};  // 等待 tank 首次/再次获得 victim 的真实经过毫秒

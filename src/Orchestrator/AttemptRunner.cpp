@@ -16,6 +16,7 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "PlayerbotAIConfig.h"
 #include "ResultStore.h"
 #include "RosterLogin.h"
 #include "RosterBuilder.h"
@@ -66,15 +67,15 @@ namespace
     constexpr uint32 kTeleportStageTicks = 400;   // ~40s
     // 找 boss 重试窗口（地图/实例内 creature 可能尚未加载）。
     constexpr uint32 kBossFindStuckTicks = 60;    // ~6s
-    // 占位行 INSERT 等队列排空的粘滞预算（世界 tick 名义 ~100ms；急 DB 写通常
-    // 1-2 tick 即排空，此值只是不无限粘滞的下限防护）。
-    constexpr uint32 kAttemptRowResolveTicks = 120;   // ~12s
+    // 占位行 INSERT 等队列排空的真实时间预算。空载世界循环可远快于 100ms/tick；
+    // 因而不能以 tick 数当作 12 秒，否则只会在约 120ms 就误报 DB 卡死。
+    constexpr uint32 kAttemptRowResolveMs = 12000;
     // 队列排空 ≠ 提交完成：async DB worker 把消息从队首取出后、在连接上 commit
     // 完成之前 QueueSize() 已为 0；紧接的同步 SELECT（另一连接）会抢跑读空 ——
     // Task 8 验收 run 4 实机复现：占位 INSERT 已落下、read-back 却返回空，attempt
     // 以 'failed to create attempt row' 中止并留下一条未收尾的占位行。因此排空后
-    // 还要连续空够 settle 窗口再读回 id（3 tick=300ms，worker 必已提交）。
-    constexpr uint32 kAttemptRowResolveSettleTicks = 3;
+    // 还要连续空够 settle 窗口再读回 id（300ms，worker 必已提交）。
+    constexpr uint32 kAttemptRowResolveSettleMs = 300;
     // 约两秒的正常坦克首仇恨窗口。它只推迟队友的首发，不修改 boss 威胁表。这里
     // 必须按 Tick 的实际 diff 计时：本地空载世界循环可远快于 100ms/tick。
     constexpr uint32 kTankAggroLeadMs = 2000;
@@ -121,11 +122,12 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _stage = Stage::TeleportAndPosition;
     _pullStep = PullStep::FindBoss;
     _teleportSent = false;
+    _followersTeleportSent = false;
     _prerequisiteGuids.clear();
     _preBossElapsed = _preparationElapsed = _recoveryElapsed = 0;
     _prerequisitePullSent = false;
     _stuckTicks = 0;
-    _rowResolveTicks = 0;
+    _rowResolveElapsedMs = 0;
     _confirmTicks = 0;
     _tankAggroElapsedMs = 0;
     _tankAggroAcquireMs = 0;
@@ -194,7 +196,29 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 Abort("scene_invalid: permanent instance bind blocks clean teleport");
                 return;
             }
-            bool const ok = RosterLogin::TeleportToRaid(ctx.bots, ctx.scenario->GetMapId(),
+
+            // 清怪准备点可能落在首组小怪的仇恨范围内。必须先登记所有前置目标，
+            // 再允许无 master bot 的 non-combat "attack tagged" 策略挑选目标；否则
+            // 自动进战会发生在事件跟踪开始前，门禁只能把有效的首个清怪样本误判为
+            // 提前参战。BeginPullForAll 仍在登记后用真实 AttackAction 发起拉怪。
+            if (!ctx.scenario->GetPrerequisiteSpawns().empty())
+            {
+                for (Player* bot : ctx.bots)
+                {
+                    PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+                    if (!botAI)
+                    {
+                        Abort("prerequisite_invalid: missing bot AI before target registration");
+                        return;
+                    }
+                    botAI->ChangeStrategy("-attack tagged", BOT_STATE_NON_COMBAT);
+                    _heldFollowers.push_back(bot->GetGUID());
+                }
+            }
+            // 先让队长建立/进入实例，再让其余成员进入同一张地图实例。并发把五个
+            // 无绑定角色送入副本，会偶发各自创建临时实例；AllOnMapNow 因地图指针
+            // 不同而永久等待，表现为“重启后传送失败”。
+            bool const ok = RosterLogin::TeleportToRaid({ctx.bots.front()}, ctx.scenario->GetMapId(),
                                                         ctx.scenario->GetPreparationPoint());
             _teleportSent = true;
             _stuckTicks = 0;
@@ -204,6 +228,24 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
 
         // 逐 tick 泵 worldport ack + 轮询（世界线程非阻塞）。
         RosterLogin::PumpTeleportAcks(ctx.bots);
+        if (!_followersTeleportSent)
+        {
+            Player* leader = ctx.bots.empty() ? nullptr : ctx.bots.front();
+            if (!leader || !leader->IsInWorld() || leader->IsBeingTeleported() ||
+                leader->GetMapId() != ctx.scenario->GetMapId())
+            {
+                if (++_stuckTicks >= kTeleportStageTicks)
+                    Abort("teleport stage timeout waiting for instance leader");
+                return;
+            }
+            std::vector<Player*> followers(ctx.bots.begin() + 1, ctx.bots.end());
+            if (!followers.empty() && !RosterLogin::TeleportToRaid(followers, ctx.scenario->GetMapId(),
+                                                                     ctx.scenario->GetPreparationPoint(), leader))
+                LOG_WARN("raidtest", "AttemptRunner: follower teleport request rejected");
+            _followersTeleportSent = true;
+            _stuckTicks = 0;
+            return;
+        }
         if (!RosterLogin::AllOnMapNow(ctx.bots, ctx.scenario->GetMapId()))
         {
             if (++_stuckTicks >= kTeleportStageTicks)
@@ -311,7 +353,7 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             // （raidtest_events 需要 attempt 归属，见 ResultStore 两段式 API）。
             ResultStore::QueueStartAttemptRow(ctx.runId, ctx.attemptSeq);
             ctx.attemptRowQueued = true;
-            _rowResolveTicks = 0;
+            _rowResolveElapsedMs = 0;
             _pullStep = PullStep::AwaitAttemptRow;
             return;
         }
@@ -322,27 +364,29 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             // 同步 SELECT 取 id —— 这是唯一一次同步读，且已确认前序 INSERT 落库。
             if (CharacterDatabase.QueueSize() != 0)
             {
-                if (++_rowResolveTicks >= kAttemptRowResolveTicks)
+                _rowResolveElapsedMs += diff;
+                if (_rowResolveElapsedMs >= kAttemptRowResolveMs)
                 {
                     _result = AttemptResult::Aborted;
                     _notes = "attempt row not visible (db queue stalled)";
                     _stage = Stage::Done;
                     LOG_ERROR("raidtest", "AttemptRunner: attempt {} - attempt-row INSERT for run {} "
-                        "seq {} never became visible after {} tick(s)", ctx.attemptSeq, ctx.runId,
-                        ctx.attemptSeq, _rowResolveTicks);
+                        "seq {} never became visible after {}ms", ctx.attemptSeq, ctx.runId,
+                        ctx.attemptSeq, _rowResolveElapsedMs);
                 }
                 return;
             }
 
-            // settle 窗口（见 kAttemptRowResolveSettleTicks）：空队列只代表 worker
+            // settle 窗口（见 kAttemptRowResolveSettleMs）：空队列只代表 worker
             // 已把 INSERT 从队首取走，不代表已 commit；连续空满窗口才读回 id。
-            if (++_rowResolveTicks < kAttemptRowResolveSettleTicks)
+            _rowResolveElapsedMs += diff;
+            if (_rowResolveElapsedMs < kAttemptRowResolveSettleMs)
                 return;
 
             ctx.attemptId = ResultStore::ResolveStartAttemptRowId(ctx.runId, ctx.attemptSeq);
             if (!ctx.attemptId)
             {
-                if (_rowResolveTicks < kAttemptRowResolveTicks)
+                if (_rowResolveElapsedMs < kAttemptRowResolveMs)
                     return; // Queue emptiness is not a commit acknowledgement; wait for actual visibility.
                 _result = AttemptResult::Aborted;
                 _notes = "failed to create attempt row";
@@ -391,9 +435,9 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                     for (auto it = bounds.first; it != bounds.second; ++it)
                         if (it->second && it->second->IsAlive())
                             unit = it->second;
-                    if (!unit || unit->IsInCombat())
+                    if (!unit)
                     {
-                        Abort("prerequisite_invalid: missing or already engaged spawn");
+                        Abort("prerequisite_invalid: missing spawn");
                         return;
                     }
                     _prerequisiteGuids.push_back(unit->GetGUID());
@@ -404,7 +448,13 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                     state.actorEntry = unit->GetEntry();
                     state.detail = "prerequisite_spawn=" + std::to_string(spawn);
                     CombatEventBus::instance().Push(state);
+                    if (unit->IsInCombat())
+                    {
+                        state.detail = "prerequisite_preengaged=" + std::to_string(spawn);
+                        CombatEventBus::instance().Push(state);
+                    }
                 }
+                RestoreHeldFollowerStrategies();
                 RecordPhase("prerequisites_start", 0);
                 _stage = Stage::Prerequisites;
                 return;
@@ -508,8 +558,13 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 Abort("prerequisite_failed: roster casualty before boss pull");
                 return;
             }
-            if (bot->IsInCombat() || bot->GetHealthPct() < 90.0f ||
-                (bot->GetMaxPower(POWER_MANA) && bot->GetPowerPct(POWER_MANA) < 90.0f))
+            // 与 playerbots 的常规 ready/medium 阈值保持一致。90% 会在 bot 自身的
+            // 喝水阈值（LowMana=15）未触发时无限等待，并把可正常进入下一场战斗的
+            // 队伍误记为框架失败；这里不恢复资源、不施放技能，只判定原生 AI 认可的
+            // 出战状态。
+            float const readyPct = static_cast<float>(sPlayerbotAIConfig.mediumHealth);
+            if (bot->IsInCombat() || bot->GetHealthPct() < readyPct ||
+                (bot->GetMaxPower(POWER_MANA) && bot->GetPowerPct(POWER_MANA) < readyPct))
             {
                 ready = false;
                 if (_recoveryElapsed / 15000 != (_recoveryElapsed - diff) / 15000)
@@ -533,6 +588,27 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             return;
         }
         RecordPhase("recovery_complete", _recoveryElapsed);
+
+        // 清怪结束后的 boss 定位点同样可能在敌对单位可见/可攻击范围内。若此处
+        // 先给从属 bot 一个世界 tick，它们会以 masterless 的 "attack tagged"
+        // 自主选中 boss；随后 StartBossPull 虽然再次 hold，却无法撤销已经切入的
+        // combat engine，导致两秒坦克首仇恨结束时 AssistAction 误报失败。先暂停
+        // 从属 bot 的自动选怪，待 StartBossPull 的真实显式 assist 再放开。
+        Player* tank = nullptr;
+        for (size_t i = 0; i < ctx.bots.size() && i < ctx.rosterSlots.size(); ++i)
+            if (ctx.rosterSlots[i].role == "tank")
+            {
+                tank = ctx.bots[i];
+                break;
+            }
+        if (!tank || !CombatTrigger::HoldFollowerAttackTagged(ctx.bots, tank))
+        {
+            Abort("prerequisite_failed: could not hold followers before boss positioning");
+            return;
+        }
+        for (Player* bot : ctx.bots)
+            if (bot && bot != tank)
+                _heldFollowers.push_back(bot->GetGUID());
         if (!RosterLogin::TeleportToRaid(ctx.bots, ctx.scenario->GetMapId(), ctx.scenario->GetEngagePoint()))
         {
             Abort("prerequisite_failed: boss positioning failed");

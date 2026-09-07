@@ -192,7 +192,8 @@ void RosterLogin::LogoutAll(std::vector<ObjectGuid> const& guids)
         logged, guids.size());
 }
 
-bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos)
+bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos,
+                                  Player* instanceTarget)
 {
     if (bots.empty())
         return false;
@@ -203,7 +204,7 @@ bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId,
         if (!bot)
             continue;
         if (!bot->TeleportTo(mapId, pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(),
-                             pos.GetOrientation()))
+                             pos.GetOrientation(), 0, instanceTarget))
         {
             LOG_ERROR("raidtest", "RosterLogin::TeleportToRaid: rejected {} to map {}: enter_reason={} "
                 "from_map={} instance={} alive={} teleporting={} group={} raid={} difficulty={}",
