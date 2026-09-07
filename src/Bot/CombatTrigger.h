@@ -37,6 +37,20 @@ public:
     // BeginPullForAll（单元素 roster）。见 BeginPullForAll 的完整语义说明。
     static bool BeginPull(Player* leader, Creature* boss);
 
+    // 五人本首领采用两段式正常开怪：先只让主坦以真实 AttackAction 拉怪，待调用方
+    // 确认其连续持有仇恨后，再调用 BeginAssistForAll 让其余 bot 进入自身的正常
+    // 战斗循环。它不注入威胁、不代替职业技能，避免“同 tick 五人首发”让 DPS 在
+    // 坦克第一个 GCD 前抢怪。
+    static bool BeginTankPull(Player* tank, Creature* boss);
+    static bool BeginAssistForAll(std::vector<Player*> const& bots, Player* tank, Creature* boss);
+
+    // 无 master 的 bot 依赖 non-combat 的 "attack tagged" 才能自主选择已参战目标。
+    // 两段式开怪期间，暂时从从属 bot 移除此策略，防止 boss 被 tank 置入战斗的同一
+    // tick 里它们绕过 BeginAssistForAll 自动开火。放行时必须调用
+    // RestoreFollowerAttackTagged 恢复原有的 masterless 行为。
+    static bool HoldFollowerAttackTagged(std::vector<Player*> const& bots, Player* tank);
+    static void RestoreFollowerAttackTagged(Player* bot);
+
     // 发起开战（不阻塞、不做进战斗确认）—— 全 roster 形态（方案 b，B1-Task1）：
     // 以「raid lead 攻击指令」广播全队 —— 对 roster 中每个 bot（含 leader）逐一以
     // 真实 bot 行为 AttackAction::Attack(boss) 发起攻击：各自设置 current target、

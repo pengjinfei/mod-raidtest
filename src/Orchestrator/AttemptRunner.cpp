@@ -75,6 +75,12 @@ namespace
     // 以 'failed to create attempt row' 中止并留下一条未收尾的占位行。因此排空后
     // 还要连续空够 settle 窗口再读回 id（3 tick=300ms，worker 必已提交）。
     constexpr uint32 kAttemptRowResolveSettleTicks = 3;
+    // 约两秒的正常坦克首仇恨窗口。它只推迟队友的首发，不修改 boss 威胁表。这里
+    // 必须按 Tick 的实际 diff 计时：本地空载世界循环可远快于 100ms/tick。
+    constexpr uint32 kTankAggroLeadMs = 2000;
+    // tank 没有在这段时间内真正获得 boss victim，说明组队/职业 AI/拉怪状态失效；
+    // 中止本次样本，而不是把无效开怪记作首领机制失败。
+    constexpr uint32 kTankAggroAcquireMs = 8000;
 }
 
 char const* AttemptRunner::StageName() const
@@ -121,6 +127,9 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _stuckTicks = 0;
     _rowResolveTicks = 0;
     _confirmTicks = 0;
+    _tankAggroElapsedMs = 0;
+    _tankAggroAcquireMs = 0;
+    _pullTank.Clear();
     _result = AttemptResult::Ongoing;
     _notes.clear();
     _observer.Reset();
@@ -180,6 +189,11 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 }
             }
             ReviveDead(ctx);
+            if (!RosterLogin::ClearTemporaryInstanceBinds(ctx.bots, ctx.scenario->GetMapId()))
+            {
+                Abort("scene_invalid: permanent instance bind blocks clean teleport");
+                return;
+            }
             bool const ok = RosterLogin::TeleportToRaid(ctx.bots, ctx.scenario->GetMapId(),
                                                         ctx.scenario->GetPreparationPoint());
             _teleportSent = true;
@@ -421,6 +435,51 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             LOG_WARN("raidtest", "AttemptRunner: attempt {} aborted - pull confirm timed out "
                 "(boss {} not in combat after {} world tick(s))", ctx.attemptSeq,
                 ctx.bossGuid.ToString(), CombatTrigger::kCombatConfirmTicks);
+            return;
+        }
+
+        case PullStep::AwaitTankAggro:
+        {
+            ResolveBoss(ctx);
+            Player* tank = ObjectAccessor::FindPlayer(_pullTank);
+            if (!tank || !tank->IsAlive() || !ctx.boss)
+            {
+                Abort("pull failed (tank or boss missing during aggro lead)");
+                return;
+            }
+
+            if (!CombatTrigger::ConfirmBossInCombat(ctx.boss))
+            {
+                if (++_stuckTicks < CombatTrigger::kCombatConfirmTicks)
+                    return;
+                Abort("pull failed (boss left combat during tank aggro lead)");
+                return;
+            }
+
+            if (ctx.boss->GetVictim() != tank)
+            {
+                _tankAggroElapsedMs = 0;
+                _tankAggroAcquireMs += diff;
+                if (_tankAggroAcquireMs < kTankAggroAcquireMs)
+                    return;
+                Abort("pull failed (tank did not establish aggro)");
+                return;
+            }
+
+            _stuckTicks = 0;
+            _tankAggroAcquireMs = 0;
+            _tankAggroElapsedMs += diff;
+            if (_tankAggroElapsedMs < kTankAggroLeadMs)
+                return;
+
+            if (!CombatTrigger::BeginAssistForAll(ctx.bots, tank, ctx.boss))
+            {
+                Abort("pull failed (not all followers entered combat)");
+                return;
+            }
+
+            RecordPhase("pull_assist", 0);
+            ConfirmAndEnterObserving(ctx);
             return;
         }
         }
@@ -729,6 +788,8 @@ void AttemptRunner::ConfirmAndEnterObserving(RunContext& ctx)
 
 void AttemptRunner::ClearHeldPullContext()
 {
+    RestoreHeldFollowerStrategies();
+
     if (!_pullContextHeld)
         return;
 
@@ -736,6 +797,14 @@ void AttemptRunner::ClearHeldPullContext()
         CombatTrigger::EndPullContext(leader);
     _pullContextHeld = false;
     _pullLeader.Clear();
+}
+
+void AttemptRunner::RestoreHeldFollowerStrategies()
+{
+    for (ObjectGuid const& guid : _heldFollowers)
+        if (Player* bot = ObjectAccessor::FindPlayer(guid))
+            CombatTrigger::RestoreFollowerAttackTagged(bot);
+    _heldFollowers.clear();
 }
 void AttemptRunner::RecordPhase(char const* phase, uint32 elapsed)
 {
@@ -786,22 +855,40 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
             std::to_string(bot->GetMaxPower(POWER_MANA));
         CombatEventBus::instance().Push(state);
     }
-    Player* leader = ctx.bots.front();
-    if (!CombatTrigger::BeginPullForAll(ctx.bots, ctx.boss))
+    Player* tank = nullptr;
+    for (size_t i = 0; i < ctx.bots.size() && i < ctx.rosterSlots.size(); ++i)
+        if (ctx.rosterSlots[i].role == "tank")
+        {
+            tank = ctx.bots[i];
+            break;
+        }
+    if (!tank)
+    {
+        Abort("pull failed (roster has no tank)");
+        return false;
+    }
+    if (!CombatTrigger::HoldFollowerAttackTagged(ctx.bots, tank))
+    {
+        Abort("pull failed (could not hold follower auto-attack)");
+        return false;
+    }
+    for (Player* bot : ctx.bots)
+        if (bot && bot != tank)
+            _heldFollowers.push_back(bot->GetGUID());
+    if (!CombatTrigger::BeginTankPull(tank, ctx.boss))
     {
         Abort("pull failed (boss not engaged)");
         return false;
     }
     _pullContextHeld = true;
-    _pullLeader = leader->GetGUID();
-    if (CombatTrigger::ConfirmBossInCombat(ctx.boss))
-        ConfirmAndEnterObserving(ctx);
-    else
-    {
-        _confirmTicks = 1;
-        _stage = Stage::Pull;
-        _pullStep = PullStep::AwaitCombatConfirm;
-    }
+    _pullLeader = tank->GetGUID();
+    _pullTank = tank->GetGUID();
+    _confirmTicks = 0;
+    _tankAggroElapsedMs = 0;
+    _tankAggroAcquireMs = 0;
+    _stuckTicks = 0;
+    _stage = Stage::Pull;
+    _pullStep = PullStep::AwaitTankAggro;
     return true;
 }
 

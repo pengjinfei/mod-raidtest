@@ -56,7 +56,9 @@ private:
     //                         （kCombatConfirmTicks 预算内）。SetInCombatWith 同步
     //                         置位 → 正常情形在 AwaitAttemptRow 内即已确认，此子
     //                         阶段只在退化情形（战斗标旗未同步落地）才走。
-    enum class PullStep : uint8 { FindBoss, AwaitAttemptRow, AwaitCombatConfirm };
+    //   AwaitTankAggro    —— tank 已真实拉怪；Boss 连续以 tank 为 victim 两秒后，
+    //                         才广播给其余 bot 攻击指令，避免开局同 tick 抢仇恨。
+    enum class PullStep : uint8 { FindBoss, AwaitAttemptRow, AwaitCombatConfirm, AwaitTankAggro };
 
     void TickPrerequisites(RunContext& ctx, uint32 diff);
     bool StartBossPull(RunContext& ctx);
@@ -77,6 +79,7 @@ private:
     // 兜底清理仍在生效的拉怪上下文（Begin 防御上一 attempt 中止残留；跨 tick
     // 泵窗口被打断时拉怪上下文会钉在 leader 上，下一个 attempt 开始时清掉）。
     void ClearHeldPullContext();
+    void RestoreHeldFollowerStrategies();
 
     Stage _stage{Stage::Idle};
     PullStep _pullStep{PullStep::FindBoss};
@@ -86,6 +89,10 @@ private:
     uint32 _stuckTicks{0};          // 阶段内无进展采样（传送/找 boss）
     uint32 _rowResolveTicks{0};     // 占位行等队列排空的粘滞计数（跨 tick）
     uint32 _confirmTicks{0};        // 进战斗确认泵（仅计算确实检查了战斗态的 tick）
+    uint32 _tankAggroElapsedMs{0};  // Boss 连续锁定 tank 的 lead 时间（真实经过毫秒）
+    uint32 _tankAggroAcquireMs{0};  // 等待 tank 首次/再次获得 victim 的真实经过毫秒
+    ObjectGuid _pullTank;           // 本次两段式 pull 的真实拉怪者
+    std::vector<ObjectGuid> _heldFollowers; // 暂停 attack tagged、等待 tank lead 的从属 bot
     AttemptObserver _observer;
     AttemptResult _result{AttemptResult::Ongoing};
     std::string _notes;

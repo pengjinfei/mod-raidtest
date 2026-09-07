@@ -34,6 +34,108 @@ bool CombatTrigger::BeginPull(Player* leader, Creature* boss)
     return BeginPullForAll({leader}, boss);
 }
 
+bool CombatTrigger::BeginTankPull(Player* tank, Creature* boss)
+{
+    if (!tank)
+    {
+        LOG_ERROR("raidtest", "CombatTrigger::BeginTankPull: null tank");
+        return false;
+    }
+
+    return BeginPull(tank, boss);
+}
+
+bool CombatTrigger::BeginAssistForAll(std::vector<Player*> const& bots, Player* tank, Creature* boss)
+{
+    if (!tank || !boss)
+    {
+        LOG_ERROR("raidtest", "CombatTrigger::BeginAssistForAll: missing tank or boss");
+        return false;
+    }
+
+    uint32 assisted = 0;
+    for (Player* bot : bots)
+    {
+        if (!bot || bot == tank)
+            continue;
+
+        // 与 HoldFollowerAttackTagged 成对：先恢复常规 masterless 策略，再通过真实
+        // AttackAction 显式下达本次 assist。这样异常中止后也不会让 follower 永久停摆。
+        RestoreFollowerAttackTagged(bot);
+
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+        if (!botAI)
+        {
+            LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: no PlayerbotAI for bot {}",
+                bot->GetName());
+            continue;
+        }
+
+        RaidPullAction assist(botAI);
+        if (!assist.Attack(boss))
+        {
+            LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: bot {} could not begin assist",
+                bot->GetName());
+            continue;
+        }
+
+        ++assisted;
+    }
+
+    if (assisted + 1 != bots.size())
+    {
+        LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: assisted {}/{} non-tank bot(s)",
+            assisted, bots.empty() ? 0 : bots.size() - 1);
+        return false;
+    }
+
+    LOG_INFO("raidtest", "CombatTrigger::BeginAssistForAll: released {} follower bot(s) after tank pull",
+        assisted);
+    return true;
+}
+
+bool CombatTrigger::HoldFollowerAttackTagged(std::vector<Player*> const& bots, Player* tank)
+{
+    if (!tank)
+    {
+        LOG_ERROR("raidtest", "CombatTrigger::HoldFollowerAttackTagged: null tank");
+        return false;
+    }
+
+    std::vector<Player*> held;
+    for (Player* bot : bots)
+    {
+        if (!bot || bot == tank)
+            continue;
+
+        PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+        if (!botAI)
+        {
+            LOG_ERROR("raidtest", "CombatTrigger::HoldFollowerAttackTagged: no PlayerbotAI for bot {}",
+                bot->GetName());
+            for (Player* restored : held)
+                RestoreFollowerAttackTagged(restored);
+            return false;
+        }
+
+        botAI->ChangeStrategy("-attack tagged", BOT_STATE_NON_COMBAT);
+        held.push_back(bot);
+    }
+
+    LOG_INFO("raidtest", "CombatTrigger::HoldFollowerAttackTagged: held {} follower bot(s) for tank lead",
+        held.size());
+    return true;
+}
+
+void CombatTrigger::RestoreFollowerAttackTagged(Player* bot)
+{
+    if (!bot)
+        return;
+
+    if (PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot))
+        botAI->ChangeStrategy("+attack tagged", BOT_STATE_NON_COMBAT);
+}
+
 bool CombatTrigger::BeginPullForAll(std::vector<Player*> const& bots, Creature* boss)
 {
     if (bots.empty())

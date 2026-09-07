@@ -1,6 +1,8 @@
 #include "RosterLogin.h"
+#include "DatabaseEnv.h"
 #include "Group.h"
 #include "GroupMgr.h"
+#include "InstanceSaveMgr.h"
 #include "Log.h"
 #include "MapMgr.h"
 #include "ObjectAccessor.h"
@@ -11,7 +13,9 @@
 #include "Playerbots.h"   // GET_PLAYERBOT_AI / sRandomPlayerbotMgr
 #include <algorithm>
 #include <chrono>
+#include <sstream>
 #include <thread>
+#include <unordered_map>
 
 namespace
 {
@@ -211,6 +215,108 @@ bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId,
         }
     }
     return all;
+}
+
+bool RosterLogin::ClearTemporaryInstanceBinds(std::vector<Player*> const& bots, uint32 mapId)
+{
+    bool cleared = false;
+    std::unordered_map<uint32, Player*> botByGuid;
+    for (Player* bot : bots)
+    {
+        if (!bot)
+            continue;
+        botByGuid.emplace(bot->GetGUID().GetCounter(), bot);
+
+        for (uint8 value = 0; value < MAX_DIFFICULTY; ++value)
+        {
+            Difficulty const difficulty = Difficulty(value);
+            InstancePlayerBind* bind = sInstanceSaveMgr->PlayerGetBoundInstance(bot->GetGUID(), mapId, difficulty);
+            if (!bind)
+                continue;
+            // A freshly logged-in bot can retain a map/difficulty entry whose save has not been
+            // loaded yet. It is an in-memory placeholder, not a bind that PlayerUnbindInstance
+            // can remove (that method dereferences save). The durable query below still removes
+            // a real character_instance row when one exists.
+            if (!bind->save)
+            {
+                LOG_WARN("raidtest", "RosterLogin: ignored unloaded instance-bind placeholder for {} on map {} difficulty {}",
+                    bot->GetName(), mapId, uint32(difficulty));
+                continue;
+            }
+            if (bind->perm)
+            {
+                LOG_ERROR("raidtest", "RosterLogin: refusing to clear permanent instance bind for {} on map {} difficulty {}",
+                    bot->GetName(), mapId, uint32(difficulty));
+                return false;
+            }
+
+            uint32 const instanceId = bind->save->GetInstanceId();
+            Difficulty const boundDifficulty = bind->save->GetDifficulty();
+            // PlayerGetBoundInstance may downscale the requested difficulty. Unbind with the
+            // save's actual difficulty; using the unnormalized loop value can leave the binding
+            // in the storage map untouched.
+            sInstanceSaveMgr->PlayerUnbindInstance(bot->GetGUID(), mapId, boundDifficulty, true, bot);
+            LOG_INFO("raidtest", "RosterLogin: cleared temporary instance {} for {} on map {} difficulty {}",
+                instanceId, bot->GetName(), mapId, uint32(boundDifficulty));
+            cleared = true;
+        }
+    }
+
+    if (botByGuid.empty())
+        return true;
+
+    // InstanceSaveMgr only has bindings for saves already loaded into its in-memory store. A
+    // temporary five-player instance with resettime=0 can survive in character_instance across a
+    // restart without being present there. Teleporting then resurrects split bindings (run106/
+    // run109). Sweep exactly the current test roster's rows for this map as a durable fallback.
+    std::ostringstream guids;
+    for (auto const& [guid, bot] : botByGuid)
+    {
+        if (guids.tellp() > 0)
+            guids << ',';
+        guids << guid;
+    }
+    QueryResult stale = CharacterDatabase.Query(Acore::StringFormat(
+        "SELECT ci.guid, ci.instance, ci.permanent, i.difficulty "
+        "FROM character_instance ci INNER JOIN instance i ON i.id = ci.instance "
+        "WHERE i.map = {} AND ci.guid IN ({})",
+        mapId, guids.str()));
+    if (stale)
+    {
+        do
+        {
+            Field* fields = stale->Fetch();
+            uint32 const guid = fields[0].Get<uint32>();
+            uint32 const instanceId = fields[1].Get<uint32>();
+            bool const permanent = fields[2].Get<bool>();
+            uint8 const difficulty = fields[3].Get<uint8>();
+            Player* bot = botByGuid.at(guid);
+            if (permanent)
+            {
+                LOG_ERROR("raidtest", "RosterLogin: refusing to clear permanent database bind for {} "
+                    "on map {} instance {} difficulty {}", bot->GetName(), mapId, instanceId,
+                    uint32(difficulty));
+                return false;
+            }
+
+            // DirectExecute is intentional: TeleportToRaid follows in this same world-thread
+            // transition, so an async delete could race the destination-instance lookup. The
+            // statement is constrained by the selected temporary roster row above.
+            // CHAR_DEL_CHAR_INSTANCE_BY_INSTANCE_GUID is configured for the asynchronous pool,
+            // while DirectExecute uses the synchronous connection. Both values originate from
+            // the preceding typed database row, so this bounded statement remains safe and
+            // makes the deletion visible before TeleportToRaid resolves an instance.
+            CharacterDatabase.DirectExecute(Acore::StringFormat(
+                "DELETE FROM character_instance WHERE guid = {} AND instance = {}", guid, instanceId));
+            LOG_INFO("raidtest", "RosterLogin: cleared durable temporary instance {} for {} "
+                "on map {} difficulty {}", instanceId, bot->GetName(), mapId, uint32(difficulty));
+            cleared = true;
+        } while (stale->NextRow());
+    }
+
+    if (cleared)
+        LOG_INFO("raidtest", "RosterLogin: cleared stale temporary instance bindings before teleport");
+    return true;
 }
 
 void RosterLogin::PumpTeleportAcks(std::vector<Player*> const& bots)

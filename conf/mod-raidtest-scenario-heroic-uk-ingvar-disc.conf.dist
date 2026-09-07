@@ -1,0 +1,17 @@
+# heroic5-v1: separate characters from Naxx, early heroic equipment.
+# 因格瓦尔(23954) 双阶段单 boss。首次验证隔离 boss 战（无房间小怪清理）。
+[Scenario]
+MapId = 574
+BossEntry = 23954
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-uk
+RosterFile = "mod-raidtest-roster-heroic5-disc-v1.conf"
+GearProfile = none
+EngageX = 245.0
+EngageY = -333.0
+EngageZ = 180.6
+EngageO = 0.0
+TimeoutSeconds = 300
+EngageTrigger = pull
+

@@ -74,6 +74,11 @@ public:
     // （见 AllOnMap）。本函数只负责发起，全部发起成功返回 true。
     static bool TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos);
 
+    // 测试 bot 上一轮遗留的临时副本绑定会在重启后从 character_instance 恢复，并让
+    // 同一队伍被分派到不同实例。传送前只清理当前场景对应地图/难度的临时绑定；永久
+    // 绑定属于角色锁定，拒绝清理并让调用方中止本轮。
+    static bool ClearTemporaryInstanceBinds(std::vector<Player*> const& bots, uint32 mapId);
+
     // 逐 tick 泵 + 轮询：对仍在传送中的 bot 调 botAI->HandleTeleportAck() 推进 worldport，
     // 直到所有 bot 都落在 mapId 且不再处于传送中（最多 waitTicks * 100ms）。
     static bool AllOnMap(std::vector<Player*> const& bots, uint32 mapId, uint32 waitTicks = 30);
