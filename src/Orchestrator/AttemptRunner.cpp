@@ -16,6 +16,7 @@
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
+#include "PathGenerator.h"
 #include "Player.h"
 #include "PlayerbotAIConfig.h"
 #include "ResultStore.h"
@@ -24,6 +25,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <sstream>
 
 namespace
 {
@@ -130,6 +132,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _preBossElapsed = _preparationElapsed = _recoveryElapsed = 0;
     _navigationWaypoint = _navigationElapsed = 0;
     _navigationComplete = false;
+    _navigationFailure.clear();
     _prerequisitePullSent = false;
     _stuckTicks = 0;
     _rowResolveElapsedMs = 0;
@@ -276,7 +279,9 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         {
             _stage = Stage::Navigation;
             if (!BeginNavigationWaypoint(ctx))
-                Abort("navigation_failed: could not start waypoint 1");
+                Abort(_navigationFailure.empty()
+                    ? "navigation_failed: could not start waypoint 1"
+                    : _navigationFailure);
             return;
         }
 
@@ -355,7 +360,9 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         if (_navigationWaypoint < ctx.scenario->GetNavigationWaypoints().size())
         {
             if (!BeginNavigationWaypoint(ctx))
-                Abort(Acore::StringFormat("navigation_failed: could not start waypoint {}", _navigationWaypoint + 1));
+                Abort(_navigationFailure.empty()
+                    ? Acore::StringFormat("navigation_failed: could not start waypoint {}", _navigationWaypoint + 1)
+                    : _navigationFailure);
             return;
         }
         _navigationComplete = true;
@@ -961,13 +968,54 @@ bool AttemptRunner::BeginNavigationWaypoint(RunContext& ctx)
     Map* destination = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
     if (!destination)
         return false;
-    for (Player* bot : ctx.bots)
+    for (size_t index = 0; index < ctx.bots.size(); ++index)
     {
+        Player* bot = ctx.bots[index];
         if (!bot || !bot->IsInWorld() || bot->GetMapId() != ctx.scenario->GetMapId() || bot->GetMap() != destination)
             return false;
         MotionMaster* motion = bot->GetMotionMaster();
         if (!motion)
             return false;
+
+        // Validate the complete mmap route before issuing any member's movement.
+        // PointMovement accepts a shortcut/no-path result and can then leave the
+        // group waiting for the timeout or fall through multi-level geometry.
+        // A navigation waypoint is only valid when mmap reaches its requested
+        // point; any projection, partial route, or shortcut must fail early.
+        PathGenerator path(bot);
+        bool const calculated = path.CalculatePath(point.GetPositionX(), point.GetPositionY(),
+            point.GetPositionZ(), false);
+        G3D::Vector3 const& actualEnd = path.GetActualEndPosition();
+        bool const reachesWaypoint =
+            std::hypot(actualEnd.x - point.GetPositionX(), actualEnd.y - point.GetPositionY()) <= 3.0f &&
+            std::fabs(actualEnd.z - point.GetPositionZ()) <= 4.0f;
+        if (!calculated || path.GetPathType() & (PATHFIND_NOPATH | PATHFIND_INCOMPLETE | PATHFIND_NOT_USING_PATH |
+                                                 PATHFIND_SHORTCUT | PATHFIND_FARFROMPOLY | PATHFIND_SHORT) ||
+            !reachesWaypoint)
+        {
+            _navigationFailure = Acore::StringFormat(
+                "navigation_failed: waypoint {} has no complete mmap route (type={} actual_end={:.2f},{:.2f},{:.2f})",
+                _navigationWaypoint + 1, uint32(path.GetPathType()), actualEnd.x, actualEnd.y, actualEnd.z);
+            LOG_WARN("raidtest", "AttemptRunner: {}", _navigationFailure);
+            return false;
+        }
+
+        if (index == 0)
+        {
+            Movement::PointsArray const& pathPoints = path.GetPath();
+            constexpr size_t kLoggedPathPoints = 32;
+            std::ostringstream pathLog;
+            for (size_t pointIndex = 0; pointIndex < std::min(pathPoints.size(), kLoggedPathPoints); ++pointIndex)
+            {
+                G3D::Vector3 const& routePoint = pathPoints[pointIndex];
+                if (pointIndex)
+                    pathLog << ';';
+                pathLog << routePoint.x << ',' << routePoint.y << ',' << routePoint.z;
+            }
+            LOG_INFO("raidtest", "AttemptRunner: navigation waypoint {}/{} mmap path type={} points={}{}",
+                _navigationWaypoint + 1, waypoints.size(), uint32(path.GetPathType()), pathLog.str(),
+                pathPoints.size() > kLoggedPathPoints ? ";..." : "");
+        }
         bot->AttackStop();
         motion->Clear();
         motion->MovePoint(/*id*/ 0, point.GetPositionX(), point.GetPositionY(), point.GetPositionZ(),

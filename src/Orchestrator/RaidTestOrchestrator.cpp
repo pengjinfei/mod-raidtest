@@ -454,20 +454,9 @@ void RaidTestOrchestrator::CompleteAttemptAndNext()
 
     case SerializeStep::ResolveAttemptRow:
     {
-        if (CharacterDatabase.QueueSize() != 0)
-        {
-            if (++_serialTicks >= kSerializeDrainTicks)
-            {
-                LOG_ERROR("raidtest", "Orchestrator: attempt placeholder row for run {} seq {} never "
-                    "became visible after {} tick(s) - finishing without it", _ctx.runId,
-                    _ctx.attemptsDone + 1, _serialTicks);
-                _serialStep = SerializeStep::Finalize;   // 不无限粘滞
-            }
-            return;
-        }
-
-        // settle 窗口（见 kAttemptRowResolveSettleTicks）：空队列 ≠ 已提交，连续
-        // 空满窗口再读占位行 id，避免 read-back 抢跑读空（Task 8 验收 run 4 复现）。
+        // CharacterDatabase 的队列属于整个世界线程，可能持续存在与本 attempt
+        // 无关的后台写入。不能用「全局队列为空」作为本 INSERT 已提交的前提；
+        // 等一个固定 settle 窗口后直接探测本 run/seq，直到有行或达到有界超时。
         if (++_serialTicks < kAttemptRowResolveSettleTicks)
             return;
 

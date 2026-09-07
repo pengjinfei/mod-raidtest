@@ -76,6 +76,7 @@ private:
     uint32 _navigationWaypoint{0};
     uint32 _navigationElapsed{0};
     bool _navigationComplete{false};
+    std::string _navigationFailure;
 
     static bool ReviveDead(RunContext& ctx);   // 复活战死 bot（下一 attempt 用）
     static Creature* FindBossNear(RunContext const& ctx);  // 场景 boss entry 最近者
