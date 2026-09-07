@@ -110,7 +110,12 @@ arbitrary other summons, doors, and multi-boss progression are not covered.
 `NavigationWaypoints` optionally defines a semicolon-separated sequence of `x,y,z[,o]`
 points between the preparation point and the first prerequisite pull. The runner sends every
 member to one point at a time with core mmap pathfinding (`MovePoint(generatePath=true)`) and
-does not advance until all members arrive within 3 yards and 4 yards vertically. This is normal
-ground movement, not a teleport. `NavigationTimeoutSeconds` applies to each point (default 60,
-maximum 1800). A path that cannot be completed, death, group loss, or timeout aborts the
-attempt with the waypoint number in its terminal note.
+does not advance until all members arrive within 3 yards and 4 yards vertically. The runner
+rejects no-path, partial, projected, and straight-line fallback results before moving any member.
+This is normal ground movement, not a teleport. `NavigationTimeoutSeconds` applies to each
+point (default 60, maximum 1800). A path that cannot be completed, death, group loss, or timeout
+aborts the attempt with the waypoint number in its terminal note.
+
+For a safe route survey, set `NavigationOnly = true` with one or more waypoints. The final
+arrival is recorded as `navigation_complete` and the attempt is deliberately aborted before
+fixture setup, prerequisite pulls, or boss combat.

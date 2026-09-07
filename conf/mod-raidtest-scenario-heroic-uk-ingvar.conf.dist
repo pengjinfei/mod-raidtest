@@ -24,4 +24,7 @@ PreparationO = 0.0
 # points as `x,y,z[,o]; x,y,z[,o]`; each point must be reached by all five bots before pull.
 # NavigationWaypoints = 252.0,-350.0,185.8,0.0
 # NavigationTimeoutSeconds = 60
+# Set only while surveying a route: records an aborted navigation-only probe after the final
+# waypoint and never starts fixture setup, prerequisite pulls, or boss combat.
+# NavigationOnly = true
 PrerequisiteTimeoutSeconds = 180

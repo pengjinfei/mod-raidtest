@@ -81,6 +81,7 @@ public:
     // pathfinding, never by teleporting through dungeon geometry.
     std::vector<Position> const& GetNavigationWaypoints() const { return _navigationWaypoints; }
     uint32 GetNavigationTimeoutSeconds() const { return _navigationTimeoutSeconds; }
+    bool IsNavigationOnly() const { return _navigationOnly; }
 
     // 行为钩子（阶段 B 特殊判定/机制用）。Task 7 默认流：用 GetTimeoutSeconds /
     // GetEngageTrigger 构造 Encounter 后调用本钩子做额外定制；默认空实现。
@@ -93,6 +94,7 @@ protected:
     uint32 _prerequisiteTimeoutSeconds{180};
     std::vector<Position> _navigationWaypoints;
     uint32 _navigationTimeoutSeconds{60};
+    bool _navigationOnly{false};
     std::string _name;
     uint32 _mapId{0};
     uint32 _bossEntry{0};

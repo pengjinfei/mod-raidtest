@@ -366,6 +366,12 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             return;
         }
         _navigationComplete = true;
+        if (ctx.scenario->IsNavigationOnly())
+        {
+            Abort(Acore::StringFormat("navigation_complete: {} waypoint(s) reached (navigation-only probe)",
+                ctx.scenario->GetNavigationWaypoints().size()));
+            return;
+        }
         _stage = Stage::TeleportAndPosition;
         _teleportSent = _followersTeleportSent = true;
         return;

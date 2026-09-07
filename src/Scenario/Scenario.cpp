@@ -56,6 +56,24 @@ namespace
         return true;
     }
 
+    bool ParseBool(std::string const& value, bool& out)
+    {
+        std::string normalized = value;
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (normalized == "true" || normalized == "1")
+        {
+            out = true;
+            return true;
+        }
+        if (normalized == "false" || normalized == "0")
+        {
+            out = false;
+            return true;
+        }
+        return false;
+    }
+
     // ascii 小写（用于枚举配置值比较，忽略大小写）
     std::string ToLower(std::string text)
     {
@@ -276,7 +294,8 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             for (auto token : Acore::Tokenize(value, ',', false))
             {
                 uint32 spawn = 0;
-                if (!ParseUint32(Acore::String::Trim(std::string(token)), spawn) || !spawn || !seen.insert(spawn).second)
+                if (!ParseUint32(Acore::String::Trim(std::string(token)), spawn) || !spawn ||
+                    !seen.insert(spawn).second)
                     failed = true;
                 else
                     _prerequisiteSpawns.push_back(spawn);
@@ -329,6 +348,11 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 _navigationWaypoints.push_back(point);
             }
             if (_navigationWaypoints.empty())
+                failed = true;
+        }
+        else if (key == "NavigationOnly")
+        {
+            if (!ParseBool(value, _navigationOnly))
                 failed = true;
         }
         else if (key == "PreparationX" || key == "PreparationY" || key == "PreparationZ" || key == "PreparationO")
