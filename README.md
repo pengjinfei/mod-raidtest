@@ -104,3 +104,13 @@ State events record `prerequisites_start`, `prerequisites_complete`, `recovery_c
 `boss_start`, and each member's boss-start resources. Overall duration includes preparation;
 the boss timeout applies only after boss start. Native boss AI reset handles its owned summons;
 arbitrary other summons, doors, and multi-boss progression are not covered.
+
+### Navigation waypoints
+
+`NavigationWaypoints` optionally defines a semicolon-separated sequence of `x,y,z[,o]`
+points between the preparation point and the first prerequisite pull. The runner sends every
+member to one point at a time with core mmap pathfinding (`MovePoint(generatePath=true)`) and
+does not advance until all members arrive within 3 yards and 4 yards vertically. This is normal
+ground movement, not a teleport. `NavigationTimeoutSeconds` applies to each point (default 60,
+maximum 1800). A path that cannot be completed, death, group loss, or timeout aborts the
+attempt with the waypoint number in its terminal note.

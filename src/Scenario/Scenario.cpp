@@ -296,6 +296,41 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 _prerequisiteTimeoutSeconds > 1800)
                 failed = true;
         }
+        else if (key == "NavigationTimeoutSeconds")
+        {
+            if (!ParseUint32(value, _navigationTimeoutSeconds) || !_navigationTimeoutSeconds ||
+                _navigationTimeoutSeconds > 1800)
+                failed = true;
+        }
+        else if (key == "NavigationWaypoints")
+        {
+            _navigationWaypoints.clear();
+            for (std::string_view waypoint : Acore::Tokenize(value, ';', false))
+            {
+                std::string const trimmedWaypoint = Acore::String::Trim(std::string(waypoint));
+                auto const fields = Acore::Tokenize(trimmedWaypoint, ',', false);
+                if (fields.size() != 3 && fields.size() != 4)
+                {
+                    failed = true;
+                    continue;
+                }
+
+                float x = 0.0f, y = 0.0f, z = 0.0f, o = 0.0f;
+                if (!ParseFloat(Acore::String::Trim(std::string(fields[0])), x) ||
+                    !ParseFloat(Acore::String::Trim(std::string(fields[1])), y) ||
+                    !ParseFloat(Acore::String::Trim(std::string(fields[2])), z) ||
+                    (fields.size() == 4 && !ParseFloat(Acore::String::Trim(std::string(fields[3])), o)))
+                {
+                    failed = true;
+                    continue;
+                }
+                Position point;
+                point.Relocate(x, y, z, o);
+                _navigationWaypoints.push_back(point);
+            }
+            if (_navigationWaypoints.empty())
+                failed = true;
+        }
         else if (key == "PreparationX" || key == "PreparationY" || key == "PreparationZ" || key == "PreparationO")
         {
             uint32 const index = key.back() == 'X' ? 0 : key.back() == 'Y' ? 1 : key.back() == 'Z' ? 2 : 3;

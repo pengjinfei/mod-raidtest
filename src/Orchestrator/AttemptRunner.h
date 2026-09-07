@@ -47,7 +47,10 @@ public:
     static void RestoreRoster(RunContext& ctx);
 
 private:
-    enum class Stage : uint8 { Idle, TeleportAndPosition, Pull, Prerequisites, Recovery, BossPosition, Observing, Done };
+    enum class Stage : uint8
+    {
+        Idle, TeleportAndPosition, Navigation, Pull, Prerequisites, Recovery, BossPosition, Observing, Done
+    };
 
     // Pull 子阶段（Task 7 review Fix 2/3 的世界线程非阻塞细化）：
     //   FindBoss          —— 找场景 boss 落 ctx.bossGuid/boss；
@@ -61,6 +64,8 @@ private:
     enum class PullStep : uint8 { FindBoss, AwaitAttemptRow, AwaitCombatConfirm, AwaitTankAggro };
 
     void TickPrerequisites(RunContext& ctx, uint32 diff);
+    bool BeginNavigationWaypoint(RunContext& ctx);
+    bool NavigationWaypointReached(RunContext const& ctx) const;
     bool StartBossPull(RunContext& ctx);
     void RecordPhase(char const* phase, uint32 elapsed);
     std::vector<ObjectGuid> _prerequisiteGuids;
@@ -68,6 +73,9 @@ private:
     uint32 _preparationElapsed{0};
     uint32 _recoveryElapsed{0};
     bool _prerequisitePullSent{false};
+    uint32 _navigationWaypoint{0};
+    uint32 _navigationElapsed{0};
+    bool _navigationComplete{false};
 
     static bool ReviveDead(RunContext& ctx);   // 复活战死 bot（下一 attempt 用）
     static Creature* FindBossNear(RunContext const& ctx);  // 场景 boss entry 最近者

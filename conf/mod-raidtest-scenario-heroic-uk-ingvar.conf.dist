@@ -1,5 +1,5 @@
 # heroic5-v1: separate characters from Naxx, early heroic equipment.
-# 因格瓦尔(23954) 双阶段单 boss。首次验证隔离 boss 战（无房间小怪清理）。
+# 因格瓦尔(23954) 双阶段单 boss。清理门前 3 名复仇的斯卡迪战士后开战。
 [Scenario]
 MapId = 574
 BossEntry = 23954
@@ -14,3 +14,14 @@ EngageZ = 180.6
 EngageO = 0.0
 TimeoutSeconds = 300
 EngageTrigger = pull
+# 125934 为队长，125935/125940 与其同处首领门前平台；三者均 linked-respawn 到因格瓦尔。
+PrerequisiteSpawns = 125934,125935,125940
+PreparationX = 252.0
+PreparationY = -350.0
+PreparationZ = 185.8
+PreparationO = 0.0
+# Optional normal-ground route to the upper rider platform.  Add surveyed mmap-reachable
+# points as `x,y,z[,o]; x,y,z[,o]`; each point must be reached by all five bots before pull.
+# NavigationWaypoints = 252.0,-350.0,185.8,0.0
+# NavigationTimeoutSeconds = 60
+PrerequisiteTimeoutSeconds = 180

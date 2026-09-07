@@ -13,6 +13,7 @@
 #include "Playerbots.h"
 #include "Log.h"
 #include "Map.h"
+#include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
@@ -21,6 +22,7 @@
 #include "RosterLogin.h"
 #include "RosterBuilder.h"
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace
@@ -90,6 +92,7 @@ char const* AttemptRunner::StageName() const
     {
     case Stage::Idle:               return "idle";
     case Stage::TeleportAndPosition: return "teleport";
+    case Stage::Navigation:         return "navigation";
     case Stage::Pull:               return "pull";
     case Stage::Prerequisites:      return "prerequisites";
     case Stage::Recovery:           return "recovery";
@@ -125,6 +128,8 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _followersTeleportSent = false;
     _prerequisiteGuids.clear();
     _preBossElapsed = _preparationElapsed = _recoveryElapsed = 0;
+    _navigationWaypoint = _navigationElapsed = 0;
+    _navigationComplete = false;
     _prerequisitePullSent = false;
     _stuckTicks = 0;
     _rowResolveElapsedMs = 0;
@@ -191,9 +196,9 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 }
             }
             ReviveDead(ctx);
-            if (!RosterLogin::ClearTemporaryInstanceBinds(ctx.bots, ctx.scenario->GetMapId()))
+            if (!RosterLogin::ClearScenarioInstanceBinds(ctx.bots, ctx.scenario->GetMapId()))
             {
-                Abort("scene_invalid: permanent instance bind blocks clean teleport");
+                Abort("scene_invalid: scenario instance binding cleanup failed");
                 return;
             }
 
@@ -255,11 +260,25 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 _stage = Stage::Done;
                 LOG_WARN("raidtest", "AttemptRunner: attempt {} aborted - teleport to map {} timed out",
                     ctx.attemptSeq, ctx.scenario->GetMapId());
+                for (Player* bot : ctx.bots)
+                    LOG_WARN("raidtest", "teleport_timeout: bot={} world={} map={} instance={} "
+                        "teleporting={} alive={}", bot ? bot->GetName() : "missing",
+                        bot && bot->IsInWorld(), bot ? bot->GetMapId() : 0,
+                        bot ? bot->GetInstanceId() : 0, bot && bot->IsBeingTeleported(),
+                        bot && bot->IsAlive());
             }
             return;
         }
 
         _stuckTicks = 0;
+
+        if (!_navigationComplete && !ctx.scenario->GetNavigationWaypoints().empty())
+        {
+            _stage = Stage::Navigation;
+            if (!BeginNavigationWaypoint(ctx))
+                Abort("navigation_failed: could not start waypoint 1");
+            return;
+        }
 
         // attempt 状态卫生（B2-5）：每次 attempt（含首个）传送到位后、pull 前，
         // 先重置 boss 到干净态（复活/清 enrage/清残留战斗/add/回满血），再把全队
@@ -306,6 +325,42 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         _stage = Stage::Pull;
         LOG_INFO("raidtest", "AttemptRunner: attempt {} - all {}/{} bot(s) on map {}",
             ctx.attemptSeq, ctx.bots.size(), ctx.botGuids.size(), ctx.scenario->GetMapId());
+        return;
+    }
+
+    case Stage::Navigation:
+    {
+        _navigationElapsed += diff;
+        if (!ValidateRaid(ctx, "navigation"))
+        {
+            Abort("navigation_failed: group lost");
+            return;
+        }
+        if (std::any_of(ctx.bots.begin(), ctx.bots.end(), [](Player const* bot)
+            { return !bot || !bot->IsAlive() || !bot->IsInWorld(); }))
+        {
+            Abort("navigation_failed: member died or left world");
+            return;
+        }
+        if (!NavigationWaypointReached(ctx))
+        {
+            if (_navigationElapsed >= ctx.scenario->GetNavigationTimeoutSeconds() * IN_MILLISECONDS)
+                Abort(Acore::StringFormat("navigation_failed: waypoint {} timeout", _navigationWaypoint + 1));
+            return;
+        }
+
+        RecordPhase("navigation_waypoint_reached", _navigationWaypoint + 1);
+        ++_navigationWaypoint;
+        _navigationElapsed = 0;
+        if (_navigationWaypoint < ctx.scenario->GetNavigationWaypoints().size())
+        {
+            if (!BeginNavigationWaypoint(ctx))
+                Abort(Acore::StringFormat("navigation_failed: could not start waypoint {}", _navigationWaypoint + 1));
+            return;
+        }
+        _navigationComplete = true;
+        _stage = Stage::TeleportAndPosition;
+        _teleportSent = _followersTeleportSent = true;
         return;
     }
 
@@ -661,6 +716,19 @@ bool AttemptRunner::ReviveDead(RunContext& ctx)
             continue;
         bot->ResurrectPlayer(1.0f, false);
         bot->SpawnCorpseBones();
+        // ResurrectPlayer restores life but deliberately does not tear down the
+        // old combat state.  A fresh run can therefore reach fixture setup while
+        // a just-revived bot is still in combat; core correctly refuses armour,
+        // rings and trinkets in that state while still allowing weapon swaps.
+        // Clear it before the next tick can run playerbot AI or fixture gear.
+        bot->AttackStop();
+        // Use the PvE teardown path as well as clearing the unit combat flag.
+        // The default CombatStop(true) only clears that flag and can leave an
+        // active CombatManager relationship, which immediately marks the bot in
+        // combat again on the next world tick.
+        bot->CombatStop(true, false);
+        if (PlayerbotAI* ai = GET_PLAYERBOT_AI(bot))
+            ai->Reset();
         LOG_INFO("raidtest", "AttemptRunner: resurrected bot {}", bot->GetName());
         any = true;
     }
@@ -882,6 +950,51 @@ void AttemptRunner::RestoreHeldFollowerStrategies()
             CombatTrigger::RestoreFollowerAttackTagged(bot);
     _heldFollowers.clear();
 }
+
+bool AttemptRunner::BeginNavigationWaypoint(RunContext& ctx)
+{
+    auto const& waypoints = ctx.scenario->GetNavigationWaypoints();
+    if (_navigationWaypoint >= waypoints.size())
+        return false;
+
+    Position const& point = waypoints[_navigationWaypoint];
+    Map* destination = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
+    if (!destination)
+        return false;
+    for (Player* bot : ctx.bots)
+    {
+        if (!bot || !bot->IsInWorld() || bot->GetMapId() != ctx.scenario->GetMapId() || bot->GetMap() != destination)
+            return false;
+        MotionMaster* motion = bot->GetMotionMaster();
+        if (!motion)
+            return false;
+        bot->AttackStop();
+        motion->Clear();
+        motion->MovePoint(/*id*/ 0, point.GetPositionX(), point.GetPositionY(), point.GetPositionZ(),
+                          FORCED_MOVEMENT_NONE, 0.0f, point.GetOrientation(),
+                          /*generatePath*/ true, /*forceDestination*/ false);
+    }
+
+    RecordPhase("navigation_waypoint_start", _navigationWaypoint + 1);
+    LOG_INFO("raidtest", "AttemptRunner: navigation waypoint {}/{} started at {},{},{}",
+        _navigationWaypoint + 1, waypoints.size(), point.GetPositionX(), point.GetPositionY(), point.GetPositionZ());
+    return true;
+}
+
+bool AttemptRunner::NavigationWaypointReached(RunContext const& ctx) const
+{
+    Position const& point = ctx.scenario->GetNavigationWaypoints()[_navigationWaypoint];
+    Map const* destination = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
+    constexpr float kArrivalRadius = 3.0f;
+    constexpr float kArrivalVerticalTolerance = 4.0f;
+    return std::all_of(ctx.bots.begin(), ctx.bots.end(), [&](Player const* bot)
+    {
+        return destination && bot && bot->GetMap() == destination && bot->GetMapId() == ctx.scenario->GetMapId() &&
+            bot->GetExactDist2d(point.GetPositionX(), point.GetPositionY()) <= kArrivalRadius &&
+            std::fabs(bot->GetPositionZ() - point.GetPositionZ()) <= kArrivalVerticalTolerance;
+    });
+}
+
 void AttemptRunner::RecordPhase(char const* phase, uint32 elapsed)
 {
     CombatEvent event;
