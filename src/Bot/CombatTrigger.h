@@ -74,7 +74,11 @@ public:
     // targeting 被永久钉在 boss 上（幂等跑多次时尤其明显）。
     static void EndPullContext(Player* leader);
 
-    // 校验 bot 战斗引擎策略列表中包含 strategyName（如 "naxx"）。
+    // 将场景/Context 注册键转换为 Engine 保存的运行时策略名。大多数策略二者相同，
+    // 但 map 574 的 "wotlk-uk" 在 Engine 中以 "utgarde keep" 保存。
+    static std::string RuntimeStrategyName(std::string const& strategyName);
+
+    // 校验 bot 战斗引擎策略列表中包含 strategyName 对应的运行时策略名。
     // A 阶段先做日志观察，不做硬性流程依赖。
     static bool IsRaidStrategyActive(Player* bot, std::string const& strategyName);
 };

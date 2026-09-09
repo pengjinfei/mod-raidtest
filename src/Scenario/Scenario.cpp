@@ -131,6 +131,12 @@ bool Scenario::LoadFromFile(std::string const& filePath)
     bool failed = false;
     float preparation[4]{};
     uint32 preparationMask = 0;
+    float tankPreparation[4]{};
+    uint32 tankPreparationMask = 0;
+    float nonTankPreparation[4]{};
+    uint32 nonTankPreparationMask = 0;
+    float prerequisitePreparation[4]{};
+    uint32 prerequisitePreparationMask = 0;
     float engageX = 0.0f, engageY = 0.0f, engageZ = 0.0f, engageO = 0.0f;
     std::string line;
     uint32 lineNumber = 0;
@@ -362,6 +368,29 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 failed = true;
             preparationMask |= 1u << index;
         }
+        else if (key == "TankPreparationX" || key == "TankPreparationY" ||
+                 key == "TankPreparationZ" || key == "TankPreparationO")
+        {
+            uint32 const index = key.back() == 'X' ? 0 : key.back() == 'Y' ? 1 : key.back() == 'Z' ? 2 : 3;
+            if (!ParseFloat(value, tankPreparation[index]))
+                failed = true;
+            tankPreparationMask |= 1u << index;
+        }
+        else if (key == "NonTankPreparationX" || key == "NonTankPreparationY" ||
+                 key == "NonTankPreparationZ" || key == "NonTankPreparationO")
+        {
+            uint32 const index = key.back() == 'X' ? 0 : key.back() == 'Y' ? 1 : key.back() == 'Z' ? 2 : 3;
+            if (!ParseFloat(value, nonTankPreparation[index]))
+                failed = true;
+            nonTankPreparationMask |= 1u << index;
+        }
+        else if (key == "PrerequisiteX" || key == "PrerequisiteY" || key == "PrerequisiteZ" || key == "PrerequisiteO")
+        {
+            uint32 const index = key.back() == 'X' ? 0 : key.back() == 'Y' ? 1 : key.back() == 'Z' ? 2 : 3;
+            if (!ParseFloat(value, prerequisitePreparation[index]))
+                failed = true;
+            prerequisitePreparationMask |= 1u << index;
+        }
         else if (key == "PartySize")
         {
             uint32 size = 0;
@@ -424,6 +453,31 @@ bool Scenario::LoadFromFile(std::string const& filePath)
     // 坐标分量都解析完才落盘（键顺序任意）；Relocate 会归一化朝向。
     _engagePoint.Relocate(engageX, engageY, engageZ, engageO);
     _preparationPoint = _engagePoint;
+    if (preparationMask)
+    {
+        if ((preparationMask & 7) != 7)
+            failed = true;
+        else
+            _preparationPoint.Relocate(preparation[0], preparation[1], preparation[2], preparation[3]);
+    }
+    if (tankPreparationMask || nonTankPreparationMask)
+    {
+        if ((tankPreparationMask & 7) != 7 || (nonTankPreparationMask & 7) != 7)
+        {
+            LOG_ERROR("raidtest", "Scenario: role-separated preparation requires TankPreparationX/Y/Z and "
+                "NonTankPreparationX/Y/Z");
+            failed = true;
+        }
+        else
+        {
+            _hasRoleSeparatedPreparation = true;
+            _tankPreparationPoint.Relocate(tankPreparation[0], tankPreparation[1], tankPreparation[2],
+                tankPreparation[3]);
+            _nonTankPreparationPoint.Relocate(nonTankPreparation[0], nonTankPreparation[1],
+                nonTankPreparation[2], nonTankPreparation[3]);
+        }
+    }
+    _prerequisitePoint = _preparationPoint;
     if (!_prerequisiteSpawns.empty())
     {
         if ((preparationMask & 7) != 7 || !_dungeonScenario)
@@ -431,7 +485,14 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             LOG_ERROR("raidtest", "Scenario: prerequisite clearing requires dungeon mode and PreparationX/Y/Z");
             failed = true;
         }
-        _preparationPoint.Relocate(preparation[0], preparation[1], preparation[2], preparation[3]);
+        if (prerequisitePreparationMask)
+        {
+            if ((prerequisitePreparationMask & 7) != 7)
+                failed = true;
+            else
+                _prerequisitePoint.Relocate(prerequisitePreparation[0], prerequisitePreparation[1],
+                    prerequisitePreparation[2], prerequisitePreparation[3]);
+        }
     }
 
     LOG_INFO("raidtest", "Scenario: loaded '{}' from '{}' (map={}, boss={}, engage=({}, {}, {}, {}), "

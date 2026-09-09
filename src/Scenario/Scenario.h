@@ -75,6 +75,15 @@ public:
     // 要求它也收到真实死亡事件，卡壳判定在它死亡前挂起。
     uint32 GetKillGateSpawn() const { return _killGateSpawn; }
     Position const& GetPreparationPoint() const { return _preparationPoint; }
+    // Optional role-separated fixture: the tank and non-tanks enter at
+    // independently surveyed preparation points. This is setup only; combat
+    // movement remains entirely under playerbot control.
+    bool HasRoleSeparatedPreparation() const { return _hasRoleSeparatedPreparation; }
+    Position const& GetTankPreparationPoint() const { return _tankPreparationPoint; }
+    Position const& GetNonTankPreparationPoint() const { return _nonTankPreparationPoint; }
+    // Optional room-local fixture for prerequisite packs. The normal
+    // preparation point remains the safe boss platform.
+    Position const& GetPrerequisitePoint() const { return _prerequisitePoint; }
     uint32 GetPrerequisiteTimeoutSeconds() const { return _prerequisiteTimeoutSeconds; }
     // Optional non-combat route between the preparation point and the first
     // prerequisite pack. Points are traversed in declaration order using mmap
@@ -91,6 +100,10 @@ protected:
     std::vector<uint32> _prerequisiteSpawns;
     uint32 _killGateSpawn{0};
     Position _preparationPoint{};
+    bool _hasRoleSeparatedPreparation{false};
+    Position _tankPreparationPoint{};
+    Position _nonTankPreparationPoint{};
+    Position _prerequisitePoint{};
     uint32 _prerequisiteTimeoutSeconds{180};
     std::vector<Position> _navigationWaypoints;
     uint32 _navigationTimeoutSeconds{60};

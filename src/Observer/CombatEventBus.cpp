@@ -3,6 +3,7 @@
 #include "AllSpellScript.h"
 #include "Errors.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "Spell.h"
 #include "StringFormat.h"
 #include "Unit.h"
@@ -11,6 +12,14 @@
 #include <chrono>
 #include <functional>
 #include <thread>
+
+namespace
+{
+constexpr uint32 kIngvarEntry = 23954;
+constexpr uint32 kIngvarSmashHeroicSpell = 59706;
+constexpr uint32 kIngvarDarkSmashHeroicSpell = 59709;
+constexpr float kIngvarSmashConeRadians = 1.04719755f;
+}
 
 // core 战斗 hooks（文件局部声明，仅在 RegisterRaidTestCombatHooks 注册，不对外暴露）。
 class RaidTestSpellScript : public AllSpellScript
@@ -27,6 +36,7 @@ class RaidTestUnitScript : public UnitScript
 {
 public:
     RaidTestUnitScript();
+    void OnHeal(Unit* healer, Unit* receiver, uint32& gain) override;
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override;
     void OnUnitDeath(Unit* unit, Unit* killer) override;
 };
@@ -66,6 +76,25 @@ bool CombatEventBus::IsMember(ObjectGuid const& guid) const
     if (guid == _bossGuid || _observedGuids.count(guid))
         return true;
     return _botGuids.find(guid) != _botGuids.end();
+}
+
+std::optional<uint32> CombatEventBus::GetLastHealRelMs(ObjectGuid const& receiver) const
+{
+    auto const found = _lastHealRelMs.find(receiver);
+    if (found == _lastHealRelMs.end())
+        return std::nullopt;
+    return found->second;
+}
+
+void CombatEventBus::RecordHeal(ObjectGuid const& receiver)
+{
+#ifdef ACORE_DEBUG
+    AssertWorldThread();
+#endif
+    if (!_active || !receiver)
+        return;
+
+    _lastHealRelMs[receiver] = RelMs();
 }
 
 bool CombatEventBus::ShouldKeep(CombatEvent const& e) const
@@ -143,6 +172,7 @@ void CombatEventBus::StartAttempt(uint32 attemptId, std::vector<ObjectGuid> cons
     _bossEntry = bossEntry;
     _observedGuids.clear();
     _deadGuids.clear();
+    _lastHealRelMs.clear();
     _botGuids.clear();
     _botGuids.insert(botGuids.begin(), botGuids.end());
     _attemptStart = std::chrono::steady_clock::now();
@@ -187,6 +217,7 @@ void CombatEventBus::EndAttempt()
     _bossEntry = 0;
     _observedGuids.clear();
     _deadGuids.clear();
+    _lastHealRelMs.clear();
     _botGuids.clear();
 }
 
@@ -291,6 +322,35 @@ void RaidTestSpellScript::OnSpellCast(Spell* spell, Unit* caster, SpellInfo cons
             break;
         }
     bus.Push(e);
+
+    // Both smash spells use a null explicit target, so the ordinary spell event
+    // cannot say which players were selected. Persist each resolved per-target
+    // outcome for the isolated heroic Ingvar diagnostic instead.
+    if ((spellInfo->Id != kIngvarSmashHeroicSpell && spellInfo->Id != kIngvarDarkSmashHeroicSpell) || !caster ||
+        !caster->IsCreature() || caster->GetEntry() != kIngvarEntry)
+        return;
+
+    for (auto const& targetInfo : *spell->GetUniqueTargetInfo())
+    {
+        if (!bus.IsMember(targetInfo.targetGUID))
+            continue;
+
+        CombatEvent target;
+        target.type = CombatEventType::State;
+        target.source = caster->GetGUID();
+        target.target = targetInfo.targetGUID;
+        target.actorEntry = kIngvarEntry;
+        target.spellId = spellInfo->Id;
+        Unit* targetUnit = ObjectAccessor::GetUnit(*caster, targetInfo.targetGUID);
+        target.detail = Acore::StringFormat(
+            "ingvar_{}smash_target:miss={} reflect={} effect_mask={} dist={} front_60={} behind_boss={} moving={}",
+            spellInfo->Id == kIngvarDarkSmashHeroicSpell ? "dark_" : "",
+            uint32(targetInfo.missCondition), uint32(targetInfo.reflectResult), targetInfo.effectMask,
+            targetUnit ? Acore::StringFormat("{:.2f}", caster->GetDistance2d(targetUnit)) : "unknown",
+            targetUnit && caster->HasInArc(kIngvarSmashConeRadians, targetUnit),
+            targetUnit && caster->isInBack(targetUnit), targetUnit && targetUnit->isMoving());
+        bus.Push(target);
+    }
 }
 
 void RaidTestSpellScript::OnSpellCastCancel(Spell* spell, Unit* caster,
@@ -323,13 +383,38 @@ void RaidTestSpellScript::OnSpellCastCancel(Spell* spell, Unit* caster,
 //    OnCreatureSelectLevel 等），故死亡走 UnitScript 全局死亡钩子 —— 覆盖面更广
 //    且同样不绑定 entry（偏离 brief「AllCreatureScript 捕获生物死亡」的说明）。
 RaidTestUnitScript::RaidTestUnitScript()
-    : UnitScript("RaidTestUnitScript", true, { UNITHOOK_ON_DAMAGE, UNITHOOK_ON_UNIT_DEATH })
+    : UnitScript("RaidTestUnitScript", true, { UNITHOOK_ON_HEAL, UNITHOOK_ON_DAMAGE, UNITHOOK_ON_UNIT_DEATH })
 {
+}
+
+void RaidTestUnitScript::OnHeal(Unit* healer, Unit* receiver, uint32& gain)
+{
+    CombatEventBus& bus = CombatEventBus::instance();
+    if (!bus.IsActive() || !healer || !receiver || !gain)
+        return;
+
+    if (!bus.IsMember(healer->GetGUID()) && !bus.IsMember(receiver->GetGUID()))
+        return;
+
+    // Unit::HealBySpell invokes this after ModifyHealth, so value is the actual
+    // health restored rather than an attempted or overhealing amount.
+    CombatEvent e;
+    e.type = CombatEventType::State;
+    e.source = healer->GetGUID();
+    e.target = receiver->GetGUID();
+    if (healer->IsCreature())
+        e.actorEntry = healer->GetEntry();
+    e.value = int32(std::min<uint32>(gain, static_cast<uint32>(INT32_MAX)));
+    e.detail = Acore::StringFormat("heal:receiver_hp={} receiver_max_hp={}",
+        receiver->GetHealth(), receiver->GetMaxHealth());
+    bus.RecordHeal(receiver->GetGUID());
+    bus.Push(e);
 }
 
 void RaidTestUnitScript::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
 {
     CombatEventBus& bus = CombatEventBus::instance();
+
     if (!bus.IsActive())
         return;
 
@@ -347,6 +432,7 @@ void RaidTestUnitScript::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
     // value（伤害量）是关键；uint32 超 int32 上限时截断到 INT32_MAX 防溢出。
     e.value = int32(std::min<uint32>(damage, static_cast<uint32>(INT32_MAX)));
     bus.Push(e);
+
 }
 
 void RaidTestUnitScript::OnUnitDeath(Unit* unit, Unit* killer)

@@ -271,6 +271,17 @@ void CombatTrigger::EndPullContext(Player* leader)
              leader->GetName());
 }
 
+std::string CombatTrigger::RuntimeStrategyName(std::string const& strategyName)
+{
+    // PlayerbotAI::ApplyInstanceStrategies looks up map 574 with the Context key
+    // "wotlk-uk". Engine::addStrategy then stores the object by getName(), which
+    // WotlkDungeonUKStrategy defines as "utgarde keep".
+    if (strategyName == "wotlk-uk")
+        return "utgarde keep";
+
+    return strategyName;
+}
+
 bool CombatTrigger::IsRaidStrategyActive(Player* bot, std::string const& strategyName)
 {
     if (!bot)
@@ -281,5 +292,6 @@ bool CombatTrigger::IsRaidStrategyActive(Player* bot, std::string const& strateg
         return false;
 
     std::vector<std::string> const active = botAI->GetStrategies(BOT_STATE_COMBAT);
-    return std::find(active.begin(), active.end(), strategyName) != active.end();
+    std::string const runtimeName = RuntimeStrategyName(strategyName);
+    return std::find(active.begin(), active.end(), runtimeName) != active.end();
 }

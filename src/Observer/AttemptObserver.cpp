@@ -3,12 +3,17 @@
 #include "Creature.h"
 #include "Group.h"
 #include "GroupMgr.h"
+#include "LastMovementValue.h"
 #include "Log.h"
+#include "MotionMaster.h"
 #include "Map.h"
 #include "Player.h"
 #include "Playerbots.h"
+#include "Spell.h"
 #include "StringFormat.h"
 #include <algorithm>
+#include <list>
+#include <utility>
 
 namespace
 {
@@ -16,6 +21,16 @@ namespace
     constexpr uint32 kSampleConfirmTicks = 3;
     // 卡壳判定窗口：boss 存在但脱离战斗且全团存活连续 N 个采样 → aborted。
     constexpr uint32 kStuckAbortTicks = 40;   // ~4-8s（名义世界 tick 100ms）
+    constexpr uint32 kIngvarEntry = 23954;
+    constexpr uint32 kIngvarUndeadDisplayId = 26351;
+    constexpr uint32 kIngvarSmashSpell = 42669;
+    constexpr uint32 kIngvarSmashHeroicSpell = 59706;
+    constexpr uint32 kIngvarDarkSmashSpell = 42723;
+    constexpr uint32 kIngvarDarkSmashHeroicSpell = 59709;
+    constexpr uint32 kIngvarThrowEntry = 23997;
+    constexpr uint32 kIngvarDarkSmashSampleMs = 250;
+    constexpr float kIngvarDarkSmashConeRadians = 1.04719755f;
+
 }
 
 void AttemptObserver::Reset()
@@ -26,6 +41,11 @@ void AttemptObserver::Reset()
     _abortSamples = 0;
     _lastPositionSampleMs = 0;
     _lastTankSampleMs = 0;
+    _lastIngvarSmashSampleMs = 0;
+    _ingvarSmashWindowObserved = false;
+    _ingvarOverlappingMembers.clear();
+    _ingvarObservedAxes.clear();
+    _ingvarAxeMemberStates.clear();
     _tankStrategies.clear();
     _tankActions.clear();
 }
@@ -47,6 +67,139 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
 
     if (ctx.bots.empty())
         return AttemptResult::Ongoing;   // 无 raid 成员可判定（防御：不应发生）
+
+    // Record only the transition into an implausible non-tank overlap. The
+    // Smash-window samples alone cannot say whether a bot arrived there by
+    // chase, a point move, or an already stationary position.
+    if (ctx.boss && ctx.boss->GetEntry() == kIngvarEntry)
+    {
+        bool const darkSmash = ctx.boss->GetDisplayId() == kIngvarUndeadDisplayId;
+        for (Player* member : ctx.bots)
+        {
+            if (!member || !member->IsInWorld() || member->GetMap() != ctx.boss->GetMap())
+                continue;
+
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(member);
+            bool const overlap = ai && !ai->IsTank(member) && member->GetExactDist2d(ctx.boss) < 1.0f;
+            if (!overlap)
+            {
+                _ingvarOverlappingMembers.erase(member->GetGUID());
+                continue;
+            }
+
+            if (!_ingvarOverlappingMembers.insert(member->GetGUID()).second)
+                continue;
+
+            LastMovement& lastMove = ai->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get();
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = member->GetGUID();
+            state.target = ctx.boss->GetGUID();
+            state.actorEntry = kIngvarEntry;
+            state.detail = Acore::StringFormat(
+                "ingvar_boss_overlap:phase={} dist={:.2f} moving={} motion_type={} front_60={} behind_boss={} hp={} "
+                "last_move=({:.2f},{:.2f},{:.2f}) priority={} age_ms={}",
+                darkSmash ? "p2" : "p1", member->GetExactDist2d(ctx.boss), member->isMoving(),
+                uint32(member->GetMotionMaster()->GetCurrentMovementGeneratorType()),
+                ctx.boss->HasInArc(kIngvarDarkSmashConeRadians, member), ctx.boss->isInBack(member), member->GetHealth(),
+                lastMove.lastMoveToX, lastMove.lastMoveToY, lastMove.lastMoveToZ, uint32(lastMove.priority),
+                getMSTimeDiff(lastMove.msTime, getMSTime()));
+            CombatEventBus::instance().Push(state);
+        }
+    }
+
+    // Ingvar 的脚本只在猛击读条窗口把 Boss root 3.75 秒。每个窗口只采一次全队的
+    // 站位事实，供核对 59709 的实际受击者；不调用 playerbot trigger/action，避免
+    // 观察器改变策略决策。
+    bool const ingvarSmashWindow = ctx.boss && ctx.boss->GetEntry() == kIngvarEntry &&
+        ctx.boss->HasUnitState(UNIT_STATE_ROOT);
+    if (!ingvarSmashWindow)
+        _ingvarSmashWindowObserved = false;
+    else if (!_ingvarSmashWindowObserved)
+    {
+        _ingvarSmashWindowObserved = true;
+        for (Player* member : ctx.bots)
+        {
+            if (!member || !member->IsInWorld() || member->GetMap() != ctx.boss->GetMap())
+                continue;
+
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = member->GetGUID();
+            state.target = ctx.boss->GetGUID();
+            state.actorEntry = kIngvarEntry;
+            state.value = static_cast<int32>(member->GetMapId());
+            state.detail = Acore::StringFormat(
+                "ingvar_smash_window:dist={:.2f} behind_boss={} moving={} alive={} hp={}",
+                member->GetDistance2d(ctx.boss), ctx.boss->isInBack(member), member->isMoving(),
+                member->IsAlive(), member->GetHealth());
+            CombatEventBus::instance().Push(state);
+        }
+    }
+
+    // 只读记录每次 P1/P2 猛击的 60 度前锥与成员响应。英雄难度 runtime spell
+    // 不会全程保留在 current-spell slots；无目标施法记录的 dst 只是 Boss 坐标，
+    // 不是地面危险区，因此缺少 Spell dst 时显式标记。每 250ms 采样至 root
+    // 窗口结束，区分「前锥内未规避」「触发后不能移动」及「已绕背仍受击」。
+    if (ctx.boss && ctx.boss->GetEntry() == kIngvarEntry &&
+        ctx.boss->HasUnitState(UNIT_STATE_ROOT))
+    {
+        bool const darkSmash = ctx.boss->GetDisplayId() == kIngvarUndeadDisplayId;
+        uint32 const baseSpell = darkSmash ? kIngvarDarkSmashSpell : kIngvarSmashSpell;
+        uint32 const heroicSpell = darkSmash ? kIngvarDarkSmashHeroicSpell : kIngvarSmashHeroicSpell;
+        Spell* smash = ctx.boss->FindCurrentSpellBySpellId(heroicSpell);
+        if (!smash)
+            smash = ctx.boss->FindCurrentSpellBySpellId(baseSpell);
+        bool const hasSpellDestination = smash && smash->m_targets.HasDst();
+        Position destination = ctx.boss->GetPosition();
+        if (hasSpellDestination)
+            destination = *smash->m_targets.GetDstPos();
+        if (ctx.attemptElapsedMs - _lastIngvarSmashSampleMs >= kIngvarDarkSmashSampleMs)
+        {
+            _lastIngvarSmashSampleMs = ctx.attemptElapsedMs;
+            for (Player* member : ctx.bots)
+            {
+                if (!member || !member->IsInWorld() || member->GetMap() != ctx.boss->GetMap())
+                    continue;
+
+                PlayerbotAI* ai = GET_PLAYERBOT_AI(member);
+                float lastMoveX = 0.0f;
+                float lastMoveY = 0.0f;
+                float lastMoveZ = 0.0f;
+                uint32 lastMovePriority = 0;
+                uint32 lastMoveAgeMs = 0;
+                if (ai)
+                {
+                    LastMovement& lastMove = ai->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get();
+                    lastMoveX = lastMove.lastMoveToX;
+                    lastMoveY = lastMove.lastMoveToY;
+                    lastMoveZ = lastMove.lastMoveToZ;
+                    lastMovePriority = uint32(lastMove.priority);
+                    lastMoveAgeMs = getMSTimeDiff(lastMove.msTime, getMSTime());
+                }
+                CombatEvent state;
+                state.type = CombatEventType::State;
+                state.source = member->GetGUID();
+                state.target = ctx.boss->GetGUID();
+                state.actorEntry = kIngvarEntry;
+                state.spellId = heroicSpell;
+                state.value = static_cast<int32>(member->GetMapId());
+                state.detail = Acore::StringFormat(
+                    "ingvar_{}smash_cast:dst_source={} dst={:.2f},{:.2f},{:.2f} dst_dist={:.2f} "
+                    "front_60={} moving={} can_move={} alive={} hp={} tank={} boss_o={:.2f} "
+                    "last_move=({:.2f},{:.2f},{:.2f}) priority={} age_ms={}",
+                    darkSmash ? "dark_" : "",
+                    hasSpellDestination ? "spell" : "boss_fallback", destination.GetPositionX(),
+                    destination.GetPositionY(), destination.GetPositionZ(),
+                    member->GetDistance2d(destination.GetPositionX(), destination.GetPositionY()),
+                    ctx.boss->HasInArc(kIngvarDarkSmashConeRadians, member),
+                    member->isMoving(), ai && ai->CanMove(),
+                    member->IsAlive(), member->GetHealth(), ai && ai->IsTank(member), ctx.boss->GetOrientation(),
+                    lastMoveX, lastMoveY, lastMoveZ, lastMovePriority, lastMoveAgeMs);
+                CombatEventBus::instance().Push(state);
+            }
+        }
+    }
 
     // 只读诊断：开局15秒加密采样，此后每秒。避免调用可能改变决策的 isUseful/CheckCast。
     uint32 const tankInterval = ctx.attemptElapsedMs <= 15000 ? 250 : 1000;
@@ -136,6 +289,45 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     if (ctx.attemptElapsedMs - _lastPositionSampleMs >= kPositionSampleMs)
     {
         _lastPositionSampleMs = ctx.attemptElapsedMs;
+        std::list<Creature*> axes;
+        std::unordered_set<ObjectGuid> activeAxes;
+        if (ctx.boss && ctx.boss->IsInWorld())
+            ctx.boss->GetCreatureListWithEntryInGrid(axes, kIngvarThrowEntry, 100.0f);
+        for (Creature* axe : axes)
+        {
+            if (!axe || !axe->IsAlive())
+                continue;
+
+            ObjectGuid const axeGuid = axe->GetGUID();
+            activeAxes.insert(axeGuid);
+            CombatEvent axeLifecycle;
+            axeLifecycle.type = CombatEventType::State;
+            axeLifecycle.source = axeGuid;
+            axeLifecycle.target = ctx.bossGuid;
+            axeLifecycle.actorEntry = kIngvarThrowEntry;
+            axeLifecycle.value = static_cast<int32>(axe->GetMapId());
+            axeLifecycle.detail = Acore::StringFormat(
+                "ingvar_axe_lifecycle:state={} axe={} boss_dist={:.2f} moving={} pos={:.2f},{:.2f},{:.2f}",
+                _ingvarObservedAxes.contains(axeGuid) ? "active" : "observed", axeGuid.ToString(),
+                axe->GetDistance2d(ctx.boss), axe->isMoving(), axe->GetPositionX(), axe->GetPositionY(),
+                axe->GetPositionZ());
+            CombatEventBus::instance().Push(axeLifecycle);
+        }
+        for (ObjectGuid const& axeGuid : _ingvarObservedAxes)
+        {
+            if (activeAxes.contains(axeGuid))
+                continue;
+
+            CombatEvent axeLifecycle;
+            axeLifecycle.type = CombatEventType::State;
+            axeLifecycle.source = axeGuid;
+            axeLifecycle.target = ctx.bossGuid;
+            axeLifecycle.actorEntry = kIngvarThrowEntry;
+            axeLifecycle.value = static_cast<int32>(ctx.boss ? ctx.boss->GetMapId() : 0);
+            axeLifecycle.detail = Acore::StringFormat("ingvar_axe_lifecycle:state=gone axe={}", axeGuid.ToString());
+            CombatEventBus::instance().Push(axeLifecycle);
+        }
+        _ingvarObservedAxes = std::move(activeAxes);
         for (Player* member : ctx.bots)
         {
             if (!member || !member->IsInWorld())
@@ -147,6 +339,93 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
             pos.detail = Acore::StringFormat("pos:{:.2f},{:.2f},{:.2f}",
                 member->GetPositionX(), member->GetPositionY(), member->GetPositionZ());
             CombatEventBus::instance().Push(pos);
+
+            // 死亡后角色可能已 worldport 到墓地；该位置与上层实例里的临时斧没有
+            // 同一空间语义，不能把跨地图距离写成「离开暗影斧」。
+            if (!ctx.boss || member->GetMap() != ctx.boss->GetMap())
+            {
+                _ingvarAxeMemberStates.erase(member->GetGUID());
+                continue;
+            }
+
+            Creature* nearestAxe = nullptr;
+            for (Creature* axe : axes)
+                if (axe && axe->IsAlive() && (!nearestAxe || member->GetDistance2d(axe) < member->GetDistance2d(nearestAxe)))
+                    nearestAxe = axe;
+
+            auto const lastHeal = CombatEventBus::instance().GetLastHealRelMs(member->GetGUID());
+            auto const describeAxeMember = [&](char const* state, ObjectGuid const& axeGuid, float distance)
+            {
+                PlayerbotAI* ai = GET_PLAYERBOT_AI(member);
+                std::string lastAction = ai ? ai->HandleRemoteCommand("action") : "no_ai";
+                if (lastAction.size() > 80)
+                    lastAction.resize(80);
+                CombatEvent loop;
+                loop.type = CombatEventType::State;
+                loop.source = member->GetGUID();
+                loop.target = axeGuid;
+                loop.actorEntry = kIngvarThrowEntry;
+                loop.value = static_cast<int32>(member->GetMapId());
+                loop.detail = Acore::StringFormat(
+                    "ingvar_axe_loop:state={} axe={} dist={:.2f} moving={} alive={} hp={}/{} last_heal_ms={} last_action={}",
+                    state, axeGuid.GetCounter(), distance, member->isMoving(), member->IsAlive(), member->GetHealth(),
+                    member->GetMaxHealth(), lastHeal ? Acore::StringFormat("{}", *lastHeal) : "none", lastAction);
+                CombatEventBus::instance().Push(loop);
+            };
+
+            auto state = _ingvarAxeMemberStates.find(member->GetGUID());
+            if (!nearestAxe)
+            {
+                if (state != _ingvarAxeMemberStates.end())
+                {
+                    describeAxeMember("axe_lost", state->second.axeGuid, -1.0f);
+                    _ingvarAxeMemberStates.erase(state);
+                }
+                continue;
+            }
+
+            float const axeDistance = member->GetDistance2d(nearestAxe);
+            ObjectGuid const axeGuid = nearestAxe->GetGUID();
+            if (state == _ingvarAxeMemberStates.end() || state->second.axeGuid != axeGuid)
+            {
+                if (state != _ingvarAxeMemberStates.end())
+                    describeAxeMember("axe_changed", state->second.axeGuid, axeDistance);
+                state = _ingvarAxeMemberStates.insert_or_assign(member->GetGUID(),
+                    IngvarAxeMemberState{axeGuid}).first;
+            }
+
+            IngvarAxeMemberState& axeMember = state->second;
+            bool const withinTwenty = axeDistance <= 20.0f;
+            bool const withinSeven = axeDistance <= 7.0f;
+            bool const withinOne = axeDistance <= 1.0f;
+            if (withinTwenty && !axeMember.withinTwenty)
+                describeAxeMember("seen_20", axeGuid, axeDistance);
+            if (withinSeven && !axeMember.withinSeven)
+                describeAxeMember("entered_7", axeGuid, axeDistance);
+            if (withinOne && !axeMember.withinOne)
+                describeAxeMember("entered_1", axeGuid, axeDistance);
+            if (!withinOne && axeMember.withinOne)
+                describeAxeMember("left_1", axeGuid, axeDistance);
+            if (!withinSeven && axeMember.withinSeven)
+                describeAxeMember("left_7", axeGuid, axeDistance);
+            axeMember.withinTwenty = withinTwenty;
+            axeMember.withinSeven = withinSeven;
+            axeMember.withinOne = withinOne;
+
+            if (nearestAxe)
+            {
+                CombatEvent axeState;
+                axeState.type = CombatEventType::State;
+                axeState.source = member->GetGUID();
+                axeState.target = nearestAxe->GetGUID();
+                axeState.actorEntry = kIngvarThrowEntry;
+                axeState.value = static_cast<int32>(member->GetMapId());
+                axeState.detail = Acore::StringFormat(
+                    "ingvar_axe_member:axe={} dist={:.2f} moving={} alive={} hp={}",
+                    nearestAxe->GetGUID().GetCounter(), member->GetDistance2d(nearestAxe),
+                    member->isMoving(), member->IsAlive(), member->GetHealth());
+                CombatEventBus::instance().Push(axeState);
+            }
         }
         if (ctx.boss && ctx.boss->IsInWorld())
         {

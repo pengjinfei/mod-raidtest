@@ -86,6 +86,7 @@ namespace
     // tank 没有在这段时间内真正获得 boss victim，说明组队/职业 AI/拉怪状态失效；
     // 中止本次样本，而不是把无效开怪记作首领机制失败。
     constexpr uint32 kTankAggroAcquireMs = 8000;
+
 }
 
 char const* AttemptRunner::StageName() const
@@ -226,8 +227,14 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             // 先让队长建立/进入实例，再让其余成员进入同一张地图实例。并发把五个
             // 无绑定角色送入副本，会偶发各自创建临时实例；AllOnMapNow 因地图指针
             // 不同而永久等待，表现为“重启后传送失败”。
+            Position const& leaderPreparation = ctx.scenario->HasRoleSeparatedPreparation() &&
+                    !ctx.rosterSlots.empty() && ctx.rosterSlots.front().role == "tank"
+                ? ctx.scenario->GetTankPreparationPoint()
+                : ctx.scenario->HasRoleSeparatedPreparation()
+                    ? ctx.scenario->GetNonTankPreparationPoint()
+                    : ctx.scenario->GetPreparationPoint();
             bool const ok = RosterLogin::TeleportToRaid({ctx.bots.front()}, ctx.scenario->GetMapId(),
-                                                        ctx.scenario->GetPreparationPoint());
+                                                        leaderPreparation, nullptr, true);
             _teleportSent = true;
             _stuckTicks = 0;
             if (!ok)
@@ -246,9 +253,29 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                     Abort("teleport stage timeout waiting for instance leader");
                 return;
             }
-            std::vector<Player*> followers(ctx.bots.begin() + 1, ctx.bots.end());
-            if (!followers.empty() && !RosterLogin::TeleportToRaid(followers, ctx.scenario->GetMapId(),
-                                                                     ctx.scenario->GetPreparationPoint(), leader))
+            std::vector<Player*> tankFollowers;
+            std::vector<Player*> nonTankFollowers;
+            for (size_t i = 1; i < ctx.bots.size(); ++i)
+            {
+                if (i < ctx.rosterSlots.size() && ctx.rosterSlots[i].role == "tank")
+                    tankFollowers.push_back(ctx.bots[i]);
+                else
+                    nonTankFollowers.push_back(ctx.bots[i]);
+            }
+            bool followersOk = true;
+            if (ctx.scenario->HasRoleSeparatedPreparation())
+            {
+                if (!tankFollowers.empty())
+                    followersOk = RosterLogin::TeleportToRaid(tankFollowers, ctx.scenario->GetMapId(),
+                        ctx.scenario->GetTankPreparationPoint(), leader);
+                if (!nonTankFollowers.empty())
+                    followersOk = RosterLogin::TeleportToRaid(nonTankFollowers, ctx.scenario->GetMapId(),
+                        ctx.scenario->GetNonTankPreparationPoint(), leader) && followersOk;
+            }
+            else if (!nonTankFollowers.empty())
+                followersOk = RosterLogin::TeleportToRaid(nonTankFollowers, ctx.scenario->GetMapId(),
+                    ctx.scenario->GetPreparationPoint(), leader);
+            if (!followersOk)
                 LOG_WARN("raidtest", "AttemptRunner: follower teleport request rejected");
             _followersTeleportSent = true;
             _stuckTicks = 0;
@@ -299,6 +326,16 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             Abort("raid_invalid: group lost before character preparation");
             return;
         }
+        // The preparation point can be inside a boss room. Reset its encounter
+        // state before fixture gear is applied: core correctly rejects armour,
+        // rings and trinkets while a bot is in combat. This only establishes a
+        // clean start; the normal prerequisite and boss pulls happen later.
+        if (!ResetInstance(ctx))
+        {
+            Abort("scene_invalid: reset scope could not be restored");
+            return;
+        }
+
         RosterBuilder builder;
         builder.SetGearProfile(ctx.scenario->GetGearProfile());
         bool valid = true;
@@ -320,11 +357,6 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             return;
         }
 
-        if (!ResetInstance(ctx))
-        {
-            Abort("scene_invalid: reset scope could not be restored");
-            return;
-        }
         RestoreRoster(ctx);
 
         _stage = Stage::Pull;
@@ -341,10 +373,15 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             Abort("navigation_failed: group lost");
             return;
         }
-        if (std::any_of(ctx.bots.begin(), ctx.bots.end(), [](Player const* bot)
-            { return !bot || !bot->IsAlive() || !bot->IsInWorld(); }))
+        auto const invalidBot = std::find_if(ctx.bots.begin(), ctx.bots.end(), [](Player const* bot)
+            { return !bot || !bot->IsAlive() || !bot->IsInWorld(); });
+        if (invalidBot != ctx.bots.end())
         {
-            Abort("navigation_failed: member died or left world");
+            Player* bot = *invalidBot;
+            Abort(Acore::StringFormat("navigation_failed: bot={} alive={} in_world={} map={} pos={:.2f},{:.2f},{:.2f}",
+                bot ? bot->GetName() : "missing", bot && bot->IsAlive(), bot && bot->IsInWorld(),
+                bot ? bot->GetMapId() : 0, bot ? bot->GetPositionX() : 0.0f, bot ? bot->GetPositionY() : 0.0f,
+                bot ? bot->GetPositionZ() : 0.0f));
             return;
         }
         if (!NavigationWaypointReached(ctx))
@@ -495,6 +532,15 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
 
             if (!ctx.scenario->GetPrerequisiteSpawns().empty())
             {
+                // The rider pack can occupy a separate platform from the safe
+                // boss fixture. This is a preparation teleport, not a claim of
+                // autonomous traversal; its combat is still handled normally.
+                if (!RosterLogin::TeleportToRaid(ctx.bots, ctx.scenario->GetMapId(),
+                                                 ctx.scenario->GetPrerequisitePoint()))
+                {
+                    Abort("prerequisite_failed: room positioning failed");
+                    return;
+                }
                 Map* map = ctx.bots.front()->GetMap();
                 for (uint32 spawn : ctx.scenario->GetPrerequisiteSpawns())
                 {
@@ -748,6 +794,50 @@ bool AttemptRunner::ReviveDead(RunContext& ctx)
     return any;
 }
 
+Player* AttemptRunner::FindTank(RunContext const& ctx)
+{
+    for (size_t i = 0; i < ctx.bots.size() && i < ctx.rosterSlots.size(); ++i)
+        if (ctx.rosterSlots[i].role == "tank")
+            return ctx.bots[i];
+    return nullptr;
+}
+
+bool AttemptRunner::ValidateRoleSeparatedPreparation(RunContext const& ctx) const
+{
+    if (!ctx.scenario->HasRoleSeparatedPreparation())
+        return true;
+
+    constexpr float kPositionTolerance = 2.0f;
+    bool valid = true;
+    for (size_t i = 0; i < ctx.bots.size() && i < ctx.rosterSlots.size(); ++i)
+    {
+        Player* bot = ctx.bots[i];
+        if (!bot)
+        {
+            valid = false;
+            continue;
+        }
+
+        bool const isTank = ctx.rosterSlots[i].role == "tank";
+        Position const& expected = isTank ? ctx.scenario->GetTankPreparationPoint()
+                                          : ctx.scenario->GetNonTankPreparationPoint();
+        float const distance = bot->GetDistance(expected);
+        bool const inPosition = distance <= kPositionTolerance;
+        valid = valid && inPosition;
+
+        CombatEvent state;
+        state.type = CombatEventType::State;
+        state.source = bot->GetGUID();
+        state.detail = Acore::StringFormat("role_preparation_gate:role={} expected={:.2f},{:.2f},{:.2f} "
+            "actual={:.2f},{:.2f},{:.2f} distance={:.2f} pass={}", isTank ? "tank" : "non_tank",
+            expected.GetPositionX(), expected.GetPositionY(), expected.GetPositionZ(), bot->GetPositionX(),
+            bot->GetPositionY(), bot->GetPositionZ(), distance, inPosition);
+        CombatEventBus::instance().Push(state);
+        LOG_INFO("raidtest", "AttemptRunner: {}", state.detail);
+    }
+    return valid;
+}
+
 // attempt 状态卫生（B2-5）：拉怪前把所有 bot 回满血/资源，消除上一场战斗
 // 的残血入场（Gluth run34 归因：全队满血池 23-46k 却被 boss 白字一刀一个，
 // 是「进战斗时血量不满」而非「一刀真能秒满血」）。纯恢复，不改任何 bot 行为。
@@ -974,6 +1064,9 @@ bool AttemptRunner::BeginNavigationWaypoint(RunContext& ctx)
     Map* destination = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
     if (!destination)
         return false;
+
+    std::vector<std::pair<Player*, MotionMaster*>> validatedMembers;
+    validatedMembers.reserve(ctx.bots.size());
     for (size_t index = 0; index < ctx.bots.size(); ++index)
     {
         Player* bot = ctx.bots[index];
@@ -999,10 +1092,31 @@ bool AttemptRunner::BeginNavigationWaypoint(RunContext& ctx)
                                                  PATHFIND_SHORTCUT | PATHFIND_FARFROMPOLY | PATHFIND_SHORT) ||
             !reachesWaypoint)
         {
+            PathRouteDiagnostics const diagnostics = path.GetRouteDiagnostics();
             _navigationFailure = Acore::StringFormat(
-                "navigation_failed: waypoint {} has no complete mmap route (type={} actual_end={:.2f},{:.2f},{:.2f})",
-                _navigationWaypoint + 1, uint32(path.GetPathType()), actualEnd.x, actualEnd.y, actualEnd.z);
+                "navigation_failed: waypoint {} has no complete mmap route (type={} actual_end={:.2f},{:.2f},{:.2f} "
+                "tiles={}/{}, projections={}/{}, find_path=0x{:08X}, component={})",
+                _navigationWaypoint + 1, uint32(path.GetPathType()), actualEnd.x, actualEnd.y, actualEnd.z,
+                diagnostics.startTileLoaded, diagnostics.endTileLoaded, uint64(diagnostics.start.polyRef),
+                uint64(diagnostics.end.polyRef), diagnostics.findPathStatus, diagnostics.endReachable ? "connected" :
+                (diagnostics.connectivitySearchCapped ? "capped" : "disconnected"));
             LOG_WARN("raidtest", "AttemptRunner: {}", _navigationFailure);
+            LOG_WARN("raidtest", "AttemptRunner: navigation diagnostics bot={} navmesh={} query={} "
+                "start_tile=[{},{}] end_tile=[{},{}] start_poly={} start_project=0x{:08X}/0x{:08X} "
+                "start_closest={:.2f},{:.2f},{:.2f} start_distance={:.2f} end_poly={} "
+                "end_project=0x{:08X}/0x{:08X} end_nearby={:.2f},{:.2f},{:.2f} end_distance={:.2f} "
+                "find_path=0x{:08X} path_polys={} path_last={} component_polys={} component={}",
+                bot->GetName(), diagnostics.navMeshAvailable, diagnostics.navMeshQueryAvailable,
+                diagnostics.startTileX, diagnostics.startTileY, diagnostics.endTileX, diagnostics.endTileY,
+                uint64(diagnostics.start.polyRef), diagnostics.start.initialQueryStatus,
+                diagnostics.start.expandedQueryStatus, diagnostics.start.closestPoint.x,
+                diagnostics.start.closestPoint.y,
+                diagnostics.start.closestPoint.z, diagnostics.start.distance, uint64(diagnostics.end.polyRef),
+                diagnostics.end.initialQueryStatus, diagnostics.end.expandedQueryStatus, diagnostics.end.closestPoint.x,
+                diagnostics.end.closestPoint.y, diagnostics.end.closestPoint.z, diagnostics.end.distance,
+                diagnostics.findPathStatus, diagnostics.pathPolyCount, uint64(diagnostics.pathLastPoly),
+                diagnostics.reachablePolyCount, diagnostics.endReachable ? "connected" :
+                (diagnostics.connectivitySearchCapped ? "capped" : "disconnected"));
             return false;
         }
 
@@ -1022,6 +1136,13 @@ bool AttemptRunner::BeginNavigationWaypoint(RunContext& ctx)
                 _navigationWaypoint + 1, waypoints.size(), uint32(path.GetPathType()), pathLog.str(),
                 pathPoints.size() > kLoggedPathPoints ? ";..." : "");
         }
+        validatedMembers.emplace_back(bot, motion);
+    }
+
+    // Do not let an earlier member move if a later member fails preflight.
+    // Movement starts only after every bot has the same complete mmap route.
+    for (auto const& [bot, motion] : validatedMembers)
+    {
         bot->AttackStop();
         motion->Clear();
         motion->MovePoint(/*id*/ 0, point.GetPositionX(), point.GetPositionY(), point.GetPositionZ(),
@@ -1066,6 +1187,15 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
         Abort("boss_invalid: missing or dead before pull");
         return false;
     }
+    // All encounter shapes converge here: isolated Boss scenarios skip
+    // BossPosition, while prerequisite scenarios reach it after room cleanup.
+    // Gate the shared entry point so neither path can pull without its map
+    // strategy installed in every combat engine.
+    if (!RosterLogin::EnsureCombatInstanceStrategy(ctx.bots, ctx.scenario->GetStrategy()))
+    {
+        Abort("raid_invalid: instance combat strategy inactive before pull");
+        return false;
+    }
     if (!_prerequisiteGuids.empty())
     {
         for (ObjectGuid const& guid : _prerequisiteGuids)
@@ -1086,6 +1216,11 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
                 return false;
             }
     }
+    if (!ValidateRoleSeparatedPreparation(ctx))
+    {
+        Abort("fixture_invalid: role-separated preparation position gate failed");
+        return false;
+    }
     _preBossElapsed = ctx.attemptElapsedMs;
     RecordPhase("boss_start", _preBossElapsed);
     for (Player* bot : ctx.bots)
@@ -1098,13 +1233,7 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
             std::to_string(bot->GetMaxPower(POWER_MANA));
         CombatEventBus::instance().Push(state);
     }
-    Player* tank = nullptr;
-    for (size_t i = 0; i < ctx.bots.size() && i < ctx.rosterSlots.size(); ++i)
-        if (ctx.rosterSlots[i].role == "tank")
-        {
-            tank = ctx.bots[i];
-            break;
-        }
+    Player* tank = FindTank(ctx);
     if (!tank)
     {
         Abort("pull failed (roster has no tank)");

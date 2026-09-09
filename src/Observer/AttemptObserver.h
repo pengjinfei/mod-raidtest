@@ -3,6 +3,7 @@
 
 #include "RunContext.h"
 #include <unordered_map>
+#include <unordered_set>
 
 // 每 tick 战斗判定（design §10 / brief Task 7 Step 2）：boss 血 0=kill /
 // 全员死亡=wipe / 超时=timeout / 战前卡壳=aborted。
@@ -34,6 +35,14 @@ public:
     AttemptResult Tick(RunContext& ctx, uint32 diff);
 
 private:
+    struct IngvarAxeMemberState
+    {
+        ObjectGuid axeGuid;
+        bool withinTwenty{false};
+        bool withinSeven{false};
+        bool withinOne{false};
+    };
+
     // 重寻址当前 boss（防跨 tick 悬垂指针；boss 被移除时返回空，交由判定处理）。
     static void ResolveBoss(RunContext& ctx);
 
@@ -46,6 +55,11 @@ private:
     uint32 _abortSamples = 0;
     uint32 _lastPositionSampleMs{0};    // 上次位置采样时刻（attemptElapsedMs 口径）
     uint32 _lastTankSampleMs{0};
+    uint32 _lastIngvarSmashSampleMs{0};
+    bool _ingvarSmashWindowObserved{false};
+    std::unordered_set<ObjectGuid> _ingvarOverlappingMembers;
+    std::unordered_set<ObjectGuid> _ingvarObservedAxes;
+    std::unordered_map<ObjectGuid, IngvarAxeMemberState> _ingvarAxeMemberStates;
     std::unordered_map<uint64, std::string> _tankStrategies;
     std::unordered_map<uint64, std::string> _tankActions;
 };

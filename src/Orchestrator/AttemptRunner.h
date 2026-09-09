@@ -79,6 +79,8 @@ private:
     std::string _navigationFailure;
 
     static bool ReviveDead(RunContext& ctx);   // 复活战死 bot（下一 attempt 用）
+    static Player* FindTank(RunContext const& ctx);
+    bool ValidateRoleSeparatedPreparation(RunContext const& ctx) const;
     static Creature* FindBossNear(RunContext const& ctx);  // 场景 boss entry 最近者
     static void ResolveBoss(RunContext& ctx);  // 每 tick 从地图重寻址当前 boss（防悬垂）
 

@@ -12,6 +12,16 @@ EngageX = 245.0
 EngageY = -333.0
 EngageZ = 180.6
 EngageO = 0.0
+# Fixture only: the tank starts at the established contact point; non-tanks
+# start at the collision-verified rear point. Combat movement begins normally
+# after the tank pull and is never driven by raidtest.
+TankPreparationX = 245.0
+TankPreparationY = -333.0
+TankPreparationZ = 180.6
+TankPreparationO = 0.0
+NonTankPreparationX = 235.90
+NonTankPreparationY = -335.33
+NonTankPreparationZ = 180.46
+NonTankPreparationO = 0.0
 TimeoutSeconds = 300
 EngageTrigger = pull
-

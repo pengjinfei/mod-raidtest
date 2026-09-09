@@ -1,4 +1,5 @@
 #include "RosterLogin.h"
+#include "CombatTrigger.h"
 #include "DatabaseEnv.h"
 #include "Group.h"
 #include "GroupMgr.h"
@@ -173,6 +174,48 @@ bool RosterLogin::ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots
     return true;
 }
 
+bool RosterLogin::EnsureCombatInstanceStrategy(std::vector<Player*> const& bots,
+                                                std::string const& strategyName)
+{
+    if (strategyName.empty())
+    {
+        LOG_ERROR("raidtest", "RosterLogin::EnsureCombatInstanceStrategy: empty strategy name");
+        return false;
+    }
+
+    std::string const runtimeStrategyName = CombatTrigger::RuntimeStrategyName(strategyName);
+    uint32 ready = 0;
+    for (Player* bot : bots)
+    {
+        PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+        if (!botAI)
+        {
+            LOG_ERROR("raidtest", "RosterLogin::EnsureCombatInstanceStrategy: missing bot AI for {}",
+                      bot ? bot->GetName() : "?");
+            continue;
+        }
+
+        // SelectiveResetStrategies restores class/spec combat defaults, re-applies the
+        // current map's built-in instance strategy, and rebuilds trigger/action lists.
+        // It deliberately leaves the non-combat engine intact, including attack-tagged.
+        botAI->SelectiveResetStrategies(BOT_STATE_COMBAT);
+        bool const active = botAI->HasStrategy(runtimeStrategyName, BOT_STATE_COMBAT);
+        LOG_INFO("raidtest", "RosterLogin: combat instance strategy key='{}' runtime='{}' active={} for {} on map {} instance {}",
+                 strategyName, runtimeStrategyName, active, bot->GetName(), bot->GetMapId(), bot->GetInstanceId());
+        if (active)
+            ++ready;
+    }
+
+    if (ready != bots.size())
+    {
+        LOG_ERROR("raidtest", "RosterLogin::EnsureCombatInstanceStrategy: strategy key='{}' runtime='{}' active for {}/{} bot(s)",
+                  strategyName, runtimeStrategyName, ready, bots.size());
+        return false;
+    }
+
+    return true;
+}
+
 // B2-8 run 级状态卫生：强制登出全部在线 bot。见 RosterLogin.h 注释——run 间复用
 // 在线 bot（不重新登录）会让全灭后的 mod-playerbots 引擎残留污染下一 run 的战斗
 // 行为（DPS 只跑 buff 不攻击）。LogoutPlayer(true) 会销毁 Player/PlayerbotAI 对象，
@@ -193,7 +236,7 @@ void RosterLogin::LogoutAll(std::vector<ObjectGuid> const& guids)
 }
 
 bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos,
-                                  Player* instanceTarget)
+                                  Player* instanceTarget, bool forceWorldport)
 {
     if (bots.empty())
         return false;
@@ -203,15 +246,22 @@ bool RosterLogin::TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId,
     {
         if (!bot)
             continue;
-        // A dead bot can be logged out inside the previous copy of the same
-        // dungeon without carrying a character_instance row.  TeleportTo then
-        // treats a map-id-only request as a near teleport and leaves it in that
-        // old copy, even when a leader has already entered the new one.  Force
-        // a worldport only for that cross-instance follower case.
-        bool const differentTargetInstance = instanceTarget && bot->GetMapId() == mapId &&
-            bot->GetInstanceId() != instanceTarget->GetInstanceId();
+        // Clearing character_instance bindings alone does not remove a bot
+        // from the previous copy of this dungeon. TeleportTo normally treats
+        // a same-map request as a near teleport, so a retry leader would keep
+        // anchoring the group to that stale copy. Force a worldport for that
+        // leader case and for followers that are in a different copy. Once the
+        // leader enters, InstanceMap binds the group leader and followers
+        // resolve that same destination through the normal core logic.
+        // A null instance target normally means a same-instance positioning
+        // adjustment (for example, after prerequisite clearing), which must
+        // remain a near teleport. The initial leader entry is different: its
+        // stale same-map object survives bind cleanup, so the caller marks it
+        // explicitly and forces core's worldport/new-instance path.
+        bool const mustWorldport = forceWorldport || (bot->GetMapId() == mapId && instanceTarget &&
+            bot->GetInstanceId() != instanceTarget->GetInstanceId());
         if (!bot->TeleportTo(mapId, pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(),
-                             pos.GetOrientation(), 0, instanceTarget, differentTargetInstance))
+                             pos.GetOrientation(), 0, instanceTarget, mustWorldport))
         {
             LOG_ERROR("raidtest", "RosterLogin::TeleportToRaid: rejected {} to map {}: enter_reason={} "
                 "from_map={} instance={} alive={} teleporting={} group={} raid={} difficulty={}",

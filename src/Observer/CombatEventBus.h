@@ -5,7 +5,9 @@
 #include "Define.h"
 #include "ObjectGuid.h"
 #include <chrono>
+#include <optional>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -67,6 +69,14 @@ public:
     bool IsActive() const { return _active; }
     uint32 BossEntry() const { return _bossEntry; }
 
+    // 只读诊断用：返回该 attempt 内最近一次实际生命恢复相对开始时刻。没有已记录的
+    // 治疗时返回空；调用方不能用它推断一次施法是否完成或是否为有效应对动作。
+    std::optional<uint32> GetLastHealRelMs(ObjectGuid const& receiver) const;
+
+    // UnitScript 的 OnHeal 在世界线程调用。将时间戳与对应的 heal State 事件一起
+    // 记录，供 AttemptObserver 的站位阈值采样关联生命恢复空档。
+    void RecordHeal(ObjectGuid const& receiver);
+
     // boss 死亡确认（Task 7）：本 attempt 期间是否收到过当前 boss 的 Death 事件
     // （真实死亡）。AttemptObserver 以「hp 读到 0 且本标志为 true」双条件判定
     // Kill，避免把 boss 指针暂时消失（evade/reset/瞬时失效）误判为击杀。
@@ -96,6 +106,7 @@ private:
     bool _active{false};
     std::unordered_set<ObjectGuid> _observedGuids;
     std::unordered_set<ObjectGuid> _deadGuids;
+    std::unordered_map<ObjectGuid, uint32> _lastHealRelMs;
     uint32 _attemptId{0};
     uint32 _bossEntry{0};
     ObjectGuid _bossGuid;

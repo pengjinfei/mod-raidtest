@@ -3,6 +3,7 @@
 
 #include "ObjectGuid.h"
 #include "Position.h"
+#include <string>
 #include <vector>
 
 class Player;
@@ -61,6 +62,13 @@ public:
     // 世界线程安全（登录完成后调用一次，非 tick 热路径）。全部应用成功返回 true。
     static bool ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots);
 
+    // 场景内同地图 near teleport 不会经过 playerbots 的 worldport map-attach 钩子。
+    // 在真实拉怪前重建 combat engine 的默认策略，并由 playerbots 按当前 map
+    // 自动重新加入 instance strategy；随后逐人验证所需策略。该操作不注入技能、
+    // 仇恨或走位，只恢复 playerbots 原本的地图策略生命周期。
+    static bool EnsureCombatInstanceStrategy(std::vector<Player*> const& bots,
+                                             std::string const& strategyName);
+
     // B2-8 run 级状态卫生：run 收尾时强制登出全部在线 bot，使下次 run 从干净会话
     // 重新登录。根因：bot 全灭（wipe/timeout）后 mod-playerbots 引擎停在残留状态
     // （current target / 战斗引擎 / 策略状态），run 间只复用在线 bot（不重新登录）时
@@ -73,7 +81,7 @@ public:
     // IsBeingTeleported() 的 bot 调 PlayerbotAI::HandleTeleportAck() 推进 worldport
     // （见 AllOnMap）。本函数只负责发起，全部发起成功返回 true。
     static bool TeleportToRaid(std::vector<Player*> const& bots, uint32 mapId, Position const& pos,
-                               Player* instanceTarget = nullptr);
+                               Player* instanceTarget = nullptr, bool forceWorldport = false);
 
     // 传送前清理当前 raidtest roster 在当前场景地图上的所有副本绑定（包括击杀后
     // 正常形成的英雄本永久绑定）。调用方只传本模块管理的测试角色，且 SQL 同时以
