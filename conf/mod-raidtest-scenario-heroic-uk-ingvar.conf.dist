@@ -16,9 +16,20 @@ TimeoutSeconds = 300
 EngageTrigger = pull
 # 125934 为队长，125935/125940 与其同处首领门前平台；三者均 linked-respawn 到因格瓦尔。
 PrerequisiteSpawns = 125934,125935,125940
-PreparationX = 252.0
-PreparationY = -350.0
-PreparationZ = 185.8
+# 骑手集结点：三骑手所在的上层平台。该坐标在 map 574 的导航网格上没有任何投影
+# （零位移探针：type=17、终点 polyRef=0、find_path=0x00000000、component=disconnected），
+# 传送到这里的成员会立刻坠落（实测 1.41 秒自伤 26,324 打死坦克），因此三骑手前置目前
+# 只有约 1/5 的成功率。改从下层已实测可走点集结则对高 5 码的骑手没有视线（180 秒超时、
+# 0 死亡），故当前 mmap 数据下没有纯配置解法；阻塞点是上层平台的 mmap 覆盖，与跨房间
+# 自主行进同源。详见管理库 docs/testing/bosses/heroic-uk-ingvar/README.md。
+PrerequisiteX = 252.0
+PrerequisiteY = -350.0
+PrerequisiteZ = 185.8
+PrerequisiteO = 0.0
+# 开怪准备点：50 码邻域查询在该区域找到的唯一可走点（run165 实测）。
+PreparationX = 245.60
+PreparationY = -339.73
+PreparationZ = 180.50
 PreparationO = 0.0
 # Optional normal-ground route to the upper rider platform.  Add surveyed mmap-reachable
 # points as `x,y,z[,o]; x,y,z[,o]`; each point must be reached by all five bots before pull.
