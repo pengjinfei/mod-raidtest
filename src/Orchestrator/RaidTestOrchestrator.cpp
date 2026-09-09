@@ -410,6 +410,26 @@ void RaidTestOrchestrator::Update(uint32 diff)
         else
             _ctx.bots.push_back(leader);
 
+        // boss 必须每 tick 按场景 entry 重寻址：AttemptObserver::ResolveBoss 只会按
+        // 已知 guid 重取，而观察会话开始时队伍通常还没到 boss 房，guid 一开始是空的。
+        // 解析到后要 TrackUnit，否则 CombatEventBus::IsMember 会把 boss 的施法/伤害
+        // 全部过滤掉（StartAttempt 时无法预知 guid）。
+        CombatEventBus& bus = CombatEventBus::instance();
+        for (Player* member : _ctx.bots)
+            if (member)
+                bus.TrackUnit(member->GetGUID());   // 中途加入的成员也要纳入过滤
+
+        if (Creature* boss = AttemptRunner::FindBossNear(_ctx))
+        {
+            if (_ctx.bossGuid != boss->GetGUID())
+            {
+                _ctx.bossGuid = boss->GetGUID();
+                bus.TrackUnit(_ctx.bossGuid);
+                LOG_INFO("raidtest", "Orchestrator: observe session tracking boss {} (entry {})",
+                    _ctx.bossGuid.ToString(), boss->GetEntry());
+            }
+        }
+
         // Tick 的返回值在观察态无意义（不做终态判定），只取其采样副作用。
         (void)_observeObserver.Tick(_ctx, diff);
         return;

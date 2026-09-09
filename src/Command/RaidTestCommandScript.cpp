@@ -161,8 +161,11 @@ public:
             {"compare",  HandleCompareCommand,  SEC_ADMINISTRATOR, Console::Yes},
             {"dump",     HandleDumpCommand,     SEC_ADMINISTRATOR, Console::Yes},
             // 观察会话必须由真人在游戏内发起（需要发起者的队伍作为成员集合），
-            // 因此 Console::No。
-            {"observe",  HandleObserveCommand,  SEC_ADMINISTRATOR, Console::No},
+            // 因此 Console::No。SEC_PLAYER：它是纯只读采样，不登录角色、不建组、
+            // 不传送、不开怪、不改任何游戏状态，只写 raidtest_events。代价是普通玩家
+            // 能占住 orchestrator（IsRunning 期间 .raidtest run 会被拒），本机单人
+            // 测试服可接受。
+            {"observe",  HandleObserveCommand,  SEC_PLAYER,        Console::No},
         };
         static ChatCommandTable commandTable = {
             {"raidtest", raidtestCommandTable},

@@ -18,6 +18,10 @@
 class AttemptRunner
 {
 public:
+    // 场景 boss entry 最近者。观察会话没有开怪流程，需要每 tick 按 entry 重寻址，
+    // 因此这个纯函数对外公开（AttemptObserver::ResolveBoss 只按已知 guid 重寻址）。
+    static Creature* FindBossNear(RunContext const& ctx);
+
     // 重置并开始一次 attempt。ctx.bots 需已登录且场景 scene 有效；
     // ctx.scenario 提供 mapId / engage point / boss entry / timeout。
     void Begin(RunContext& ctx, uint32 seq);
@@ -85,7 +89,7 @@ private:
     static bool ReviveDead(RunContext& ctx);   // 复活战死 bot（下一 attempt 用）
     static Player* FindTank(RunContext const& ctx);
     bool ValidateRoleSeparatedPreparation(RunContext const& ctx) const;
-    static Creature* FindBossNear(RunContext const& ctx);  // 场景 boss entry 最近者
+
     static void ResolveBoss(RunContext& ctx);  // 每 tick 从地图重寻址当前 boss（防悬垂）
 
     // 确认进战斗后的公共收尾：清拉怪上下文 + 策略观察日志 + 转入 Observing。
