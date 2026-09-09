@@ -1,6 +1,11 @@
 # heroic5-v1: separate characters from Naxx, early heroic equipment.
 # 斯卡瓦德(24200) & 达尔隆(24201) 双 boss：BossEntry 死后需 KillGateSpawn 也死才判 Kill。
-# 清理首领房的 4 名吞噬者与 2 组三名狂怒幽灵后开战。
+# 先清 4 名吞噬者与 2 组三名狂怒幽灵，再开战。这批小怪不在首领房：它们分布在
+# x∈[23.9,64.4]、y∈[-34.6,35.6] 的西侧房间，而双 boss 在 x≈110；首领房 45 码内
+# 没有任何小怪。准备点取核心 findNearestPoly 对原坐标 (75,0,117) 的实测投影
+# (81.50,-5.13,118.90)——原坐标距最近可走多边形 8.3 码（在几何体内），bot 被传送
+# 进几何体后对小怪和 boss 的 LOS 全为 false，两种拉怪都失败。房间是 L 形的，没有
+# 任何单一坐标能同时看到全部前置目标，因此由编排层在目标超出视线时带队接近。
 [Scenario]
 MapId = 574
 BossEntry = 24200
@@ -18,8 +23,8 @@ EngageTrigger = pull
 # 双 boss 第二个必死目标：达尔隆生成点 126024。
 KillGateSpawn = 126024
 PrerequisiteSpawns = 125971,125962,125956,125967,125877,125878,125879,125880,125881,125882
-PreparationX = 75.0
-PreparationY = 0.0
-PreparationZ = 117.0
+PreparationX = 81.50
+PreparationY = -5.13
+PreparationZ = 118.90
 PreparationO = 3.14
 PrerequisiteTimeoutSeconds = 180

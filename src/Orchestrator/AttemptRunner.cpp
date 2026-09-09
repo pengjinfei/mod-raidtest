@@ -135,6 +135,8 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _navigationComplete = false;
     _navigationFailure.clear();
     _prerequisitePullSent = false;
+    _prerequisiteApproachGuid.Clear();
+    _prerequisiteApproachAt = 0;
     _stuckTicks = 0;
     _rowResolveElapsedMs = 0;
     _confirmTicks = 0;
@@ -1370,10 +1372,84 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
         // One ordinary encounter-start instruction; combat target selection remains with the AI.
         if (!CombatTrigger::BeginPullForAll(ctx.bots, next))
         {
-            Abort("prerequisite_failed: initial pull rejected");
+            // 拒绝的实际原因几乎总是超出视线/射程，而不是目标无效。房间是 L 形的：实测
+            // 小怪房内的 on-mesh 点能拉到并清掉 4 只，第 5 只在 48 码外的北侧且无视线。
+            // 也就是说，不存在任何单一准备点能同时看到全部前置目标，原来直接 abort 等于
+            // 要求场景配置一个并不存在的坐标。改为下达一次普通的接近移动、在后续 tick
+            // 重试拉怪；上限仍由 PrerequisiteTimeoutSeconds 兜住，战斗决策仍归 bot。
+            ApproachPrerequisiteTarget(ctx, next);
             return;
         }
         CombatTrigger::EndPullContext(ctx.bots.front());
         _prerequisitePullSent = true;
     }
+}
+
+void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target)
+{
+    if (!target || ctx.bots.empty())
+        return;
+
+    // 只在没人还在走、且与上次下达间隔足够时重新发令，避免每个 tick 清运动状态造成抖动。
+    bool const stillWalking = std::any_of(ctx.bots.begin(), ctx.bots.end(),
+        [](Player* bot) { return bot && bot->isMoving(); });
+    if (_prerequisiteApproachGuid == target->GetGUID() &&
+        (stillWalking || _preparationElapsed - _prerequisiteApproachAt < 1000))
+        return;
+
+    Map* destination = ctx.bots.front() ? ctx.bots.front()->GetMap() : nullptr;
+    if (!destination)
+        return;
+
+    std::vector<std::pair<Player*, MotionMaster*>> validatedMembers;
+    validatedMembers.reserve(ctx.bots.size());
+    for (Player* bot : ctx.bots)
+    {
+        if (!bot || !bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != destination)
+            return;
+        MotionMaster* motion = bot->GetMotionMaster();
+        if (!motion)
+            return;
+
+        // 与导航段同样先整队预检，再统一发令：任何一人没有可用地面路线就都不动。
+        // 与导航段的区别是目标是活动生物而不是固定节点，所以只拒绝真正的直线穿墙
+        // （NOPATH / NOT_USING_PATH / SHORTCUT / FARFROMPOLY），并以「终点落在目标
+        // 5 码内」代替严格的节点到达判据；生物本身可能略微偏离网格。
+        PathGenerator path(bot);
+        bool const calculated = path.CalculatePath(target->GetPositionX(), target->GetPositionY(),
+            target->GetPositionZ(), false);
+        G3D::Vector3 const& actualEnd = path.GetActualEndPosition();
+        bool const nearTarget =
+            std::hypot(actualEnd.x - target->GetPositionX(), actualEnd.y - target->GetPositionY()) <= 5.0f &&
+            std::fabs(actualEnd.z - target->GetPositionZ()) <= 5.0f;
+        if (!calculated ||
+            path.GetPathType() &
+                (PATHFIND_NOPATH | PATHFIND_NOT_USING_PATH | PATHFIND_SHORTCUT | PATHFIND_FARFROMPOLY) ||
+            !nearTarget)
+        {
+            PathRouteDiagnostics const diagnostics = path.GetRouteDiagnostics();
+            LOG_WARN("raidtest", "AttemptRunner: prerequisite approach has no ground route bot={} target={} "
+                "entry={} type={} actual_end={:.2f},{:.2f},{:.2f} tiles={}/{} find_path=0x{:08X} component={}",
+                bot->GetName(), target->GetGUID().ToString(), target->GetEntry(), uint32(path.GetPathType()),
+                actualEnd.x, actualEnd.y, actualEnd.z, diagnostics.startTileLoaded, diagnostics.endTileLoaded,
+                diagnostics.findPathStatus, diagnostics.endReachable ? "connected" :
+                (diagnostics.connectivitySearchCapped ? "capped" : "disconnected"));
+            return;
+        }
+        validatedMembers.emplace_back(bot, motion);
+    }
+
+    for (auto const& [bot, motion] : validatedMembers)
+    {
+        motion->Clear();
+        motion->MovePoint(/*id*/ 0, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(),
+                          FORCED_MOVEMENT_NONE, 0.0f, 0.0f, /*generatePath*/ true, /*forceDestination*/ false);
+    }
+
+    _prerequisiteApproachGuid = target->GetGUID();
+    _prerequisiteApproachAt = _preparationElapsed;
+    LOG_INFO("raidtest", "AttemptRunner: prerequisite approach target={} entry={} pos={:.2f},{:.2f},{:.2f} "
+        "leader_distance={:.2f} elapsed={}ms",
+        target->GetGUID().ToString(), target->GetEntry(), target->GetPositionX(), target->GetPositionY(),
+        target->GetPositionZ(), ctx.bots.front()->GetDistance(target), _preparationElapsed);
 }

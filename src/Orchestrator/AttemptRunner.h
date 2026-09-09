@@ -65,6 +65,7 @@ private:
 
     void TickPrerequisites(RunContext& ctx, uint32 diff);
     bool BeginNavigationWaypoint(RunContext& ctx);
+    void ApproachPrerequisiteTarget(RunContext& ctx, Creature* target);
     bool NavigationWaypointReached(RunContext const& ctx) const;
     bool StartBossPull(RunContext& ctx);
     void RecordPhase(char const* phase, uint32 elapsed);
@@ -73,6 +74,8 @@ private:
     uint32 _preparationElapsed{0};
     uint32 _recoveryElapsed{0};
     bool _prerequisitePullSent{false};
+    ObjectGuid _prerequisiteApproachGuid;   // 上次下达接近移动的前置目标
+    uint32 _prerequisiteApproachAt{0};      // 下达时刻（_preparationElapsed 口径）
     uint32 _navigationWaypoint{0};
     uint32 _navigationElapsed{0};
     bool _navigationComplete{false};
