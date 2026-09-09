@@ -535,14 +535,16 @@ uint32 RosterBuilder::EquipBlueprintItems(Player* bot, RosterSlot const& slot)
                 itemId, key);
             continue;
         }
-        bool canEquip = bot->CanEquipItem(uint8(equipSlot), dest, probe, true, true) == EQUIP_ERR_OK;
+        InventoryResult const equipResult = bot->CanEquipItem(uint8(equipSlot), dest, probe, true, true);
         probe->RemoveFromUpdateQueueOf(bot);
         delete probe;
-        if (!canEquip)
+        if (equipResult != EQUIP_ERR_OK)
         {
-            // 职业穿不上的（如牧师拿板甲）留在原地：该槽位交给工厂配装兜底
-            LOG_WARN("raidtest", "RosterBuilder: blueprint item {} for '{}' cannot be equipped by "
-                "this class - keeping factory gear", itemId, key);
+            // 职业穿不上的（如牧师拿板甲）留在原地：该槽位交给工厂配装兜底。
+            // 记录真实 InventoryResult：整套装备一起失败时，原来的措辞会把玩家状态
+            // 门（如 EQUIP_ERR_CANT_DO_RIGHT_NOW）误报成职业限制。
+            LOG_WARN("raidtest", "RosterBuilder: blueprint item {} for '{}' cannot be equipped "
+                "(InventoryResult={}) - keeping factory gear", itemId, key, uint32(equipResult));
             continue;
         }
 
@@ -852,6 +854,33 @@ uint32 RosterBuilder::EquipBisItems(Player* bot, RosterSlot const& slot)
 
 uint32 RosterBuilder::ApplyGear(Player* bot, RosterSlot const& slot)
 {
+    // 装备夹具在开怪前运行，机器人身上不应带着上一场的控制效果。冰箱(45438) 这类
+    // 自带 MOD_STUN 的光环会随角色存档跨登录保留，使 Player::CanEquipItem 对**每个**
+    // 槽位返回 EQUIP_ERR_YOU_ARE_STUNNED(37)：整套蓝图装备一件都穿不上，角色被判
+    // fixture_invalid，之后每次尝试都重复 abort（run251/252 即为此）。同理，登录后
+    // 立刻起手的非近战施法会返回 EQUIP_ERR_CANT_DO_RIGHT_NOW(39)。
+    // 这里只在开怪前清理残留控制并打断施法：它属于夹具复位，不改变战斗中的行为。
+    if (!bot->IsInCombat())
+    {
+        for (AuraType const auraType : { SPELL_AURA_MOD_STUN, SPELL_AURA_MOD_ROOT,
+                                         SPELL_AURA_MOD_FEAR, SPELL_AURA_MOD_CONFUSE })
+        {
+            if (bot->HasAuraType(auraType))
+            {
+                LOG_INFO("raidtest", "RosterBuilder: clearing leftover control aura type {} on '{}' "
+                    "before gearing", uint32(auraType), bot->GetName());
+                bot->RemoveAurasByType(auraType);
+            }
+        }
+    }
+
+    if (bot->IsNonMeleeSpellCast(false))
+    {
+        LOG_INFO("raidtest", "RosterBuilder: interrupting non-melee cast before gearing '{}'",
+            bot->GetName());
+        bot->InterruptNonMeleeSpells(true);
+    }
+
     // Enhancements belong to the final equipped items, never to discarded factory fallback.
     PlayerbotFactory::DestroyEquippedGear(bot);
 

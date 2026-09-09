@@ -405,8 +405,12 @@ void RaidTestUnitScript::OnHeal(Unit* healer, Unit* receiver, uint32& gain)
     if (healer->IsCreature())
         e.actorEntry = healer->GetEntry();
     e.value = int32(std::min<uint32>(gain, static_cast<uint32>(INT32_MAX)));
-    e.detail = Acore::StringFormat("heal:receiver_hp={} receiver_max_hp={}",
-        receiver->GetHealth(), receiver->GetMaxHealth());
+    // 记录施法者当刻的力量池：治疗空档要能区分「没资源」与「选错目标」。
+    Powers const healerPowerType = healer->getPowerType();
+    e.detail = Acore::StringFormat(
+        "heal:receiver_hp={} receiver_max_hp={} healer_power={}/{} healer_power_type={}",
+        receiver->GetHealth(), receiver->GetMaxHealth(), healer->GetPower(healerPowerType),
+        healer->GetMaxPower(healerPowerType), static_cast<uint32>(healerPowerType));
     bus.RecordHeal(receiver->GetGUID());
     bus.Push(e);
 }

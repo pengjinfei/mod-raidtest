@@ -340,6 +340,21 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
                 member->GetPositionX(), member->GetPositionY(), member->GetPositionZ());
             CombatEventBus::instance().Push(pos);
 
+            // 只读资源采样：`boss_start_roster` 只有开怪那一刻的法力，无法区分
+            // 「治疗吞吐不足」与「治疗目标优先级不对」。这里按同一 1 秒节拍记录每
+            // 名成员的生命与力量池，不读取也不驱动任何 playerbot 策略。
+            CombatEvent resource;
+            resource.type = CombatEventType::State;
+            resource.source = member->GetGUID();
+            resource.value = static_cast<int32>(member->GetMapId());
+            Powers const powerType = member->getPowerType();
+            resource.detail = Acore::StringFormat(
+                "resource:hp={}/{} power_type={} power={}/{} in_combat={} alive={}",
+                member->GetHealth(), member->GetMaxHealth(), static_cast<uint32>(powerType),
+                member->GetPower(powerType), member->GetMaxPower(powerType), member->IsInCombat(),
+                member->IsAlive());
+            CombatEventBus::instance().Push(resource);
+
             // 死亡后角色可能已 worldport 到墓地；该位置与上层实例里的临时斧没有
             // 同一空间语义，不能把跨地图距离写成「离开暗影斧」。
             if (!ctx.boss || member->GetMap() != ctx.boss->GetMap())
