@@ -1,10 +1,15 @@
 # heroic5-v1: early WLK heroic dungeon gear, ilvl 200 ceiling.
+# 2026-09-09：坦克种族由 bloodelf 改为 dwarf。原先坦克是部落、其余四人联盟，
+# raidtest 程序化建组能绕过阵营检查，但真人无法与跨阵营 bot 组队
+# （GroupHandler.cpp:119 / ChatHandler.cpp:428 需要 AllowTwoSide 两个开关）。
+# 改为全联盟后不必改动服务器的跨阵营基线。种族技能由 Arcane Torrent 变为
+# Stoneform，对已验证的站位类机制不承重；换装后需重跑冷启动确认。
 # Excludes raids, Trial of the Champion, ICC dungeons and later epic gems.
 # Source audit: management repo docs/testing/fixtures/heroic5-v1/ITEMS.json
 
 [Roster.0]
 Name = "Hfive-Tank"
-Race = "bloodelf"
+Race = "dwarf"
 Class = "paladin"
 Role = "tank"
 TalentSpec = "paladin_prot"
