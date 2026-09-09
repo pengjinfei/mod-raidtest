@@ -75,7 +75,8 @@ private:
     uint32 _recoveryElapsed{0};
     bool _prerequisitePullSent{false};
     ObjectGuid _prerequisiteApproachGuid;   // 上次下达接近移动的前置目标
-    uint32 _prerequisiteApproachAt{0};      // 下达时刻（_preparationElapsed 口径）
+    uint32 _prerequisiteApproachAt{0};      // 下达/尝试时刻（_preparationElapsed 口径）
+    uint32 _prerequisiteApproachLoggedAt{0};  // 上次记录无路线告警的时刻（同口径）
     uint32 _navigationWaypoint{0};
     uint32 _navigationElapsed{0};
     bool _navigationComplete{false};

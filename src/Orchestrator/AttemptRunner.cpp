@@ -137,6 +137,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _prerequisitePullSent = false;
     _prerequisiteApproachGuid.Clear();
     _prerequisiteApproachAt = 0;
+    _prerequisiteApproachLoggedAt = 0;
     _stuckTicks = 0;
     _rowResolveElapsedMs = 0;
     _confirmTicks = 0;
@@ -1390,12 +1391,19 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
     if (!target || ctx.bots.empty())
         return;
 
-    // 只在没人还在走、且与上次下达间隔足够时重新发令，避免每个 tick 清运动状态造成抖动。
+    // 只在没人还在走、且与上次尝试间隔足够时重新发令，避免每个 tick 清运动状态造成抖动。
+    // 计时必须覆盖失败路径：目标本身在网格外时这里每个 tick 都会失败，若只在成功时记时刻，
+    // 无路线告警会按 tick × 人数刷屏（实测 180 秒 73,185 条）。
+    bool const sameTarget = _prerequisiteApproachGuid == target->GetGUID();
     bool const stillWalking = std::any_of(ctx.bots.begin(), ctx.bots.end(),
         [](Player* bot) { return bot && bot->isMoving(); });
-    if (_prerequisiteApproachGuid == target->GetGUID() &&
-        (stillWalking || _preparationElapsed - _prerequisiteApproachAt < 1000))
+    if (sameTarget && (stillWalking || _preparationElapsed - _prerequisiteApproachAt < 1000))
         return;
+
+    // 无路线是持续状态而不是事件：按 15 秒记录一次，与 preclear_target 的步进一致。
+    bool const logFailure = !sameTarget || _preparationElapsed - _prerequisiteApproachLoggedAt >= 15000;
+    _prerequisiteApproachGuid = target->GetGUID();
+    _prerequisiteApproachAt = _preparationElapsed;
 
     Map* destination = ctx.bots.front() ? ctx.bots.front()->GetMap() : nullptr;
     if (!destination)
@@ -1427,13 +1435,17 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
                 (PATHFIND_NOPATH | PATHFIND_NOT_USING_PATH | PATHFIND_SHORTCUT | PATHFIND_FARFROMPOLY) ||
             !nearTarget)
         {
-            PathRouteDiagnostics const diagnostics = path.GetRouteDiagnostics();
-            LOG_WARN("raidtest", "AttemptRunner: prerequisite approach has no ground route bot={} target={} "
-                "entry={} type={} actual_end={:.2f},{:.2f},{:.2f} tiles={}/{} find_path=0x{:08X} component={}",
-                bot->GetName(), target->GetGUID().ToString(), target->GetEntry(), uint32(path.GetPathType()),
-                actualEnd.x, actualEnd.y, actualEnd.z, diagnostics.startTileLoaded, diagnostics.endTileLoaded,
-                diagnostics.findPathStatus, diagnostics.endReachable ? "connected" :
-                (diagnostics.connectivitySearchCapped ? "capped" : "disconnected"));
+            if (logFailure)
+            {
+                PathRouteDiagnostics const diagnostics = path.GetRouteDiagnostics();
+                LOG_WARN("raidtest", "AttemptRunner: prerequisite approach has no ground route bot={} target={} "
+                    "entry={} type={} actual_end={:.2f},{:.2f},{:.2f} tiles={}/{} find_path=0x{:08X} component={}",
+                    bot->GetName(), target->GetGUID().ToString(), target->GetEntry(), uint32(path.GetPathType()),
+                    actualEnd.x, actualEnd.y, actualEnd.z, diagnostics.startTileLoaded, diagnostics.endTileLoaded,
+                    diagnostics.findPathStatus, diagnostics.endReachable ? "connected" :
+                    (diagnostics.connectivitySearchCapped ? "capped" : "disconnected"));
+                _prerequisiteApproachLoggedAt = _preparationElapsed;
+            }
             return;
         }
         validatedMembers.emplace_back(bot, motion);
@@ -1446,8 +1458,6 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
                           FORCED_MOVEMENT_NONE, 0.0f, 0.0f, /*generatePath*/ true, /*forceDestination*/ false);
     }
 
-    _prerequisiteApproachGuid = target->GetGUID();
-    _prerequisiteApproachAt = _preparationElapsed;
     LOG_INFO("raidtest", "AttemptRunner: prerequisite approach target={} entry={} pos={:.2f},{:.2f},{:.2f} "
         "leader_distance={:.2f} elapsed={}ms",
         target->GetGUID().ToString(), target->GetEntry(), target->GetPositionX(), target->GetPositionY(),
