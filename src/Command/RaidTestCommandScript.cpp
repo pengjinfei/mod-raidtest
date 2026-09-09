@@ -160,6 +160,9 @@ public:
             {"report",   HandleReportCommand,   SEC_ADMINISTRATOR, Console::Yes},
             {"compare",  HandleCompareCommand,  SEC_ADMINISTRATOR, Console::Yes},
             {"dump",     HandleDumpCommand,     SEC_ADMINISTRATOR, Console::Yes},
+            // 观察会话必须由真人在游戏内发起（需要发起者的队伍作为成员集合），
+            // 因此 Console::No。
+            {"observe",  HandleObserveCommand,  SEC_ADMINISTRATOR, Console::No},
         };
         static ChatCommandTable commandTable = {
             {"raidtest", raidtestCommandTable},
@@ -170,6 +173,47 @@ public:
 private:
     static bool HandleScenarioCommand(ChatHandler* handler, char const* args);
     static bool HandleRunCommand(ChatHandler* handler, char const* args);
+    // .raidtest observe start <scenario> | observe stop
+    // 把观察器挂到真人带队的场次上：不登录角色、不建组、不传送、不开怪、不判定，
+    // 只按既有采样节拍写 raidtest_events，成员取发起者当前队伍（含真人自己）。
+    static bool HandleObserveCommand(ChatHandler* handler, char const* args)
+    {
+        std::vector<std::string> tokens = TokenizeArgs(args ? args : "");
+        if (tokens.empty())
+        {
+            handler->SendSysMessage("usage: .raidtest observe start <scenario> | .raidtest observe stop");
+            return true;
+        }
+
+        std::string reason;
+        if (tokens[0] == "stop")
+        {
+            if (!RaidTestOrchestrator::instance().StopObserve(reason))
+            {
+                handler->PSendSysMessage("observe stop rejected: {}", reason);
+                return true;
+            }
+            handler->SendSysMessage("observe session stopped (attempt row marked 'observed')");
+            return true;
+        }
+
+        if (tokens[0] != "start" || tokens.size() < 2)
+        {
+            handler->SendSysMessage("usage: .raidtest observe start <scenario> | .raidtest observe stop");
+            return true;
+        }
+
+        Player* observer = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!RaidTestOrchestrator::instance().RequestObserve(tokens[1], observer, reason))
+        {
+            handler->PSendSysMessage("observe start rejected: {}", reason);
+            return true;
+        }
+        handler->PSendSysMessage("observe session started on '{}' - sampling only, no orchestration. "
+                                 "stop it with `.raidtest observe stop`", tokens[1]);
+        return true;
+    }
+
     static bool HandleStatusCommand(ChatHandler* handler, char const* args);
     static bool HandleStopCommand(ChatHandler* handler, char const* args);
     static bool HandleReportCommand(ChatHandler* handler, char const* args);

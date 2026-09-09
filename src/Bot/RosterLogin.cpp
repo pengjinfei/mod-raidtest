@@ -222,6 +222,25 @@ bool RosterLogin::EnsureCombatInstanceStrategy(std::vector<Player*> const& bots,
 // 下次 run 的 Start->LoginAll 重建干净会话。世界线程 transition-time 调用，不阻塞。
 void RosterLogin::LogoutAll(std::vector<ObjectGuid> const& guids)
 {
+    // run 结束必须先解散队伍。Group 会持久化到 `groups` / `group_member`，bot 下次
+    // 上线时仍在其中，真人只能以队员身份加入那个残留队伍——于是排不了副本（地牢
+    // 查找器要求队长发起）、也重置不了副本绑定。实测该残留队伍的队长是槽位 0 的
+    // 坦克，真人加入后无法取得队长权限。
+    for (ObjectGuid const& guid : guids)
+    {
+        Player* bot = ObjectAccessor::FindPlayer(guid);
+        if (!bot)
+            continue;
+
+        if (Group* group = bot->GetGroup())
+        {
+            LOG_INFO("raidtest", "RosterLogin: disbanding run group {} before logout",
+                group->GetGUID().ToString());
+            group->Disband();
+            break;   // 全队同属一个队伍，解散一次即可
+        }
+    }
+
     uint32 logged = 0;
     for (ObjectGuid const& guid : guids)
     {

@@ -207,6 +207,11 @@ std::string RosterBuilder::MakeCharacterName(std::string const& prefix, uint8 sl
         charName = "rb";   // 兜底：保证首字符为字母
     charName += static_cast<char>('a' + (slotIndex % 26));
     charName += SanitizeIdentifier(name, MAX_PLAYER_NAME - charName.size());
+    // 首字母必须大写，与 core 的角色名规范一致。CharacterCache::GetCharacterGuidByName
+    // 是区分大小写的精确查找，而所有按名字的命令都先经 normalizePlayerName 变成
+    // 「首字母大写、其余小写」；生成全小写名字会导致 .playerbots bot add 这类命令
+    // 永远找不到角色（实测报 Character 'Raidteahfivc' not found）。
+    charName[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(charName[0])));
     return charName;
 }
 

@@ -219,6 +219,7 @@ std::string RaidTestOrchestrator::Status() const
     case RunState::LoggingIn:   stateName = "LOGIN_AND_GROUP"; break;
     case RunState::Running:     stateName = "ATTEMPT_RUNNING"; break;
     case RunState::Serializing: stateName = "SERIALIZE_RESULT"; break;
+    case RunState::Observing:   stateName = "OBSERVING";   break;
     }
 
     bool const hasRun = _ctx.HasRun();
@@ -250,6 +251,117 @@ std::string RaidTestOrchestrator::Status() const
     return status;
 }
 
+bool RaidTestOrchestrator::RequestObserve(std::string const& scenarioKey, Player* observer,
+                                          std::string& outReason)
+{
+    if (!observer || !observer->IsInWorld())
+    {
+        outReason = "observer must be an in-world player";
+        return false;
+    }
+    if (_state != RunState::Idle)
+    {
+        outReason = "a run or observe session is already active";
+        return false;
+    }
+
+    Scenario* scenario = ScenarioRegistry::instance().Get(scenarioKey);
+    if (!scenario)
+    {
+        outReason = "unknown scenario '" + scenarioKey + "'";
+        return false;
+    }
+    if (observer->GetMapId() != scenario->GetMapId())
+    {
+        outReason = "observer is not on the scenario's map";
+        return false;
+    }
+
+    // 观察会话不登录角色、不建组、不传送、不开怪：成员就是观察者当前队伍（含真人）。
+    std::vector<Player*> members;
+    if (Group* group = observer->GetGroup())
+    {
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            if (Player* member = ref->GetSource())
+                members.push_back(member);
+    }
+    else
+        members.push_back(observer);
+
+    std::vector<ObjectGuid> guids;
+    guids.reserve(members.size());
+    for (Player* member : members)
+        guids.push_back(member->GetGUID());
+
+    uint32 const runId = ResultStore::StartRun(scenarioKey, scenario->GetMapId(),
+                                               scenario->GetBossEntry(), 1);
+    if (!runId)
+    {
+        outReason = "could not create the run row";
+        return false;
+    }
+    ResultStore::QueueStartAttemptRow(runId, 1);
+    uint32 const attemptId = ResultStore::ResolveStartAttemptRowId(runId, 1);
+    if (!attemptId)
+    {
+        outReason = "could not resolve the attempt row";
+        ResultStore::FinishRun(runId, 0, 0, 0);
+        return false;
+    }
+
+    _ctx = RunContext{};
+    _ctx.scenarioKey = scenarioKey;
+    _ctx.scenario = scenario;
+    _ctx.runId = runId;
+    _ctx.attemptsTotal = 1;
+    _ctx.attemptId = attemptId;
+    _ctx.attemptSeq = 1;
+    _ctx.botGuids = guids;
+    _ctx.bots = members;
+    _observeLeaderGuid = observer->GetGUID();
+    _observeObserver.Reset();
+
+    // boss guid 留空：AttemptObserver::Tick 每 tick 自行按场景 entry 重寻址。
+    CombatEventBus::instance().StartAttempt(attemptId, guids, ObjectGuid::Empty,
+                                            scenario->GetBossEntry());
+    _state = RunState::Observing;
+
+    LOG_INFO("raidtest", "Orchestrator: observe session started - scenario='{}' run={} attempt={} "
+        "observer={} members={} (no orchestration: sampling only)",
+        scenarioKey, runId, attemptId, observer->GetName(), members.size());
+    outReason.clear();
+    return true;
+}
+
+bool RaidTestOrchestrator::StopObserve(std::string& outReason)
+{
+    if (_state != RunState::Observing)
+    {
+        outReason = "no observe session is active";
+        return false;
+    }
+
+    uint32 const attemptId = _ctx.attemptId;
+    uint32 const elapsed = _ctx.attemptElapsedMs;
+    CombatEventBus::instance().EndAttempt();
+
+    // 结果记为 observed：既有四值都会把「只观察」的场次混进通过率统计。
+    ResultStore::FinishAttemptRow(attemptId, "observed", elapsed, _ctx.bossHpMin, /*deaths*/ 0,
+                                  /*deathNames*/ "",
+                                  "observed: human-led session, no orchestration");
+    ResultStore::FinishRun(_ctx.runId, 0, 0, 0);
+
+    LOG_INFO("raidtest", "Orchestrator: observe session ended - attempt={} elapsed={}ms",
+        attemptId, elapsed);
+
+    _ctx = RunContext{};
+    _observeLeaderGuid.Clear();
+    _observeObserver.Reset();
+    _state = RunState::Idle;
+    outReason.clear();
+    return true;
+}
+
 void RaidTestOrchestrator::Update(uint32 diff)
 {
     // 消费待办的 run 请求：命令 handler（世界线程回调）只记账，本 tick 在此实际
@@ -274,6 +386,34 @@ void RaidTestOrchestrator::Update(uint32 diff)
     case RunState::Idle:
     case RunState::Error:
         return;
+
+    case RunState::Observing:
+    {
+        // 观察会话：只采样，不编排、不判定。观察者掉线或离队即自动收尾，避免
+        // 会话无人负责地挂着继续写事件。
+        Player* leader = ObjectAccessor::FindPlayer(_observeLeaderGuid);
+        if (!leader || !leader->IsInWorld())
+        {
+            std::string reason;
+            StopObserve(reason);
+            return;
+        }
+
+        // 成员按 tick 重取：真人可能中途加人/踢人，队伍构成不是固定的。
+        _ctx.bots.clear();
+        if (Group* group = leader->GetGroup())
+        {
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+                if (Player* member = ref->GetSource())
+                    _ctx.bots.push_back(member);
+        }
+        else
+            _ctx.bots.push_back(leader);
+
+        // Tick 的返回值在观察态无意义（不做终态判定），只取其采样副作用。
+        (void)_observeObserver.Tick(_ctx, diff);
+        return;
+    }
 
     case RunState::LoggingIn:
         if (_stopRequested)

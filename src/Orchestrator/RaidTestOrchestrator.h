@@ -1,6 +1,7 @@
 #ifndef PLAYERBOTS_RAIDTEST_RAID_TEST_ORCHESTRATOR_H
 #define PLAYERBOTS_RAIDTEST_RAID_TEST_ORCHESTRATOR_H
 
+#include "AttemptObserver.h"
 #include "AttemptRunner.h"
 #include "RunContext.h"
 #include "RosterBlueprint.h"
@@ -66,6 +67,13 @@ public:
     // 世界线程每 tick 步进（由 RaidTestWorldScript::OnUpdate 调）；非阻塞。
     void Update(uint32 diff);
 
+    // 观察会话：把观察器挂到**真人带队**的场次上。raidtest 不登录角色、不建组、
+    // 不传送、不开怪、不做任何判定——只按既有采样节拍把 resolved target、
+    // effect_mask、站位、承伤与治疗写进 raidtest_events，成员取 observer 当前队伍
+    // （含真人自己）。这样真人场也有与 masterless 基线同口径的证据。
+    bool RequestObserve(std::string const& scenarioKey, Player* observer, std::string& outReason);
+    bool StopObserve(std::string& outReason);
+
 private:
     enum class RunState : uint8
     {
@@ -74,6 +82,7 @@ private:
         LoggingIn,    // LOGIN_AND_GROUP：轮询登录 + 组队，超时 abort
         Running,      // Teleport..Observing：AttemptRunner 逐 tick 驱动
         Serializing,  // SERIALIZE_RESULT：一次 attempt 的落库 + 续跑/收尾判定
+        Observing,    // 观察会话：只驱动 AttemptObserver 采样，不做任何编排
     };
 
     RaidTestOrchestrator() = default;
@@ -133,6 +142,11 @@ private:
     Scenario* _scenario{nullptr};
     RunContext _ctx;
     AttemptRunner _runner;
+
+    // 观察会话专用采样器。与 AttemptRunner 内部那个分开，避免观察态复用编排态的
+    // 三次采样守卫与终态计数（观察会话不做任何判定）。
+    AttemptObserver _observeObserver;
+    ObjectGuid _observeLeaderGuid;
 
     // 本 run 的蓝图槽位（StartRun 加载蓝图时保存，与 _ctx.botGuids 同位序）。
     // LOGIN_AND_GROUP 阶段 bots 登录齐后按同位序逐个 ApplyGear（B1-2 方案 C 装配）。
