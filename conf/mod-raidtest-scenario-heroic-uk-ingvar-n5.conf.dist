@@ -1,0 +1,29 @@
+# 与 heroic-uk-ingvar-disc 完全相同，只把 roster 换成 normal5-v1（普通五人本毕业档）。
+# 用途：在同一 boss、同一难度、同一站位夹具下，单独观察装备档位的影响。
+# 2026-09-10 新建，不替代 heroic-uk-ingvar-disc。
+# heroic5-v1: separate characters from Naxx, early heroic equipment.
+# 因格瓦尔(23954) 双阶段单 boss。首次验证隔离 boss 战（无房间小怪清理）。
+[Scenario]
+MapId = 574
+BossEntry = 23954
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-uk
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 245.0
+EngageY = -333.0
+EngageZ = 180.6
+EngageO = 0.0
+# Fixture only: tank contact point plus the collision-verified non-tank rear point.
+TankPreparationX = 245.0
+TankPreparationY = -333.0
+TankPreparationZ = 180.6
+TankPreparationO = 0.0
+NonTankPreparationX = 235.90
+NonTankPreparationY = -335.33
+NonTankPreparationZ = 180.46
+NonTankPreparationO = 0.0
+TimeoutSeconds = 300
+EngageTrigger = pull
+

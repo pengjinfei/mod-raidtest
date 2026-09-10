@@ -75,16 +75,23 @@ bool CombatTrigger::BeginAssistForAll(std::vector<Player*> const& bots, Player* 
         if (!assist.Attack(boss))
         {
             Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
-            bool const alreadyAssisting = bot->IsInCombat() && botAI->GetState() == BOT_STATE_COMBAT &&
-                current == boss && bot->GetVictim() == boss;
+            bool const alreadyAssisting = current == boss && bot->GetVictim() == boss;
             if (alreadyAssisting)
             {
                 // Unit::SetInCombatWith(tank) 会使同组 bot 进入战斗并保留同一目标。
                 // AttackAction 对“已在攻击相同目标”按设计返回 false；这不是 assist
                 // 失败，继续把它当作失败会把一场已开始的正常战斗误报为框架中止。
+                //
+                // 判据只看目标选择（current target + victim 都是 boss），不看 bot 自身
+                // 的战斗旗标：坦克领先仇恨后进入本步时，跟随者往往已锁定 boss 但尚未
+                // 打出第一击，此刻 IsInCombat()/BOT_STATE_COMBAT 都还是 false。要求它们
+                // 为真会随 tick 时序把一次正常开怪随机判成 aborted（run 312/314 共 9 次
+                // attempt 里误报 8 次）。boss 已在 AwaitTankAggro 里确认进入战斗，跟随者
+                // 是否真的输出由后续采样与 DPS 证据体现，不由这道门槛断言。
                 ++assisted;
-                LOG_INFO("raidtest", "CombatTrigger::BeginAssistForAll: bot {} already assisting {}",
-                    bot->GetName(), boss->GetName());
+                LOG_INFO("raidtest", "CombatTrigger::BeginAssistForAll: bot {} already assisting {} "
+                    "(combat={} ai={})", bot->GetName(), boss->GetName(), bot->IsInCombat(),
+                    uint32(botAI->GetState()));
                 continue;
             }
             LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: bot {} could not begin assist "

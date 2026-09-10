@@ -1,0 +1,225 @@
+# normal5-v1：普通五人本毕业基线（2026-09-10 新建，不替代 heroic5-v1）
+#
+# 用户反馈 ilvl 200 英雄档「击杀太容易」，故另建一档更低的装备基线。**不覆盖**
+# heroic5-v1：Ingvar 8/8、矮人坦克 4/4 与真人带队那场的全部证据都以那一档为准，
+# 覆盖后将无法对照。
+#
+# 与 heroic5-disc-v1 的唯一差异是**装备等级**：种族、职业、天赋模板、雕文、
+# 关键技能、附魔与补给全部照抄，因此对比时只有一个变量。
+#
+# 装等：普通 WLK 五人本掉落上限实测为 ilvl 187（英雄本才 200），故取 174–187
+# 的稀有品质为主体。圣契/图腾不按副本装等曲线走，该档非 PvP 选项只有 ilvl 150 的
+# 风险投资公司系列，已如实采用。
+#
+# 已排除声望/荣誉/城市等级/法术门槛物品：它们装备时返回
+# EQUIP_ERR_CANT_EQUIP_REPUTATION(64)，实测卡住夹具。
+#
+# 选取规则（程序化、可复核，见 docs/testing/fixtures/normal5-v1/）：候选限定
+# ilvl 174–187、稀有、RequiredLevel<=80、职业可用、护甲类型匹配；武器按各职业
+# 熟练度与已验证的 heroic5 布局（全部单手+副手，无双手）限定 InventoryType 与
+# subclass；同部位按每个专精的属性权重取最高分。
+#
+# 未配宝石：该档位插槽稀少，且蓝色宝石会把差距重新拉回。这是刻意选择，可回退。
+
+[Roster.0]
+Name = "Nfive-Tank"
+Race = "dwarf"
+Class = "paladin"
+Role = "tank"
+TalentSpec = "paladin_prot"
+Glyphs = 190,455,456,561,457,705
+RequiredSpells = 53595,61411
+RequireNoCheats = true
+MinDefenseSkill = 535
+Supplies = 21177,33443,33445
+MaxItemLevel = 187
+Head = 36969 # Helm of the Ley-Guardian (ilvl 187)
+Head.Gem1 = 39938 # Regal Shadow Crystal (+def rating/+sta, uncommon)
+Head.Enchant = 3818
+Neck = 37053 # Amulet of Deflected Blows (ilvl 187)
+Shoulder = 37115 # Crusader's Square Pauldrons (ilvl 187)
+Shoulder.Enchant = 3811
+Back = 43363 # Screeching Cape (ilvl 175)
+Back.Enchant = 1951
+Chest = 37052 # Reanimated Armor (ilvl 187)
+Chest.Enchant = 1953
+Wrist = 37040 # Svala's Bloodied Shackles (ilvl 187)
+Wrist.Enchant = 3850
+Hands = 41357 # Daunting Handguards (ilvl 187)
+Hands.Enchant = 3253
+Waist = 36952 # Girdle of Obscuring (ilvl 187)
+Legs = 41345 # Daunting Legplates (ilvl 187)
+Legs.Enchant = 3822
+Feet = 37082 # Slaughterhouse Sabatons (ilvl 187)
+Feet.Enchant = 1075
+Ring1 = 43306 # Gal'darah's Signet (ilvl 179)
+Ring2 = 36961 # Dragonflight Great-Ring (ilvl 187)
+Trinket1 = 36993 # Seal of the Pantheon (ilvl 187)
+Trinket2 = 36972 # Tome of Arcane Phenomena (ilvl 187)
+MainHand = 36984 # Eternally Folded Blade (ilvl 187)
+MainHand.Enchant = 2673
+OffHand = 37107 # Leeka's Shield (ilvl 187)
+OffHand.Enchant = 1952
+Ranged = 38363 # Venture Co. Libram of Protection (ilvl 150)
+
+[Roster.1]
+Name = "Nfive-Heal"
+Race = "dwarf"
+Class = "priest"
+Role = "heal"
+TalentSpec = "priest_disc"
+Glyphs = 263,460,463,255,458,710
+RequiredSpells = 48068,48071,48072,48161,53007
+RequireNoCheats = true
+MinDefenseSkill = 0
+Supplies = 44615,33443,33445
+MaxItemLevel = 187
+Head = 43971 # Frostsavage Cowl (ilvl 187)
+Head.Enchant = 3819
+Neck = 36988 # Chaotic Spiral Amulet (ilvl 187) - drop: Loken
+Shoulder = 43973 # Frostsavage Shoulders (ilvl 187)
+Shoulder.Enchant = 3809
+Back = 44020 # Bloodbane's Fall (ilvl 174)
+Back.Enchant = 3831
+Chest = 44404 # Bauble-Woven Gown (ilvl 187)
+Chest.Enchant = 3832
+Wrist = 43974 # Frostsavage Bracers (ilvl 187)
+Wrist.Enchant = 2332
+Hands = 44396 # Gloves of the Time Guardian (ilvl 187)
+Hands.Enchant = 3246
+Waist = 41986 # Deep Frozen Cord (ilvl 187)
+Legs = 43975 # Frostsavage Leggings (ilvl 187)
+Legs.Enchant = 3719
+Feet = 42096 # Aurora Slippers (ilvl 187)
+Feet.Enchant = 3232
+Ring1 = 43180 # Lion's Head Ring (ilvl 175)
+Ring2 = 44334 # Ring of Temerity (ilvl 175)
+Trinket1 = 37111 # Soul Preserver (ilvl 187)
+Trinket2 = 36972 # Tome of Arcane Phenomena (ilvl 187)
+MainHand = 41822 # Screw-Sprung Fixer-Upper (ilvl 175)
+MainHand.Enchant = 3834
+OffHand = 44023 # Bonecaster's Endgame (ilvl 174)
+Ranged = 43186 # Iceshrieker's Touch (ilvl 174)
+
+[Roster.2]
+Name = "Nfive-Rogue"
+Race = "human"
+Class = "rogue"
+Role = "dps"
+TalentSpec = "rogue_combat"
+Glyphs = 399,468,469,715,467,406
+RequiredSpells = 48638
+RequireNoCheats = true
+MinDefenseSkill = 0
+Supplies = 43231,43233,33443
+MaxItemLevel = 187
+Head = 44409 # Headguard of Retaliation (ilvl 187)
+Head.Enchant = 3817
+Neck = 44033 # The Severed Noose of Westwind (ilvl 174)
+Neck.Gem1 = 39953 # Glinting Huge Citrine (+agi/+hit, uncommon)
+Shoulder = 43433 # Eviscerator's Shoulderpads (ilvl 187)
+Shoulder.Enchant = 3808
+Back = 38614 # Embrace of Sorrow (ilvl 183)
+Back.Enchant = 1099
+Chest = 44405 # Exotic Leather Tunic (ilvl 187)
+Chest.Enchant = 3832
+Wrist = 43435 # Eviscerator's Bindings (ilvl 187)
+Wrist.Enchant = 3845
+Hands = 44397 # Handwraps of Preserved History (ilvl 187)
+Hands.Enchant = 1603
+Waist = 43437 # Eviscerator's Waistguard (ilvl 187)
+Legs = 42731 # Leggings of Visceral Strikes (ilvl 187)
+Legs.Enchant = 3823
+Feet = 44024 # The Darkspeaker's Treads (ilvl 174)
+Feet.Enchant = 1597
+Ring1 = 43191 # Jagged Ice Band (ilvl 174)
+Ring2 = 43251 # Ring of Scarlet Shadows (ilvl 187)
+Ring2.Gem1 = 39935 # Shifting Shadow Crystal (+agi/+sta, uncommon)
+Trinket1 = 44013 # Cannoneer's Fuselighter (ilvl 174)
+Trinket2 = 36972 # Tome of Arcane Phenomena (ilvl 187)
+MainHand = 41825 # Wodin's Second-Best Shanker (ilvl 175)
+MainHand.Enchant = 3789
+OffHand = 44028 # Vengance Shiv (ilvl 174)
+OffHand.Enchant = 3789
+Ranged = 36994 # Projectile Activator (ilvl 187)
+
+[Roster.3]
+Name = "Nfive-Mage"
+Race = "human"
+Class = "mage"
+Role = "dps"
+TalentSpec = "mage_fire"
+Glyphs = 316,445,451,697,611,328
+RequiredSpells = 42833
+RequireNoCheats = true
+MinDefenseSkill = 0
+Supplies = 17020,17031,33443,33445
+MaxItemLevel = 187
+Head = 44019 # The Argent Skullcap (ilvl 174)
+Head.Enchant = 3820
+Neck = 36943 # Timeless Beads of Eternos (ilvl 187) - drop: Drakos the Interrogator
+Shoulder = 43973 # Frostsavage Shoulders (ilvl 187)
+Shoulder.Enchant = 3810
+Back = 43305 # Shroud of Akali (ilvl 179)
+Back.Enchant = 3831
+Chest = 42844 # Robes of Lightning (ilvl 187)
+Chest.Enchant = 3832
+Wrist = 43974 # Frostsavage Bracers (ilvl 187)
+Wrist.Enchant = 2332
+Hands = 41516 # Frostsavage Gloves (ilvl 187)
+Hands.Enchant = 3246
+Waist = 41986 # Deep Frozen Cord (ilvl 187)
+Legs = 43975 # Frostsavage Leggings (ilvl 187)
+Legs.Enchant = 3719
+Feet = 43970 # Frostsavage Boots (ilvl 187)
+Feet.Enchant = 3232
+Ring1 = 43253 # Ring of Northern Tears (ilvl 187)
+Ring1.Gem1 = 39941 # Purified Shadow Crystal (+sp/+sta, uncommon)
+Ring2 = 43189 # Amberglow Signet (ilvl 174)
+Trinket1 = 37111 # Soul Preserver (ilvl 187)
+Trinket2 = 36972 # Tome of Arcane Phenomena (ilvl 187)
+MainHand = 43871 # Saronite Spellblade (ilvl 175)
+MainHand.Enchant = 3834
+OffHand = 44023 # Bonecaster's Endgame (ilvl 174)
+Ranged = 43186 # Iceshrieker's Touch (ilvl 174)
+
+[Roster.4]
+Name = "Nfive-Shaman"
+Race = "draenei"
+Class = "shaman"
+Role = "dps"
+TalentSpec = "shaman_elemental"
+Glyphs = 226,473,475,220,612,752
+RequiredSpells = 49238
+RequireNoCheats = true
+MinDefenseSkill = 0
+Supplies = 5175,5176,5177,5178,17030,33443,33445
+MaxItemLevel = 187
+Head = 43132 # Nightshock Hood (ilvl 187)
+Head.Enchant = 3820
+Neck = 36943 # Timeless Beads of Eternos (ilvl 187) - drop: Drakos the Interrogator
+Shoulder = 43195 # Stormforged Shoulders (ilvl 174)
+Shoulder.Enchant = 3810
+Back = 43305 # Shroud of Akali (ilvl 179)
+Back.Enchant = 3831
+Chest = 44384 # Chestguard of Unwanted Success (ilvl 183)
+Chest.Enchant = 3832
+Wrist = 43452 # Stormhide Wristguards (ilvl 187)
+Wrist.Enchant = 2332
+Hands = 43212 # Gauntlets of the Windreacher (ilvl 187)
+Hands.Enchant = 3246
+Waist = 43133 # Nightshock Girdle (ilvl 187)
+Legs = 43456 # Stormhide Legguards (ilvl 187)
+Legs.Enchant = 3719
+Feet = 43173 # Scaled Boots of Fallen Hope (ilvl 175)
+Feet.Enchant = 3232
+Ring1 = 43189 # Amberglow Signet (ilvl 174)
+Ring2 = 43253 # Ring of Northern Tears (ilvl 187)
+Ring2.Gem1 = 39941 # Purified Shadow Crystal (+sp/+sta, uncommon)
+Trinket1 = 37111 # Soul Preserver (ilvl 187)
+Trinket2 = 36972 # Tome of Arcane Phenomena (ilvl 187)
+MainHand = 41822 # Screw-Sprung Fixer-Upper (ilvl 175)
+MainHand.Enchant = 3834
+OffHand = 44032 # Bulwark of Redemption (ilvl 174)
+OffHand.Enchant = 2654
+Ranged = 38361 # Venture Co. Lightning Rod (ilvl 150)
