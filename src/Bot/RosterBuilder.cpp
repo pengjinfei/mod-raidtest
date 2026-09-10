@@ -1094,7 +1094,13 @@ bool RosterBuilder::ValidateAndSnapshot(Player* bot, RosterSlot const& slot, uin
             index == EQUIPMENT_SLOT_HANDS || index == EQUIPMENT_SLOT_LEGS || index == EQUIPMENT_SLOT_FEET ||
             index == EQUIPMENT_SLOT_MAINHAND || (index == EQUIPMENT_SLOT_OFFHAND &&
                 (proto->Class == ITEM_CLASS_WEAPON || proto->InventoryType == INVTYPE_SHIELD));
-        if (bot->CanUseItem(item) != EQUIP_ERR_OK)
+        // not_loading=false：跳过 Player::CanUseItem 里「死亡即拒绝」的那一条
+        // (EQUIP_ERR_YOU_ARE_DEAD)，其余绑定/职业/种族/等级/技能/声望要求全部照常校验。
+        // 夹具校验的是装备本身，不该被角色当下的存活状态污染——上一场有减员时，
+        // 校验会赶在复活之前跑，于是每个槽位都报 "item requirements not met"，
+        // 把一次正常的 attempt 误判成 fixture_invalid（run331/seq3 即为此）。
+        // 出战前的存活要求另有 Recovery 阶段的 "roster casualty before boss pull" 把关。
+        if (bot->CanUseItem(item, false) != EQUIP_ERR_OK)
             reject(Acore::StringFormat("item requirements not met slot={}", index));
         if (auto const* enchant = sSpellItemEnchantmentStore.LookupEntry(item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT)))
             if (enchant->requiredLevel > bot->GetLevel() || (enchant->requiredSkill &&
