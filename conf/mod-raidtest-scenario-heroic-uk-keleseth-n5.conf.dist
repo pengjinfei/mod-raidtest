@@ -1,0 +1,25 @@
+# 与 heroic-uk-keleseth 完全相同，只把 roster 换成 normal5-v1（普通五人本毕业档）。
+# 用途：在同一 boss、同一难度、同一前置怪链下，单独观察装备档位的影响。
+# 2026-09-10 新建，不替代 heroic-uk-keleseth。
+# 凯雷塞斯王子(23953) 单 boss + 4 只前置怪。
+[Scenario]
+MapId = 574
+BossEntry = 23953
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-uk
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 188.0
+EngageY = 197.5
+EngageZ = 40.815
+EngageO = 0.0
+TimeoutSeconds = 300
+EngageTrigger = pull
+# Restore this exact linked pack and require real kills before the boss phase.
+PrerequisiteSpawns = 126032,126041,126042,126046
+PreparationX = 221.0
+PreparationY = 225.0
+PreparationZ = 40.9
+PreparationO = 4.7
+PrerequisiteTimeoutSeconds = 180

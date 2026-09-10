@@ -1,0 +1,27 @@
+# 与 heroic-uk-skarvald-dalronn 完全相同，只把 roster 换成 normal5-v1（普通五人本毕业档）。
+# 用途：在同一双 boss、同一难度、同一前置怪链下，单独观察装备档位的影响。
+# 2026-09-10 新建，不替代 heroic-uk-skarvald-dalronn。
+# 斯卡瓦德(24200) & 达尔隆(24201) 双 boss：BossEntry 死后需 KillGateSpawn 也死才判 Kill。
+# 先清西侧房间的 10 只前置怪（x∈[23.9,64.4]），首领房 45 码内无小怪。
+[Scenario]
+MapId = 574
+BossEntry = 24200
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-uk
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 112.0
+EngageY = -33.0
+EngageZ = 118.9
+EngageO = 0.0
+TimeoutSeconds = 300
+EngageTrigger = pull
+# 双 boss 第二个必死目标：达尔隆生成点 126024。
+KillGateSpawn = 126024
+PrerequisiteSpawns = 125971,125962,125956,125967,125877,125878,125879,125880,125881,125882
+PreparationX = 81.50
+PreparationY = -5.13
+PreparationZ = 118.90
+PreparationO = 3.14
+PrerequisiteTimeoutSeconds = 180
