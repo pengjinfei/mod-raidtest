@@ -1,0 +1,21 @@
+# 魔枢（The Nexus，map 576）英雄：凯利丝塔萨(26723) 单 boss，无前置怪。
+# 2026-09-10 新建。装备档位 normal5-v1（ilvl 上限 187），boss 难度英雄，BotCheats 为空。
+# 无前置怪的理由：她的中央房间内没有同层地面怪；20 码内最近的
+# Azure Warder(126449, 19.6 码) 属房外环廊，把它当前置会在清怪期间就踩进 boss 仇恨半径。
+# 本场景因此是纯 boss 机制场（刺骨寒冷不动就叠层 + 龙侧位站位）。
+# 无前置怪时框架不会二次传送，准备点即拉怪点，因此只给 Engage*。
+# 坐标来源：boss 实测生成点 (301.45,-5.46,-15.48) 正东偏移 7.6 码。
+[Scenario]
+MapId = 576
+BossEntry = 26723
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 309.0
+EngageY = -5.5
+EngageZ = -15.48
+EngageO = 3.14
+TimeoutSeconds = 300
+EngageTrigger = pull

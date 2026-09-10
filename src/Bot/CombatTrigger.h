@@ -75,7 +75,8 @@ public:
     static void EndPullContext(Player* leader);
 
     // 将场景/Context 注册键转换为 Engine 保存的运行时策略名。大多数策略二者相同，
-    // 但 map 574 的 "wotlk-uk" 在 Engine 中以 "utgarde keep" 保存。
+    // 但副本策略类的 getName() 与注册键不同：map 574 的 "wotlk-uk" 存为
+    // "utgarde keep"，map 576 的 "wotlk-nex" 存为 "nexus"。
     static std::string RuntimeStrategyName(std::string const& strategyName);
 
     // 校验 bot 战斗引擎策略列表中包含 strategyName 对应的运行时策略名。

@@ -8,6 +8,7 @@
 #include "Playerbots.h"   // GET_PLAYERBOT_AI
 #include "Unit.h"
 #include <algorithm>
+#include <map>
 
 namespace
 {
@@ -280,11 +281,19 @@ void CombatTrigger::EndPullContext(Player* leader)
 
 std::string CombatTrigger::RuntimeStrategyName(std::string const& strategyName)
 {
-    // PlayerbotAI::ApplyInstanceStrategies looks up map 574 with the Context key
-    // "wotlk-uk". Engine::addStrategy then stores the object by getName(), which
-    // WotlkDungeonUKStrategy defines as "utgarde keep".
-    if (strategyName == "wotlk-uk")
-        return "utgarde keep";
+    // PlayerbotAI::ApplyInstanceStrategies looks up the map with a Context key
+    // such as "wotlk-uk" (map 574) or "wotlk-nex" (map 576). Engine::addStrategy
+    // then stores the object by getName(), which the dungeon strategy classes
+    // define as a human-readable dungeon name. The two only differ for the keys
+    // listed here; everything else registers under its own key.
+    static std::map<std::string, std::string> const kRuntimeNames = {
+        {"wotlk-uk",  "utgarde keep"},  // WotlkDungeonUKStrategy::getName
+        {"wotlk-nex", "nexus"},         // WotlkDungeonNexStrategy::getName
+    };
+
+    auto const it = kRuntimeNames.find(strategyName);
+    if (it != kRuntimeNames.end())
+        return it->second;
 
     return strategyName;
 }

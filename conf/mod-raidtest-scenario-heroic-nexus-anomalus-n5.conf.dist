@@ -1,0 +1,21 @@
+# 魔枢（The Nexus，map 576）英雄：阿诺姆鲁斯(26763) 单 boss，无前置怪。
+# 2026-09-10 新建。装备档位 normal5-v1（ilvl 上限 187），boss 难度英雄，BotCheats 为空。
+# 无前置怪的理由（实测数据，不是省事）：该房间 60 码内唯一的非 boss 生成点是
+# Crazed Mana-Wyrm(26761)，z 从 -14.6 到 +29.2 分布在深渊上空（飞行单位），
+# 不是同层地面怪，不能作为「清房间」前置。故本场景是纯 boss 机制场（混乱空间裂隙）。
+# 无前置怪时框架不会二次传送，准备点即拉怪点，因此只给 Engage*。
+# 坐标来源：boss 实测生成点 (637.67,-289.12,-9.13) 偏移 5.3 码。
+[Scenario]
+MapId = 576
+BossEntry = 26763
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 641.0
+EngageY = -285.0
+EngageZ = -9.13
+EngageO = 4.03
+TimeoutSeconds = 300
+EngageTrigger = pull

@@ -1,0 +1,32 @@
+# 魔枢（The Nexus，map 576）英雄：奥莫洛克(26794)。
+# 2026-09-10 新建。装备档位 normal5-v1（ilvl 上限 187），boss 难度英雄，BotCheats 为空。
+#
+# 本场景形态 =「boss + 平台前 4 只精英守卫，一次开怪」。这不是简化，而是实测下的**遭遇战真实形态**：
+#   守卫组是 4 只的 creature_formation（leader 126445，成员 126444/126605/126606，groupAI=514），
+#   会沿平台到花园的斜坡巡逻（DB 生成点 x∈[247.9,253.4]，运行时实测游走到 x≈305）。
+#   冷启动时它们总在生成点附近，距 boss 仅 17.1 码。
+#   实测（run355）：在花园侧 41.5 码外开怪，守卫在 (254.45,-238.90) 挨到第一下伤害后
+#   **90 毫秒内 boss 就进入战斗**（`preclear_boss_invalid: alive=true combat=true`，
+#   boss 仍停在生成点）。运行配置 `CreatureFamilyAssistanceRadius = 10`；17.1 码仍触发，
+#   推测是 `Creature::CallAssistance` 按包围半径计距而奥莫洛克模型很大（DisplayScale 1.15），
+#   **该推测未验证**，但「守卫被打 -> boss 立刻协助」这个事实已实测。
+#   run343 另证：把拉怪点放在距守卫 31.9 码处也没用，5/5 场守卫全部参战
+#   （Crystalline Keeper 288,315 + Tender 160,307 > boss 本人 150,258）。
+#   => 想「先清守卫再打 boss」，需要 mod-raidtest 支持「等前置目标巡逻到距 boss ≥N 码再开怪」，
+#      纯配置无解。详见 ../../bosses/heroic-nexus/FIXTURE-SURVEY.md。
+#
+# 拉怪点 (275.0,-215.0,-9.00)：boss 东北 14.5 码，已由位移导航探针验证在网格上且与 boss 区连通。
+[Scenario]
+MapId = 576
+BossEntry = 26794
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 275.0
+EngageY = -215.0
+EngageZ = -9.00
+EngageO = 3.79
+TimeoutSeconds = 300
+EngageTrigger = pull
