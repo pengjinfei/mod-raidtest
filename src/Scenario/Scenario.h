@@ -85,6 +85,11 @@ public:
     // preparation point remains the safe boss platform.
     Position const& GetPrerequisitePoint() const { return _prerequisitePoint; }
     uint32 GetPrerequisiteTimeoutSeconds() const { return _prerequisiteTimeoutSeconds; }
+    // 巡逻型前置怪的开怪时机门禁（0 = 关闭）。目标与 boss 的距离小于该值时不下达
+    // 开怪指令，只等待，上限仍是 PrerequisiteTimeoutSeconds。用于「小怪本身离 boss
+    // 太近、挨打即触发 boss 协助」的房间（奥莫洛克实测 17.1 码即触发，90 毫秒内参战）。
+    // 只决定什么时候开怪，不改 bot 的战斗决策、不动仇恨、不削弱 boss。
+    float GetPrerequisiteMinBossDistance() const { return _prerequisiteMinBossDistance; }
     // Optional non-combat route between the preparation point and the first
     // prerequisite pack. Points are traversed in declaration order using mmap
     // pathfinding, never by teleporting through dungeon geometry.
@@ -105,6 +110,7 @@ protected:
     Position _nonTankPreparationPoint{};
     Position _prerequisitePoint{};
     uint32 _prerequisiteTimeoutSeconds{180};
+    float _prerequisiteMinBossDistance{0.0f};
     std::vector<Position> _navigationWaypoints;
     uint32 _navigationTimeoutSeconds{60};
     bool _navigationOnly{false};

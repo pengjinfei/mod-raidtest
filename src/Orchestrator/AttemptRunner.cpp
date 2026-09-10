@@ -571,7 +571,12 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                         CombatEventBus::instance().Push(state);
                     }
                 }
-                RestoreHeldFollowerStrategies();
+                // 有开怪时机门禁（PrerequisiteMinBossDistance）时，自主选怪必须继续压住：
+                // 否则 bot 在 hold 期间自己就把附近的东西打起来了，门禁形同虚设
+                // （run360 实测：队伍在 1.2 秒就开始输出，7.9 秒 boss 参战）。
+                // 恢复时机改到真正下达开怪指令的那一刻，见 PreClear。
+                if (ctx.scenario->GetPrerequisiteMinBossDistance() <= 0.0f)
+                    RestoreHeldFollowerStrategies();
                 RecordPhase("prerequisites_start", 0);
                 _stage = Stage::Prerequisites;
                 return;
@@ -1368,8 +1373,44 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             return ai && ai->GetState() == BOT_STATE_COMBAT;
         }))
         _prerequisitePullSent = false;
+    // 开怪时机门禁（PrerequisiteMinBossDistance，0 = 关闭）。巡逻型前置怪会在 boss 边上
+    // 徘徊：奥莫洛克的守卫组冷启动时距 boss 仅 17.1 码，挨到第一下伤害后 90 毫秒 boss
+    // 就协助参战（run355 实测，把清怪点挪到 41.5 码外也没用，因为触发距离是「小怪到
+    // boss」而不是「队伍到 boss」）。真人的做法是等巡逻走远再开怪，这里把这个时机
+    // 显式化：目标距 boss 不足门槛时不下达开怪指令，只等待，上限仍由
+    // PrerequisiteTimeoutSeconds 兜住。只影响什么时候开怪，不改 bot 的战斗决策、
+    // 不动仇恨、不削弱 boss。目标或 boss 已经进入战斗后不再等待（等也没意义）。
+    if (!_prerequisitePullSent && ctx.scenario->GetPrerequisiteMinBossDistance() > 0.0f &&
+        !next->IsInCombat())
+    {
+        float const required = ctx.scenario->GetPrerequisiteMinBossDistance();
+        ResolveBoss(ctx);
+        if (ctx.boss && ctx.boss->IsAlive() && !ctx.boss->IsInCombat())
+        {
+            float const bossDistance = next->GetDistance(ctx.boss);
+            if (bossDistance < required)
+            {
+                if (_preparationElapsed / 5000 != (_preparationElapsed - diff) / 5000)
+                {
+                    CombatEvent state;
+                    state.type = CombatEventType::State;
+                    state.source = next->GetGUID();
+                    state.actorEntry = next->GetEntry();
+                    state.detail = Acore::StringFormat(
+                        "preclear_hold:boss_distance={:.2f} required={:.2f} target_pos={:.2f},{:.2f},{:.2f}",
+                        bossDistance, required, next->GetPositionX(), next->GetPositionY(),
+                        next->GetPositionZ());
+                    CombatEventBus::instance().Push(state);
+                    LOG_INFO("raidtest", "AttemptRunner: {} elapsed={}ms", state.detail, _preparationElapsed);
+                }
+                return;
+            }
+        }
+    }
     if (!_prerequisitePullSent)
     {
+        // 门禁模式下自主选怪压到这一刻才放开（幂等：_heldFollowers 清空后是空操作）。
+        RestoreHeldFollowerStrategies();
         // One ordinary encounter-start instruction; combat target selection remains with the AI.
         if (!CombatTrigger::BeginPullForAll(ctx.bots, next))
         {

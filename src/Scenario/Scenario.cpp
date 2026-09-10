@@ -321,6 +321,12 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 _prerequisiteTimeoutSeconds > 1800)
                 failed = true;
         }
+        else if (key == "PrerequisiteMinBossDistance")
+        {
+            if (!ParseFloat(value, _prerequisiteMinBossDistance) ||
+                _prerequisiteMinBossDistance < 0.0f || _prerequisiteMinBossDistance > 200.0f)
+                failed = true;
+        }
         else if (key == "NavigationTimeoutSeconds")
         {
             if (!ParseUint32(value, _navigationTimeoutSeconds) || !_navigationTimeoutSeconds ||
