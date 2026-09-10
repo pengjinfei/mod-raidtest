@@ -62,6 +62,11 @@ private:
     std::unordered_map<ObjectGuid, IngvarAxeMemberState> _ingvarAxeMemberStates;
     std::unordered_map<uint64, std::string> _tankStrategies;
     std::unordered_map<uint64, std::string> _tankActions;
+    std::unordered_map<uint64, std::string> _healerStrategies;
+    std::unordered_map<uint64, std::string> _healerActions;
+    uint32 _lastHealerSampleMs = 0;
+    uint32 _lastThreatSampleMs = 0;
+    uint32 _lastCurseSampleMs = 0;
 };
 
 #endif

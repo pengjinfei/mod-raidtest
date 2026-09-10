@@ -10,6 +10,7 @@
 #include "Player.h"
 #include "Playerbots.h"
 #include "Spell.h"
+#include "ThreatManager.h"
 #include "StringFormat.h"
 #include <algorithm>
 #include <list>
@@ -28,6 +29,7 @@ namespace
     constexpr uint32 kIngvarDarkSmashSpell = 42723;
     constexpr uint32 kIngvarDarkSmashHeroicSpell = 59709;
     constexpr uint32 kIngvarThrowEntry = 23997;
+    constexpr uint32 kRemoveCurseSpell = 475;
     constexpr uint32 kIngvarDarkSmashSampleMs = 250;
     constexpr float kIngvarDarkSmashConeRadians = 1.04719755f;
 
@@ -48,6 +50,11 @@ void AttemptObserver::Reset()
     _ingvarAxeMemberStates.clear();
     _tankStrategies.clear();
     _tankActions.clear();
+    _healerStrategies.clear();
+    _healerActions.clear();
+    _lastHealerSampleMs = 0;
+    _lastThreatSampleMs = 0;
+    _lastCurseSampleMs = 0;
 }
 
 void AttemptObserver::ResolveBoss(RunContext& ctx)
@@ -266,6 +273,186 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
             };
             recordChanged("tank_strategies", ai->HandleRemoteCommand("strategy"), _tankStrategies);
             recordChanged("tank_actions", ai->HandleRemoteCommand("action"), _tankActions);
+        }
+    }
+
+    // 只读诊断：治疗的引擎决策日志。与坦克块同频但完全独立，不改动既有 tank_* 证据。
+    // HandleRemoteCommand("action") 只回读 Engine::lastAction 字符串，不触发 isUseful/CheckCast。
+    // 需要 AiPlayerbot.LogInGroupOnly = 0，否则 lastAction 恒为空。
+    if (ctx.attemptElapsedMs - _lastHealerSampleMs >= 1000)
+    {
+        _lastHealerSampleMs = ctx.attemptElapsedMs;
+        for (Player* member : ctx.bots)
+        {
+            if (!member || !member->IsInWorld())
+                continue;
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(member);
+            if (!ai || !ai->IsHeal(member))
+                continue;
+
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = member->GetGUID();
+            state.value = static_cast<int32>(member->GetMapId());
+
+            auto recordChangedHealer = [&](char const* prefix, std::string const& text,
+                                           std::unordered_map<uint64, std::string>& previous)
+            {
+                uint64 const guid = member->GetGUID().GetCounter();
+                auto const found = previous.find(guid);
+                if (found != previous.end() && found->second == text)
+                    return;
+                previous[guid] = text;
+                for (std::size_t offset = 0; offset < std::max<std::size_t>(text.size(), 1); offset += 220)
+                {
+                    state.detail = Acore::StringFormat("{}:{}:{}", prefix, offset / 220, text.substr(offset, 220));
+                    CombatEventBus::instance().Push(state);
+                }
+            };
+            recordChangedHealer("heal_strategies", ai->HandleRemoteCommand("strategy"), _healerStrategies);
+            recordChangedHealer("heal_actions", ai->HandleRemoteCommand("action"), _healerActions);
+        }
+    }
+
+    // 只读诊断：Woe Strike(59735) 是诅咒(Dispel=2)，只有法师的解除诅咒(475)能解。
+    // 每秒记录「坦克身上有没有可解的诅咒」以及会解咒的成员自己的判据怎么回答，
+    // 用来定位漏解发生在哪一层：aura 不在 / 判据说没有 / 判据说有但没提交动作。
+    if (ctx.boss && ctx.boss->IsInWorld() &&
+        ctx.attemptElapsedMs - _lastCurseSampleMs >= 1000)
+    {
+        _lastCurseSampleMs = ctx.attemptElapsedMs;
+        for (Player* afflicted : ctx.bots)
+        {
+            if (!afflicted || !afflicted->IsInWorld() || !afflicted->IsAlive())
+                continue;
+
+            uint32 curseSpell = 0;
+            int32 curseLeftMs = 0;
+            Unit::VisibleAuraMap const* auras = afflicted->GetVisibleAuras();
+            if (auras)
+            {
+                for (auto const& itr : *auras)
+                {
+                    if (!itr.second)
+                        continue;
+                    Aura* aura = itr.second->GetBase();
+                    if (!aura || aura->IsPassive() || aura->IsRemoved())
+                        continue;
+                    SpellInfo const* info = aura->GetSpellInfo();
+                    if (!info || info->Dispel != DISPEL_CURSE || info->IsPositive())
+                        continue;
+                    curseSpell = info->Id;
+                    curseLeftMs = aura->GetDuration();
+                    break;
+                }
+            }
+            if (!curseSpell)
+                continue;
+
+            for (Player* curer : ctx.bots)
+            {
+                if (!curer || !curer->IsInWorld() || !curer->HasSpell(kRemoveCurseSpell))
+                    continue;
+                PlayerbotAI* curerAI = GET_PLAYERBOT_AI(curer);
+                if (!curerAI)
+                    continue;
+
+                CombatEvent state;
+                state.type = CombatEventType::State;
+                state.source = curer->GetGUID();
+                state.target = afflicted->GetGUID();
+                state.spellId = curseSpell;
+                state.value = curseLeftMs;
+                state.detail = Acore::StringFormat(
+                    "curse_watch:on={} spell={} left_ms={} sees={} curer_alive={} curer_move={} "
+                    "cd={} dist={:.2f} hp={}/{} mana={}",
+                    afflicted->GetGUID().GetCounter(), curseSpell, curseLeftMs,
+                    curerAI->HasAuraToDispel(afflicted, DISPEL_CURSE),
+                    curer->IsAlive(), curerAI->CanMove(),
+                    curer->HasSpellCooldown(kRemoveCurseSpell),
+                    curer->GetDistance2d(afflicted),
+                    curer->GetHealth(), curer->GetMaxHealth(),
+                    curer->GetPower(POWER_MANA));
+                // 直接问 bot 自己的取值上下文：触发器用的就是这个值。
+                // 若 sees=true 而 picks=0，缺口在 PartyMemberValue::Check（距离/视线）；
+                // 若 picks=坦克 guid 而仍不解，缺口在引擎侧（isUseful/isPossible/优先级）。
+                Unit* picked = curerAI->GetAiObjectContext()
+                                   ->GetValue<Unit*>("party member to dispel", uint32(DISPEL_CURSE))->Get();
+                state.detail += Acore::StringFormat(
+                    " picks={} los={} dist3d={:.2f} spell_dist2={:.1f}",
+                    picked ? picked->GetGUID().GetCounter() : 0,
+                    curer->IsWithinLOS(afflicted->GetPositionX(), afflicted->GetPositionY(),
+                                       afflicted->GetPositionZ()),
+                    curer->GetDistance(afflicted),
+                    sPlayerbotAIConfig.spellDistance * 2.0f);
+                CombatEventBus::instance().Push(state);
+
+                // 解咒者当前的引擎决策日志（需 AiPlayerbot.LogInGroupOnly = 0）。
+                // detail 上限 255，分片保存。
+                std::string const curerAction = curerAI->HandleRemoteCommand("action");
+                for (std::size_t off = 0; off < std::max<std::size_t>(curerAction.size(), 1); off += 200)
+                {
+                    CombatEvent act;
+                    act.type = CombatEventType::State;
+                    act.source = curer->GetGUID();
+                    act.target = afflicted->GetGUID();
+                    act.detail = Acore::StringFormat("curse_action:{}:{}", off / 200,
+                                                     curerAction.substr(off, 200));
+                    CombatEventBus::instance().Push(act);
+                }
+            }
+        }
+    }
+
+    // 只读诊断：boss 的当前目标与仇恨表前二，外加坦克/治疗的仇恨与距离。
+    // 用来区分「治疗被 boss 咬住（仇恨问题）」与「治疗死于范围机制」。
+    // GetLastVictim() 用缓存值、不触发重新选目标；GetSortedThreatList() 只读遍历。
+    if (ctx.boss && ctx.boss->IsInWorld() &&
+        ctx.attemptElapsedMs - _lastThreatSampleMs >= 1000)
+    {
+        _lastThreatSampleMs = ctx.attemptElapsedMs;
+        ThreatManager const& mgr = ctx.boss->GetThreatMgr();
+
+        Unit const* victim = ctx.boss->GetThreatMgr().GetLastVictim();
+        uint64 t1Guid = 0, t2Guid = 0;
+        float t1 = 0.0f, t2 = 0.0f;
+        uint32 listSize = static_cast<uint32>(mgr.GetThreatListSize());
+        uint32 rank = 0;
+        for (ThreatReference const* ref : mgr.GetSortedThreatList())
+        {
+            if (!ref || !ref->GetVictim())
+                continue;
+            if (rank == 0) { t1Guid = ref->GetVictim()->GetGUID().GetCounter(); t1 = ref->GetThreat(); }
+            else if (rank == 1) { t2Guid = ref->GetVictim()->GetGUID().GetCounter(); t2 = ref->GetThreat(); }
+            else break;
+            ++rank;
+        }
+
+        for (Player* member : ctx.bots)
+        {
+            if (!member || !member->IsInWorld() || member->GetMap() != ctx.boss->GetMap())
+                continue;
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(member);
+            if (!ai)
+                continue;
+            bool const isTank = ai->IsTank(member);
+            bool const isHeal = ai->IsHeal(member);
+            if (!isTank && !isHeal)
+                continue;
+
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = member->GetGUID();
+            state.target = ctx.bossGuid;
+            state.value = static_cast<int32>(mgr.GetThreat(member));
+            state.detail = Acore::StringFormat(
+                "boss_threat:role={} victim={} n={} t1={}:{:.0f} t2={}:{:.0f} mine={:.0f} dist={:.2f} hp={}/{} alive={}",
+                isTank ? "tank" : "heal",
+                victim ? victim->GetGUID().GetCounter() : 0, listSize,
+                t1Guid, t1, t2Guid, t2, mgr.GetThreat(member),
+                member->GetDistance2d(ctx.boss), member->GetHealth(), member->GetMaxHealth(),
+                member->IsAlive());
+            CombatEventBus::instance().Push(state);
         }
     }
 
