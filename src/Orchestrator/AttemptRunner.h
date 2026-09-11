@@ -92,6 +92,14 @@ private:
     bool _ccFirstPullDone{false};           // 本 attempt 是否已发出过第一次清怪开怪指令
     uint32 _startDelayElapsedMs{0};         // AttemptStartDelaySeconds 已等待的毫秒
     uint32 _pullRejectedAt{0};              // 上次清怪拉怪被拒的时刻（_preparationElapsed 口径，0 = 无）
+    // 前置列表里的 boss：先恢复、再坦克先手、boss 锁定坦克后其余人进场
+    ObjectGuid _prereqBossRecoveryTarget;
+    uint32 _prereqBossRecoveryMs{0};
+    bool _prereqBossAssistPending{false};
+    uint32 _prereqBossAssistMs{0};
+    uint32 _prereqBossAggroMs{0};
+    ObjectGuid _prereqBossTank;
+    ObjectGuid _prereqBossGuid;
     ObjectGuid _prerequisiteApproachGuid;   // 上次下达接近移动的前置目标
     uint32 _prerequisiteApproachAt{0};      // 下达/尝试时刻（_preparationElapsed 口径）
     uint32 _prerequisiteApproachLoggedAt{0};  // 上次记录无路线告警的时刻（同口径）

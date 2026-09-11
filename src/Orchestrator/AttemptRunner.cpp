@@ -150,6 +150,9 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _ccFirstPullDone = false;
     _startDelayElapsedMs = 0;
     _pullRejectedAt = 0;
+    _prereqBossAssistPending = false;
+    _prereqBossRecoveryTarget.Clear();
+    _prereqBossRecoveryMs = 0;
     _prerequisiteApproachGuid.Clear();
     _prerequisiteApproachAt = 0;
     _prerequisiteApproachLoggedAt = 0;
@@ -1650,6 +1653,53 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             }
         }
     }
+    // 前置列表里的 boss（链式场景）：坦克先手拉怪后，等 boss 连续锁定坦克 2 秒（上限 8 秒）再放
+    // 其余人进场——与正式 boss 拉怪（StartBossPull/AwaitTankAggro）同一节奏，不是全队一齐 A 上去。
+    if (_prerequisitePullSent && _prereqBossAssistPending)
+    {
+        Player* tank = ObjectAccessor::FindPlayer(_prereqBossTank);
+        Creature* boss = map->GetCreature(_prereqBossGuid);
+        if (!tank || !tank->IsAlive() || !boss || !boss->IsAlive())
+        {
+            _prereqBossAssistPending = false;
+            RestoreHeldFollowerStrategies();
+            return;
+        }
+        _prereqBossAssistMs += diff;
+        _prereqBossAggroMs = boss->GetVictim() == tank ? _prereqBossAggroMs + diff : 0;
+        if (_prereqBossAggroMs < kTankAggroLeadMs && _prereqBossAssistMs < kTankAggroAcquireMs)
+            return;
+        _prereqBossAssistPending = false;
+        CombatTrigger::BeginAssistForAll(ctx.bots, tank, boss);
+        RestoreHeldFollowerStrategies();
+        RecordPhase("prerequisite_boss_assist", _preparationElapsed);
+        return;
+    }
+    // 前置列表里的 boss 开打前先按恢复期口径回满（与 Stage::Recovery 同一阈值、同样 120 秒上限）：
+    // run413 链式里守卫刚清完 5 秒、全队半血半蓝就被拉去打泰蕾斯特拉，分裂阶段 2 死作废。
+    if (!_prerequisitePullSent && next->IsDungeonBoss() && !next->IsInCombat())
+    {
+        if (_prereqBossRecoveryTarget != next->GetGUID())
+        {
+            _prereqBossRecoveryTarget = next->GetGUID();
+            _prereqBossRecoveryMs = 0;
+        }
+        _prereqBossRecoveryMs += diff;
+        bool ready = true;
+        float const readyPct = static_cast<float>(sPlayerbotAIConfig.mediumHealth);
+        for (Player* bot : ctx.bots)
+            if (bot && bot->IsAlive() &&
+                (bot->IsInCombat() || bot->GetHealthPct() < readyPct ||
+                 (bot->GetMaxPower(POWER_MANA) && bot->GetPowerPct(POWER_MANA) < readyPct)))
+                ready = false;
+        if (!ready && _prereqBossRecoveryMs < 120000)
+        {
+            if (_prereqBossRecoveryMs / 15000 != (_prereqBossRecoveryMs - diff) / 15000)
+                LOG_INFO("raidtest", "AttemptRunner: prerequisite_boss_recovery target={} elapsed={}ms",
+                    next->GetGUID().ToString(), _prereqBossRecoveryMs);
+            return;
+        }
+    }
     // 拉怪被拒（目标被雷霆风暴打下平台、暂时无视线）后每秒只重试一次，别每 tick 刷日志。
     if (!_prerequisitePullSent && _pullRejectedAt && _preparationElapsed - _pullRejectedAt < 1000)
         return;
@@ -1660,6 +1710,33 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     if (!_prerequisitePullSent && ctx.scenario->GetPrerequisiteCcWaitSeconds() > 0 && !next->IsDungeonBoss() &&
         !CcPullGateReady(ctx, next, diff))
         return;
+    if (!_prerequisitePullSent && next->IsDungeonBoss())
+    {
+        // boss：坦克先手（两段式），其余人等坦克站稳仇恨。
+        Player* tank = FindTank(ctx);
+        if (tank && CombatTrigger::HoldFollowerAttackTagged(ctx.bots, tank))
+        {
+            for (Player* bot : ctx.bots)
+                if (bot && bot != tank)
+                    _heldFollowers.push_back(bot->GetGUID());
+            if (CombatTrigger::BeginTankPull(tank, next))
+            {
+                CombatTrigger::EndPullContext(tank);
+                _prerequisitePullSent = true;
+                _ccFirstPullDone = true;
+                _prereqBossAssistPending = true;
+                _prereqBossAssistMs = _prereqBossAggroMs = 0;
+                _prereqBossTank = tank->GetGUID();
+                _prereqBossGuid = next->GetGUID();
+                RecordPhase("prerequisite_boss_pull", _preparationElapsed);
+                return;
+            }
+            _pullRejectedAt = _preparationElapsed ? _preparationElapsed : 1;
+            RestoreHeldFollowerStrategies();
+            ApproachPrerequisiteTarget(ctx, next);
+            return;
+        }
+    }
     if (!_prerequisitePullSent)
     {
         // 门禁模式下自主选怪压到这一刻才放开（幂等：_heldFollowers 清空后是空操作）。
