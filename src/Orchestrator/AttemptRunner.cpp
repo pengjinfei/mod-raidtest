@@ -18,6 +18,8 @@
 #include "ObjectMgr.h"
 #include "PathGenerator.h"
 #include "Player.h"
+#include "Spell.h"
+#include "SpellInfo.h"
 #include "PlayerbotAIConfig.h"
 #include "ResultStore.h"
 #include "RosterLogin.h"
@@ -1054,6 +1056,87 @@ void AttemptRunner::ClearHeldPullContext()
     _pullLeader.Clear();
 }
 
+void AttemptRunner::SampleInterruptWatch(RunContext& ctx)
+{
+    Map* map = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
+    if (!map)
+        return;
+
+    // 各职业的打断技能名（playerbots 的取值/动作用的就是这些名字）。
+    auto const interruptSpellFor = [](Player* bot) -> std::string
+    {
+        switch (bot->getClass())
+        {
+            case CLASS_ROGUE:        return "kick";
+            case CLASS_SHAMAN:       return "wind shear";
+            case CLASS_MAGE:         return "counterspell";
+            case CLASS_PALADIN:      return "hammer of justice";
+            case CLASS_PRIEST:       return "silence";
+            case CLASS_WARRIOR:      return "pummel";
+            case CLASS_DEATH_KNIGHT: return "mind freeze";
+            case CLASS_DRUID:        return "bash";
+            default:                 return "";
+        }
+    };
+
+    for (ObjectGuid const& guid : _prerequisiteGuids)
+    {
+        Creature* caster = map->GetCreature(guid);
+        if (!caster || !caster->IsAlive() || !caster->IsNonMeleeSpellCast(true))
+            continue;
+
+        Spell* current = caster->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        if (!current)
+            current = caster->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+        if (!current || !current->m_spellInfo)
+            continue;
+
+        SpellInfo const* castInfo = current->m_spellInfo;
+
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot || !bot->IsAlive() || !bot->IsInWorld())
+                continue;
+
+            PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+            if (!botAI)
+                continue;
+
+            std::string const interruptSpell = interruptSpellFor(bot);
+            if (interruptSpell.empty())
+                continue;
+
+            AiObjectContext* botContext = botAI->GetAiObjectContext();
+            uint32 const interruptId = botContext->GetValue<uint32>("spell id", interruptSpell)->Get();
+            GuidVector const attackers = botContext->GetValue<GuidVector>("attackers")->Get();
+            bool const inAttackers = std::find(attackers.begin(), attackers.end(), guid) != attackers.end();
+            // 直接问 bot 自己的取值上下文：触发器 "<spell> on enemy healer" 用的就是这个值。
+            Unit* const picked = botContext->GetValue<Unit*>("enemy healer target", interruptSpell)->Get();
+            Unit* const currentTarget = botContext->GetValue<Unit*>("current target")->Get();
+
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = bot->GetGUID();
+            state.target = guid;
+            state.spellId = castInfo->Id;
+            state.value = int32(current->GetCastTimeRemaining());
+            state.detail = Acore::StringFormat(
+                "interrupt_watch:caster={} cast={} positive={} chan={} left_ms={} spell='{}' id={} "
+                "known={} cd={} in_attackers={} interruptable={} picks={} cur_target={} "
+                "dist={:.2f} spell_range={:.2f}",
+                caster->GetEntry(), castInfo->Id, castInfo->IsPositive(), castInfo->IsChanneled(),
+                current->GetCastTimeRemaining(), interruptSpell, interruptId,
+                interruptId ? bot->HasSpell(interruptId) : false,
+                interruptId ? bot->HasSpellCooldown(interruptId) : false,
+                inAttackers, botAI->IsInterruptableSpellCasting(caster, interruptSpell),
+                picked ? picked->GetGUID().GetCounter() : 0,
+                currentTarget ? currentTarget->GetGUID().GetCounter() : 0,
+                bot->GetDistance2d(caster), botAI->GetRange("spell"));
+            CombatEventBus::instance().Push(state);
+        }
+    }
+}
+
 void AttemptRunner::RestoreHeldFollowerStrategies()
 {
     for (ObjectGuid const& guid : _heldFollowers)
@@ -1277,6 +1360,12 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     ctx.attemptElapsedMs += diff;
     _preparationElapsed += diff;
     ResolveBoss(ctx);
+    _interruptWatchElapsedMs += diff;
+    if (_interruptWatchElapsedMs >= 1000)
+    {
+        _interruptWatchElapsedMs = 0;
+        SampleInterruptWatch(ctx);
+    }
     if (_preparationElapsed / 15000 != (_preparationElapsed - diff) / 15000)
         for (Player* bot : ctx.bots)
         {

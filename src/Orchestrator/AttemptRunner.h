@@ -100,6 +100,14 @@ private:
     void ClearHeldPullContext();
     void RestoreHeldFollowerStrategies();
 
+    // 清怪阶段的只读打断采样（每秒一次）。回答的问题：四个职业都常驻挂着
+    // "<spell> on enemy healer" 触发器、目标也不免疫打断，为什么小怪的引导一次
+    // 都没被打断（run334–369 的 cast_cancel 里来自小怪的记录为 0）。
+    // 只回读现成状态与 bot 自己的取值上下文，不调用 CanCastSpell/CheckCast，
+    // 也不触发任何 isUseful/isPossible。
+    void SampleInterruptWatch(RunContext& ctx);
+    uint32 _interruptWatchElapsedMs{0};
+
     Stage _stage{Stage::Idle};
     PullStep _pullStep{PullStep::FindBoss};
     bool _teleportSent{false};
