@@ -1,0 +1,41 @@
+# 只测泰蕾斯特拉房前那 4 只守卫的清怪段，不打 boss。清怪战术改动的快速 A/B 测试床。
+# 2026-09-11 新建。装备档位 normal5-v1、英雄难度、BotCheats 为空，与完整场景完全一致。
+#
+# 为什么选这一组而不是奥莫洛克那组：
+#   泰蕾斯特拉的守卫是**站桩**的（Steward 126470 + Mage Hunter Initiate 126465/126464 +
+#   Ascendant 126456），不需要 PrerequisiteMinBossDistance 那套择时门禁。
+#   奥莫洛克那组沿斜坡巡逻、且距 boss 仅 17.1 码，任何「不打 boss」的写法都会被门禁
+#   或 boss 协助污染——上一版 heroic-nexus-ormorok-trash 就是这么废掉的
+#   （BossEntry 指向远处的凯利丝塔萨，门禁的「前置到 boss 距离」恒定满足 -> t≈0 就开怪，
+#   队伍被拖向 boss 平台，run388/389 每一场奥莫洛克本人都造成 12–43k 伤害，A/B 两组作废）。
+#
+# 怎么做到「清完就收工」：
+#   BossEntry 指向被冰冻牢笼锁着的凯利丝塔萨(26723)——她带 UNIT_FLAG_NON_ATTACKABLE，
+#   三个封印球体没用过就打不动。**拉怪点与准备点取同一个坐标**（清怪点本身），
+#   于是清怪结束后队伍原地不动、那次拉怪立刻以 "pull failed (boss not engaged)" 收场。
+#   这是本场景与上一版失败写法的唯一实质差别：队伍**从不移动到任何 boss 附近**。
+#   每场 attempt ≈ 清怪 + 短恢复，不产出任何 boss 结论。
+#
+# 清怪点 (519,110,-16.04) 的取值理由见 heroic-nexus-telestra-n5：
+#   距 boss 32.0 码（> 英雄 boss 22 码仇恨半径）、距最近守卫 7.1 码（拉得动）、
+#   远程站桩往北退到 y≈126 时距东侧下一组小怪仍有 34–38 码。已由位移导航探针验证。
+[Scenario]
+MapId = 576
+BossEntry = 26723
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 519.0
+EngageY = 110.0
+EngageZ = -16.04
+EngageO = 4.71
+TimeoutSeconds = 60
+EngageTrigger = pull
+PrerequisiteSpawns = 126470,126465,126456,126464
+PreparationX = 519.0
+PreparationY = 110.0
+PreparationZ = -16.04
+PreparationO = 4.71
+PrerequisiteTimeoutSeconds = 180

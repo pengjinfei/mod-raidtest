@@ -20,6 +20,7 @@
 #include "PathGenerator.h"
 #include "Player.h"
 #include "Spell.h"
+#include "SpellAuras.h"
 #include "SpellInfo.h"
 #include "PlayerbotAIConfig.h"
 #include "ResultStore.h"
@@ -1125,6 +1126,62 @@ void AttemptRunner::SampleInterruptWatch(RunContext& ctx)
     Map* map = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
     if (!map)
         return;
+
+    // 控制观察（只读）：前置怪身上有没有「让它脱离战斗」的控制光环，以及它还剩多久。
+    // 这是判断「AoE 有没有把自家控制打破」的直接证据——控制被打破表现为
+    // cc_watch 连续几秒出现之后突然断掉，而 remaining 远大于 0。
+    for (ObjectGuid const& guid : _prerequisiteGuids)
+    {
+        Creature* victim = map->GetCreature(guid);
+        if (!victim || !victim->IsAlive())
+            continue;
+
+        for (auto const& applied : victim->GetAppliedAuras())
+        {
+            AuraApplication const* application = applied.second;
+            Aura* aura = application ? application->GetBase() : nullptr;
+            SpellInfo const* auraInfo = aura ? aura->GetSpellInfo() : nullptr;
+            if (!auraInfo)
+                continue;
+
+            bool incapacitates = false;
+            for (uint8 effect = EFFECT_0; effect <= EFFECT_2 && !incapacitates; ++effect)
+            {
+                switch (auraInfo->Effects[effect].ApplyAuraName)
+                {
+                    case SPELL_AURA_MOD_CONFUSE:
+                    case SPELL_AURA_MOD_FEAR:
+                    case SPELL_AURA_MOD_STUN:
+                    case SPELL_AURA_MOD_PACIFY_SILENCE:
+                    case SPELL_AURA_TRANSFORM:
+                        incapacitates = true;
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+            if (!incapacitates)
+                continue;
+
+            Unit* const auraCaster = aura->GetCaster();
+            CombatEvent cc;
+            cc.type = CombatEventType::State;
+            cc.source = auraCaster ? auraCaster->GetGUID() : ObjectGuid::Empty;
+            cc.target = guid;
+            cc.actorEntry = victim->GetEntry();
+            cc.spellId = auraInfo->Id;
+            cc.value = aura->GetDuration();
+            cc.detail = Acore::StringFormat(
+                "cc_watch:victim={} aura={} spell='{}' remaining_ms={} max_ms={} caster={} "
+                "breakable={} victim_hp_pct={:.1f}",
+                victim->GetEntry(), auraInfo->Id, auraInfo->SpellName[0], aura->GetDuration(),
+                aura->GetMaxDuration(), auraCaster ? auraCaster->GetName() : "none",
+                (auraInfo->AuraInterruptFlags & AURA_INTERRUPT_FLAG_NOT_VICTIM) != 0,
+                victim->GetHealthPct());
+            CombatEventBus::instance().Push(cc);
+        }
+    }
 
     // 各职业的打断技能名（playerbots 的取值/动作用的就是这些名字）。
     auto const interruptSpellFor = [](Player* bot) -> std::string
