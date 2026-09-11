@@ -8,6 +8,7 @@
 #include <set>
 #include "DatabaseEnv.h"
 #include "InstanceSaveMgr.h"
+#include "GameObject.h"
 #include "Group.h"
 #include "GroupMgr.h"
 #include "Playerbots.h"
@@ -339,6 +340,24 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         {
             Abort("scene_invalid: reset scope could not be restored");
             return;
+        }
+
+        // 上面的 ResetInstance 只重置副本，不清 bot 自己的战斗状态；而 TeleportAndPosition
+        // 里那段完整 AI reset 只在 attemptSeq > 1 时跑（attempt 1 跑它会打乱初始站位，
+        // 见 run87/88 的注释）。于是「上一轮结束时还留着战斗状态的 bot」会在新 run 的
+        // 第一场被核心拒绝穿护甲/戒指/饰品（EQUIP_ERR_NOT_IN_COMBAT = 60），
+        // 而且旧装备已经被卸下 —— 角色被扒光，整场 attempt 以 fixture_invalid 作废，
+        // 之后每场都会重复失败（run376：牧师只剩衬衣与三件武器，武器在战斗中允许更换）。
+        // 这里只清战斗状态，不做 AI reset，作用面最小。ReviveDead 只覆盖死亡的 bot，
+        // 补不上这一类。
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot || !bot->IsInWorld() || !bot->IsInCombat())
+                continue;
+            bot->AttackStop();
+            bot->CombatStop(true, false);
+            LOG_INFO("raidtest", "AttemptRunner: cleared residual combat on {} before fixture gear",
+                bot->GetName());
         }
 
         RosterBuilder builder;
@@ -1056,6 +1075,51 @@ void AttemptRunner::ClearHeldPullContext()
     _pullLeader.Clear();
 }
 
+void AttemptRunner::UsePrerequisiteGameObjects(RunContext& ctx)
+{
+    auto const& spawns = ctx.scenario->GetPrerequisiteGameObjects();
+    if (spawns.empty() || ctx.bots.empty() || !ctx.bots.front())
+        return;
+
+    Player* user = ctx.bots.front();
+    Map* map = user->GetMap();
+    if (!map)
+        return;
+
+    for (uint32 spawn : spawns)
+    {
+        GameObject* object = nullptr;
+        auto const bounds = map->GetGameObjectBySpawnIdStore().equal_range(spawn);
+        for (auto it = bounds.first; it != bounds.second; ++it)
+            if (it->second)
+                object = it->second;
+
+        CombatEvent state;
+        state.type = CombatEventType::State;
+        state.source = user->GetGUID();
+        if (!object)
+        {
+            state.detail = Acore::StringFormat("prerequisite_gameobject_missing:spawn={}", spawn);
+            CombatEventBus::instance().Push(state);
+            LOG_WARN("raidtest", "AttemptRunner: {}", state.detail);
+            continue;
+        }
+
+        // 核心的 GameObject::Use 开头就拒绝 GO_FLAG_NOT_SELECTABLE 的对象（副本进度未到时
+        // 球体就是这个状态），所以这里不绕过任何门禁；先读一次标志位只是为了把原因记下来。
+        bool const selectable = !object->HasGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
+        state.target = object->GetGUID();
+        state.actorEntry = object->GetEntry();
+        state.detail = Acore::StringFormat("prerequisite_gameobject_use:spawn={} entry={} selectable={}",
+            spawn, object->GetEntry(), selectable);
+        CombatEventBus::instance().Push(state);
+        LOG_INFO("raidtest", "AttemptRunner: {}", state.detail);
+
+        if (selectable)
+            object->Use(user);
+    }
+}
+
 void AttemptRunner::SampleInterruptWatch(RunContext& ctx)
 {
     Map* map = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
@@ -1429,6 +1493,8 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     }
     if (!next)
     {
+        // 前置怪全清之后、进入恢复之前，完成副本自身的进度交互（如魔枢的三个封印球体）。
+        UsePrerequisiteGameObjects(ctx);
         RecordPhase("prerequisites_complete", _preparationElapsed);
         _stage = Stage::Recovery;
         return;

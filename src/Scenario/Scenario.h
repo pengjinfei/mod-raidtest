@@ -71,6 +71,12 @@ public:
     std::string const& GetStrategy() const { return _strategy; }
 
     std::vector<uint32> const& GetPrerequisiteSpawns() const { return _prerequisiteSpawns; }
+    // 清怪全部完成后要「使用」的 gameobject 生成点（gameobject.guid）。用于副本自身的
+    // 进度门禁：魔枢的三个封印球体（188526/188527/188528）必须被使用，
+    // DATA_*_ORB 才会置 DONE，凯利丝塔萨的冰冻牢笼才会解除。
+    // 这是编排层的一次交互，不是战斗行为；核心的 GameObject::Use 仍会拒绝
+    // 带 GO_FLAG_NOT_SELECTABLE 的球体（即对应 boss 还没死时点不动），门禁没有被绕过。
+    std::vector<uint32> const& GetPrerequisiteGameObjects() const { return _prerequisiteGameObjects; }
     // 双 boss 等：BossEntry 死后仍需击杀的第二个必死生成点（0 = 无）。击杀判定
     // 要求它也收到真实死亡事件，卡壳判定在它死亡前挂起。
     uint32 GetKillGateSpawn() const { return _killGateSpawn; }
@@ -103,6 +109,7 @@ public:
 
 protected:
     std::vector<uint32> _prerequisiteSpawns;
+    std::vector<uint32> _prerequisiteGameObjects;
     uint32 _killGateSpawn{0};
     Position _preparationPoint{};
     bool _hasRoleSeparatedPreparation{false};

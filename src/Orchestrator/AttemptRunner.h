@@ -106,6 +106,10 @@ private:
     // 只回读现成状态与 bot 自己的取值上下文，不调用 CanCastSpell/CheckCast，
     // 也不触发任何 isUseful/isPossible。
     void SampleInterruptWatch(RunContext& ctx);
+
+    // 清怪全部完成后，使用场景声明的 gameobject（魔枢的三个封印球体）。
+    // 幂等：已经不可选中（用过或 boss 未死）的直接跳过。每个结果都写入 raidtest_events。
+    void UsePrerequisiteGameObjects(RunContext& ctx);
     uint32 _interruptWatchElapsedMs{0};
 
     Stage _stage{Stage::Idle};

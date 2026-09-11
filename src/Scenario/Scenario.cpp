@@ -307,6 +307,19 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _prerequisiteSpawns.push_back(spawn);
             }
         }
+        else if (key == "PrerequisiteGameObjects")
+        {
+            std::set<uint32> seenGameObjects;
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                uint32 spawn = 0;
+                if (!ParseUint32(Acore::String::Trim(std::string(token)), spawn) || !spawn ||
+                    !seenGameObjects.insert(spawn).second)
+                    failed = true;
+                else
+                    _prerequisiteGameObjects.push_back(spawn);
+            }
+        }
         else if (key == "KillGateSpawn")
         {
             uint32 spawn = 0;

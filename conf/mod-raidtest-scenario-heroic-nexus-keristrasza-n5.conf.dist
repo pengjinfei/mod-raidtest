@@ -1,10 +1,20 @@
-# 魔枢（The Nexus，map 576）英雄：凯利丝塔萨(26723) 单 boss，无前置怪。
-# 2026-09-10 新建。装备档位 normal5-v1（ilvl 上限 187），boss 难度英雄，BotCheats 为空。
-# 无前置怪的理由：她的中央房间内没有同层地面怪；20 码内最近的
-# Azure Warder(126449, 19.6 码) 属房外环廊，把它当前置会在清怪期间就踩进 boss 仇恨半径。
-# 本场景因此是纯 boss 机制场（刺骨寒冷不动就叠层 + 龙侧位站位）。
-# 无前置怪时框架不会二次传送，准备点即拉怪点，因此只给 Engage*。
-# 坐标来源：boss 实测生成点 (301.45,-5.46,-15.48) 正东偏移 7.6 码。
+# 魔枢（The Nexus，map 576）英雄：凯利丝塔萨(26723)，**完整进度链路**。
+# 2026-09-11 改为链式。装备档位 normal5-v1（ilvl 上限 187），boss 英雄，BotCheats 为空。
+#
+# 她默认带 UNIT_FLAG_NON_ATTACKABLE + 冰冻牢笼(47854)，解除条件是
+# DATA_TELESTRA_ORB(5)/ANOMALUS_ORB(6)/ORMOROK_ORB(7) 全为 DONE
+# （boss_keristrasza.cpp 的 CanRemovePrison）。这三个状态只能由**使用三个封印球体**置位。
+#
+# 本轮之前这条链路是断的：instance_nexus::SetData 处理了三个球体 entry，但**没有任何调用者**
+# ——GameObject::Use 不通知副本脚本、球体没有 ScriptName、goober eventId 为 0。
+# 已在 core 分支 codex/nexus-containment-sphere 补上 go_nexus_containment_sphere
+# （OnGossipHello -> instance->SetData(entry) -> 通知她重算 CanRemovePrison），
+# 并用 pending_db_world 的 rev_ SQL 绑定 ScriptName。
+#
+# 前置 = 另外三个 boss 的生成点；清完后框架使用三个球体（PrerequisiteGameObjects）。
+# 核心的 GameObject::Use 仍会拒绝带 GO_FLAG_NOT_SELECTABLE 的球体（对应 boss 未死时），
+# 所以进度门禁没有被绕过。
+# 注意：本场景**不含**两组房前守卫（泰蕾斯特拉与奥莫洛克各 4 只），不是完整清本。
 [Scenario]
 MapId = 576
 BossEntry = 26723
@@ -17,5 +27,14 @@ EngageX = 309.0
 EngageY = -5.5
 EngageZ = -15.48
 EngageO = 3.14
-TimeoutSeconds = 300
+TimeoutSeconds = 420
 EngageTrigger = pull
+# 泰蕾斯特拉(126480) -> 阿诺姆鲁斯(126599) -> 奥莫洛克(126663)
+PrerequisiteSpawns = 126480,126599,126663
+# 三个封印球体的生成点：Telestra's(65547) / Anomalus'(65548) / Ormorok's(65549)
+PrerequisiteGameObjects = 65547,65548,65549
+PreparationX = 519.0
+PreparationY = 110.0
+PreparationZ = -16.04
+PreparationO = 4.71
+PrerequisiteTimeoutSeconds = 1500
