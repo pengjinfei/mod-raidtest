@@ -1612,9 +1612,18 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     {
         float const required = ctx.scenario->GetPrerequisiteMinBossDistance();
         ResolveBoss(ctx);
-        if (ctx.boss && ctx.boss->IsAlive() && !ctx.boss->IsInCombat())
+        // 量的是「这只前置怪离**最近的活着的副本 boss**多远」，不只是场景 boss：链式场景里
+        // 场景 boss 是凯利丝塔萨，奥莫洛克的守卫组要防的却是奥莫洛克本人（17.1 码即协助参战）。
+        Creature* nearestBoss = nullptr;
+        if (Map* map = next->GetMap())
+            for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
+                if (creature && creature != next && creature->IsAlive() && creature->IsDungeonBoss() &&
+                    !creature->IsInCombat() &&
+                    (!nearestBoss || next->GetDistance(creature) < next->GetDistance(nearestBoss)))
+                    nearestBoss = creature;
+        if (nearestBoss)
         {
-            float const bossDistance = next->GetDistance(ctx.boss);
+            float const bossDistance = next->GetDistance(nearestBoss);
             if (bossDistance < required)
             {
                 if (_preparationElapsed / 5000 != (_preparationElapsed - diff) / 5000)
@@ -1639,7 +1648,9 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
         return;
     // 清怪控制链的开怪门禁（PrerequisiteCcWaitSeconds，0 = 关闭）：先把这组的拉怪目标钉给
     // 坦克当信号，等控制职业把控制放到位再开怪，并把开怪目标换成坦克标的骷髅。
-    if (!_prerequisitePullSent && ctx.scenario->GetPrerequisiteCcWaitSeconds() > 0 &&
+    // boss 不走控制链门禁（坦克对 boss 不打控制标记，等 10 秒 no_plan 纯属浪费；链式场景里
+    // 三个前置 boss 都是 PrerequisiteSpawns 里的一项）。
+    if (!_prerequisitePullSent && ctx.scenario->GetPrerequisiteCcWaitSeconds() > 0 && !next->IsDungeonBoss() &&
         !CcPullGateReady(ctx, next, diff))
         return;
     if (!_prerequisitePullSent)

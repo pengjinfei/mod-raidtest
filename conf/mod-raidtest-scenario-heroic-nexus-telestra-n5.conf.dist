@@ -32,8 +32,13 @@ EngageO = 0.0
 TimeoutSeconds = 300
 EngageTrigger = pull
 PrerequisiteSpawns = 126470,126465,126456,126464
-PreparationX = 519.0
-PreparationY = 110.0
+PreparationX = 509.0
+PreparationY = 62.0
 PreparationZ = -16.04
 PreparationO = 4.71
 PrerequisiteTimeoutSeconds = 180
+
+# 清怪控制链（2026-09-11，docs/testing/TRASH-CC-PULL-DESIGN.md）：准备点从 (519,110) 改到守卫西南 (509,62)
+# ——(519,110) 距最近守卫 17 码在仇恨半径内，北侧走廊无视线，西北侧会让施法怪朝 boss 后撤。
+# (509,62) 对四只守卫都有视线、距守卫 25.8 码、距泰蕾斯特拉 30.6 码（`raidtest los` 探针实测）。
+PrerequisiteCcWaitSeconds = 25
