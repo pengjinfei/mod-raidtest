@@ -5,6 +5,8 @@
 #include "RunContext.h"
 #include <string>
 
+class Unit;
+
 // 单次 attempt 的执行器（design §10「传送→开战→轮询判定→记录」的 attempt 内子流程）。
 // 与 RaidTestOrchestrator（run 级状态机）职责分离：
 //   - 上层负责 run 生命周期、登录/组队、结果存储、attempt 计数；
@@ -69,7 +71,11 @@ private:
 
     void TickPrerequisites(RunContext& ctx, uint32 diff);
     bool BeginNavigationWaypoint(RunContext& ctx);
-    void ApproachPrerequisiteTarget(RunContext& ctx, Creature* target);
+    // stopDistance > 0 时只走到「距最近的存活前置怪 stopDistance 码」处就停（控制链门禁下的
+    // 分批接近：不能没上控就走进怪堆里）；0 = 走到目标脚下（原行为，L 形房间用）。
+    void ApproachPrerequisiteTarget(RunContext& ctx, Creature* target, float stopDistance = 0.0f);
+    // 某个坐标距最近的存活前置怪的距离（没有则返回一个很大的数）。
+    float DistanceToNearestPrerequisite(RunContext& ctx, Position const& from) const;
     bool NavigationWaypointReached(RunContext const& ctx) const;
     bool StartBossPull(RunContext& ctx);
     void RecordPhase(char const* phase, uint32 elapsed);
@@ -78,6 +84,14 @@ private:
     uint32 _preparationElapsed{0};
     uint32 _recoveryElapsed{0};
     bool _prerequisitePullSent{false};
+    // 清怪控制链的开怪门禁（PrerequisiteCcWaitSeconds）。返回 true 表示可以开怪，并可能把
+    // next 换成队伍骷髅图标所指；返回 false 表示继续等（本 tick 不下达开怪）。
+    bool CcPullGateReady(RunContext& ctx, Creature*& next, uint32 diff);
+    ObjectGuid _ccWaitTarget;               // 正在等控制的那组的拉怪目标（信号已发给坦克）
+    uint32 _ccWaitElapsedMs{0};
+    bool _ccFirstPullDone{false};           // 本 attempt 是否已发出过第一次清怪开怪指令
+    uint32 _startDelayElapsedMs{0};         // AttemptStartDelaySeconds 已等待的毫秒
+    uint32 _pullRejectedAt{0};              // 上次清怪拉怪被拒的时刻（_preparationElapsed 口径，0 = 无）
     ObjectGuid _prerequisiteApproachGuid;   // 上次下达接近移动的前置目标
     uint32 _prerequisiteApproachAt{0};      // 下达/尝试时刻（_preparationElapsed 口径）
     uint32 _prerequisiteApproachLoggedAt{0};  // 上次记录无路线告警的时刻（同口径）
@@ -106,6 +120,9 @@ private:
     // 只回读现成状态与 bot 自己的取值上下文，不调用 CanCastSpell/CheckCast，
     // 也不触发任何 isUseful/isPossible。
     void SampleInterruptWatch(RunContext& ctx);
+    // 该单位是否带着「让它脱离战斗」的控制光环（变形/妖术/致盲/恐惧/闷棍）。cc_watch 采样与
+    // 开怪门禁共用同一判据。
+    static bool HasIncapacitatingAura(Unit* unit);
 
     // 清怪全部完成后，使用场景声明的 gameobject（魔枢的三个封印球体）。
     // 幂等：已经不可选中（用过或 boss 未死）的直接跳过。每个结果都写入 raidtest_events。

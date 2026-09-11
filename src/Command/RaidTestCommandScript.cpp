@@ -23,6 +23,11 @@
 
 #include "Chat.h"
 #include "EventStore.h"
+#include "GridDefines.h"
+#include "IVMapMgr.h"
+#include "Map.h"
+#include "MapCollisionData.h"
+#include "MapMgr.h"
 #include "Position.h"
 #include "RaidTestConfig.h"
 #include "RaidTestOrchestrator.h"
@@ -33,6 +38,7 @@
 #include "StringFormat.h"
 
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -160,6 +166,8 @@ public:
             {"report",   HandleReportCommand,   SEC_ADMINISTRATOR, Console::Yes},
             {"compare",  HandleCompareCommand,  SEC_ADMINISTRATOR, Console::Yes},
             {"dump",     HandleDumpCommand,     SEC_ADMINISTRATOR, Console::Yes},
+            // 只读的静态视线探针：勘测准备点/清怪点时用，不登录角色、不建实例。
+            {"los",      HandleLosCommand,      SEC_ADMINISTRATOR, Console::Yes},
             // 观察会话必须由真人在游戏内发起（需要发起者的队伍作为成员集合），
             // 因此 Console::No。SEC_PLAYER：它是纯只读采样，不登录角色、不建组、
             // 不传送、不开怪、不改任何游戏状态，只写 raidtest_events。代价是普通玩家
@@ -222,7 +230,64 @@ private:
     static bool HandleReportCommand(ChatHandler* handler, char const* args);
     static bool HandleCompareCommand(ChatHandler* handler, char const* args);
     static bool HandleDumpCommand(ChatHandler* handler, char const* args);
+    // .raidtest los <mapId> <x1> <y1> <z1> <x2> <y2> <z2>
+    // 与 Unit::IsWithinLOSInMap 走同一棵静态 vmap 树（两端各加 2 码碰撞高度），只按需加载
+    // 两端所在的 vmap 瓦片。用途：选准备点/清怪点前先在控制台批量验视线，而不是靠一场场试
+    // （run394/395–399：(519,116–121) 一带对泰蕾斯特拉守卫全部无视线，每个点试一次要一分钟）。
+    static bool HandleLosCommand(ChatHandler* handler, char const* args);
 };
+
+bool RaidTestCommandScript::HandleLosCommand(ChatHandler* handler, char const* args)
+{
+    std::vector<std::string> tokens = TokenizeArgs(args ? args : "");
+    if (tokens.size() != 7)
+    {
+        handler->SendSysMessage("usage: .raidtest los <mapId> <x1> <y1> <z1> <x2> <y2> <z2>");
+        return true;
+    }
+
+    Optional<uint32> mapId = Acore::StringTo<uint32>(tokens[0]);
+    float v[6];
+    for (size_t i = 0; i < 6; ++i)
+    {
+        Optional<float> value = Acore::StringTo<float>(tokens[i + 1]);
+        if (!value)
+        {
+            handler->PSendSysMessage("los: bad number '{}'", tokens[i + 1]);
+            return true;
+        }
+        v[i] = *value;
+    }
+    if (!mapId)
+    {
+        handler->PSendSysMessage("los: bad map id '{}'", tokens[0]);
+        return true;
+    }
+
+    Map* map = sMapMgr->CreateBaseMap(*mapId);
+    if (!map)
+    {
+        handler->PSendSysMessage("los: no map {}", *mapId);
+        return true;
+    }
+
+    for (size_t i = 0; i < 6; i += 3)
+    {
+        GridCoord const grid = Acore::ComputeGridCoord(v[i], v[i + 1]);
+        map->GetMapCollisionData().LoadVMapTile(grid.x_coord, grid.y_coord);
+    }
+
+    StaticVMapCollisionData const& tree = map->GetMapCollisionData().GetStaticTree();
+    bool const los = tree.isInLineOfSight(v[0], v[1], v[2] + 2.0f, v[3], v[4], v[5] + 2.0f,
+                                          VMAP::ModelIgnoreFlags::Nothing);
+    float const floor1 = tree.getHeight(v[0], v[1], v[2] + 2.0f, 50.0f);
+    float const floor2 = tree.getHeight(v[3], v[4], v[5] + 2.0f, 50.0f);
+    float const dist = std::sqrt((v[0] - v[3]) * (v[0] - v[3]) + (v[1] - v[4]) * (v[1] - v[4]));
+    handler->PSendSysMessage("los map={} from=({:.1f},{:.1f},{:.2f}) to=({:.1f},{:.1f},{:.2f}) dist2d={:.1f} los={} "
+        "vmap_floor_from={:.2f} vmap_floor_to={:.2f}", *mapId, v[0], v[1], v[2], v[3], v[4], v[5], dist, los,
+        floor1, floor2);
+    return true;
+}
 
 bool RaidTestCommandScript::HandleScenarioCommand(ChatHandler* handler, char const* args)
 {

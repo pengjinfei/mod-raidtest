@@ -33,6 +33,12 @@
 
 namespace
 {
+    // 控制链门禁下的接近停止距离：英雄 80 级怪的仇恨半径 = 20 码 + 双方 combat reach，
+    // 24 码留了余量；法师变形术/萨满妖术 30 码射程仍然够得着最近的两只。
+    constexpr float kCcApproachDistance = 24.0f;
+    // 坦克打标记需要几个 AI tick（run401 实测 3.5–4.6 秒），这之前不能判定「没有计划」。
+    constexpr uint32 kCcNoPlanMs = 10000;
+
     bool ValidateRaid(RunContext const& ctx, char const* phase)
     {
         Group* group = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetGroup();
@@ -139,6 +145,11 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _navigationComplete = false;
     _navigationFailure.clear();
     _prerequisitePullSent = false;
+    _ccWaitTarget.Clear();
+    _ccWaitElapsedMs = 0;
+    _ccFirstPullDone = false;
+    _startDelayElapsedMs = 0;
+    _pullRejectedAt = 0;
     _prerequisiteApproachGuid.Clear();
     _prerequisiteApproachAt = 0;
     _prerequisiteApproachLoggedAt = 0;
@@ -155,6 +166,15 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     // 兜底：上一 attempt 中止（StopRun）时跨 tick 泵窗口被打断，拉怪上下文可能
     // 仍钉在旧 leader 上；新 attempt 开始前统一清掉（幂等，无人钉着时是 no-op）。
     ClearHeldPullContext();
+
+    // 队伍的团队标记也要清：同一 spawn 的怪在每个实例里 GUID 相同，上一场留下的骷髅/控制图标
+    // 在新实例里会"指向"一只活着的新怪。run404 里 DPS/治疗在传送落地 2.5 秒就按上一场的骷髅
+    // 开火（dps target 直接走图标捷径，不经任何排除），整组提前进战斗、控制一个都没来得及放。
+    if (!ctx.bots.empty() && ctx.bots.front())
+        if (Group* group = ctx.bots.front()->GetGroup())
+            for (uint8 icon = 0; icon < TARGETICONCOUNT; ++icon)
+                if (group->GetTargetIcon(icon))
+                    group->SetTargetIcon(icon, ObjectGuid::Empty, ObjectGuid::Empty);
 
     ctx.attemptId = 0;
     ctx.attemptRowQueued = false;
@@ -186,6 +206,14 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
 
     case Stage::TeleportAndPosition:
     {
+        // 场景可选的开场等待（AttemptStartDelaySeconds）：连续 attempt 之间给 bot 的长冷却复位
+        // （妖术 45 秒；纯清怪测试床每场只有 25–40 秒，run402/403 里妖术 49 次因冷却放不出来）。
+        // 只是等待，不改任何战斗状态。
+        if (_startDelayElapsedMs < ctx.scenario->GetAttemptStartDelaySeconds() * 1000)
+        {
+            _startDelayElapsedMs += diff;
+            return;
+        }
         if (!_teleportSent)
         {
             // Discard the previous encounter's casts/ground effects/AI targets only when there
@@ -593,11 +621,12 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                         CombatEventBus::instance().Push(state);
                     }
                 }
-                // 有开怪时机门禁（PrerequisiteMinBossDistance）时，自主选怪必须继续压住：
-                // 否则 bot 在 hold 期间自己就把附近的东西打起来了，门禁形同虚设
-                // （run360 实测：队伍在 1.2 秒就开始输出，7.9 秒 boss 参战）。
-                // 恢复时机改到真正下达开怪指令的那一刻，见 PreClear。
-                if (ctx.scenario->GetPrerequisiteMinBossDistance() <= 0.0f)
+                // 有开怪时机门禁（PrerequisiteMinBossDistance / PrerequisiteCcWaitSeconds）时，
+                // 自主选怪必须继续压住：否则 bot 在 hold 期间自己就把附近的东西打起来了，
+                // 门禁形同虚设（run360 实测：队伍在 1.2 秒就开始输出，7.9 秒 boss 参战）。
+                // 恢复时机改到真正下达开怪指令的那一刻，见 TickPrerequisites。
+                if (ctx.scenario->GetPrerequisiteMinBossDistance() <= 0.0f &&
+                    ctx.scenario->GetPrerequisiteCcWaitSeconds() == 0)
                     RestoreHeldFollowerStrategies();
                 RecordPhase("prerequisites_start", 0);
                 _stage = Stage::Prerequisites;
@@ -1144,24 +1173,10 @@ void AttemptRunner::SampleInterruptWatch(RunContext& ctx)
             if (!auraInfo)
                 continue;
 
-            bool incapacitates = false;
-            for (uint8 effect = EFFECT_0; effect <= EFFECT_2 && !incapacitates; ++effect)
-            {
-                switch (auraInfo->Effects[effect].ApplyAuraName)
-                {
-                    case SPELL_AURA_MOD_CONFUSE:
-                    case SPELL_AURA_MOD_FEAR:
-                    case SPELL_AURA_MOD_STUN:
-                    case SPELL_AURA_MOD_PACIFY_SILENCE:
-                    case SPELL_AURA_TRANSFORM:
-                        incapacitates = true;
-                        break;
-                    default:
-                        break;
-                }
-            }
-
-            if (!incapacitates)
+            // 与 HasIncapacitatingAura 同一组光环类型，这里按单条光环判。
+            if (!(auraInfo->HasAura(SPELL_AURA_MOD_CONFUSE) || auraInfo->HasAura(SPELL_AURA_MOD_FEAR) ||
+                  auraInfo->HasAura(SPELL_AURA_MOD_STUN) || auraInfo->HasAura(SPELL_AURA_MOD_PACIFY_SILENCE) ||
+                  auraInfo->HasAura(SPELL_AURA_TRANSFORM)))
                 continue;
 
             Unit* const auraCaster = aura->GetCaster();
@@ -1619,6 +1634,14 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             }
         }
     }
+    // 拉怪被拒（目标被雷霆风暴打下平台、暂时无视线）后每秒只重试一次，别每 tick 刷日志。
+    if (!_prerequisitePullSent && _pullRejectedAt && _preparationElapsed - _pullRejectedAt < 1000)
+        return;
+    // 清怪控制链的开怪门禁（PrerequisiteCcWaitSeconds，0 = 关闭）：先把这组的拉怪目标钉给
+    // 坦克当信号，等控制职业把控制放到位再开怪，并把开怪目标换成坦克标的骷髅。
+    if (!_prerequisitePullSent && ctx.scenario->GetPrerequisiteCcWaitSeconds() > 0 &&
+        !CcPullGateReady(ctx, next, diff))
+        return;
     if (!_prerequisitePullSent)
     {
         // 门禁模式下自主选怪压到这一刻才放开（幂等：_heldFollowers 清空后是空操作）。
@@ -1626,20 +1649,222 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
         // One ordinary encounter-start instruction; combat target selection remains with the AI.
         if (!CombatTrigger::BeginPullForAll(ctx.bots, next))
         {
+            _pullRejectedAt = _preparationElapsed ? _preparationElapsed : 1;
             // 拒绝的实际原因几乎总是超出视线/射程，而不是目标无效。房间是 L 形的：实测
             // 小怪房内的 on-mesh 点能拉到并清掉 4 只，第 5 只在 48 码外的北侧且无视线。
             // 也就是说，不存在任何单一准备点能同时看到全部前置目标，原来直接 abort 等于
             // 要求场景配置一个并不存在的坐标。改为下达一次普通的接近移动、在后续 tick
             // 重试拉怪；上限仍由 PrerequisiteTimeoutSeconds 兜住，战斗决策仍归 bot。
+            if (ctx.scenario->GetPrerequisiteCcWaitSeconds() > 0)
+            {
+                // 控制链门禁下不能没上控就走进怪堆（run394/attempt1：无视线 -> 全队走向目标 ->
+                // 一路拉到 boss 房间）。只接近到仇恨半径之外，然后重新走一遍「信号 -> 指派 ->
+                // 上控 -> 开怪」；已经在仇恨半径边缘还是没视线，就是准备点选错了，直接作废并说明。
+                // 只对本 attempt 的**第一次**开怪做这条判定：后续轮次的目标可能被雷霆风暴打下平台
+                // （run403 attempt1：目标在 4 码外但 z 低了 6 码，视线为假），那不是准备点的问题。
+                if (!_ccFirstPullDone &&
+                    DistanceToNearestPrerequisite(ctx, *ctx.bots.front()) <= kCcApproachDistance + 1.0f)
+                {
+                    Abort("prerequisite_invalid: no line of sight to the pack from the preparation point (cc gate)");
+                    return;
+                }
+                ApproachPrerequisiteTarget(ctx, next, kCcApproachDistance);
+                _ccWaitTarget.Clear();
+                return;
+            }
             ApproachPrerequisiteTarget(ctx, next);
             return;
         }
         CombatTrigger::EndPullContext(ctx.bots.front());
+        // 控制链门禁的信号用完即清（leader 通常就是坦克，EndPullContext 已清过；这里兜底）。
+        if (_ccWaitTarget)
+        {
+            if (Player* tank = FindTank(ctx))
+                if (PlayerbotAI* tankAI = GET_PLAYERBOT_AI(tank))
+                    tankAI->GetAiObjectContext()->GetValue<ObjectGuid>("pull target")->Set(ObjectGuid::Empty);
+            _ccWaitTarget.Clear();
+        }
         _prerequisitePullSent = true;
+        _ccFirstPullDone = true;
     }
 }
 
-void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target)
+float AttemptRunner::DistanceToNearestPrerequisite(RunContext& ctx, Position const& from) const
+{
+    Map* map = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
+    float nearest = std::numeric_limits<float>::max();
+    if (!map)
+        return nearest;
+
+    for (ObjectGuid const& guid : _prerequisiteGuids)
+    {
+        Creature* creature = map->GetCreature(guid);
+        if (creature && creature->IsAlive())
+            nearest = std::min(nearest, creature->GetDistance(from));
+    }
+
+    return nearest;
+}
+
+bool AttemptRunner::HasIncapacitatingAura(Unit* unit)
+{
+    for (auto const& applied : unit->GetAppliedAuras())
+    {
+        AuraApplication const* application = applied.second;
+        Aura* aura = application ? application->GetBase() : nullptr;
+        SpellInfo const* auraInfo = aura ? aura->GetSpellInfo() : nullptr;
+        if (!auraInfo)
+            continue;
+
+        for (uint8 effect = EFFECT_0; effect <= EFFECT_2; ++effect)
+        {
+            switch (auraInfo->Effects[effect].ApplyAuraName)
+            {
+                case SPELL_AURA_MOD_CONFUSE:
+                case SPELL_AURA_MOD_FEAR:
+                case SPELL_AURA_MOD_STUN:
+                case SPELL_AURA_MOD_PACIFY_SILENCE:
+                case SPELL_AURA_TRANSFORM:
+                    return true;
+                default:
+                    break;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 diff)
+{
+    Player* tank = FindTank(ctx);
+    PlayerbotAI* tankAI = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
+    Group* group = tank ? tank->GetGroup() : nullptr;
+    if (!tankAI || !group)
+        return true;    // 没有坦克/队伍就没有控制链可等，退回原流程
+
+    // 进入等待：把本次拉怪目标钉在坦克的 "pull target" 上。这是 mod-playerbots 已有的取值
+    // （拉怪上下文），坦克的 Nex 策略把它当作「准备开这组」的信号去打标记；没有信号不打标记。
+    if (_ccWaitTarget != next->GetGUID())
+    {
+        _ccWaitTarget = next->GetGUID();
+        _ccWaitElapsedMs = 0;
+        tankAI->GetAiObjectContext()->GetValue<ObjectGuid>("pull target")->Set(next->GetGUID());
+
+        CombatEvent state;
+        state.type = CombatEventType::State;
+        state.source = tank->GetGUID();
+        state.target = next->GetGUID();
+        state.actorEntry = next->GetEntry();
+        state.detail = Acore::StringFormat("cc_pull_wait_start:target={} wait_s={}",
+            next->GetGUID().ToString(), ctx.scenario->GetPrerequisiteCcWaitSeconds());
+        CombatEventBus::instance().Push(state);
+        LOG_INFO("raidtest", "AttemptRunner: {} elapsed={}ms", state.detail, _preparationElapsed);
+        return false;
+    }
+    _ccWaitElapsedMs += diff;
+
+    // 只读地看队伍图标：月亮(4)/方块(5)/十字(6) 是控制图标，骷髅(7) 是击杀目标。
+    Map* map = ctx.bots.front()->GetMap();
+    auto iconCreature = [&](uint8 icon) -> Creature*
+    {
+        ObjectGuid const guid = group->GetTargetIcon(icon);
+        if (!guid || std::find(_prerequisiteGuids.begin(), _prerequisiteGuids.end(), guid) == _prerequisiteGuids.end())
+            return nullptr;
+        Creature* creature = map->GetCreature(guid);
+        return creature && creature->IsAlive() ? creature : nullptr;
+    };
+
+    uint32 ccIcons = 0;
+    uint32 ccLanded = 0;
+    for (uint8 icon : { uint8(4), uint8(5), uint8(6) })
+    {
+        Creature* creature = iconCreature(icon);
+        if (!creature)
+            continue;
+        ++ccIcons;
+        if (HasIncapacitatingAura(creature))
+            ++ccLanded;
+    }
+
+    // 「这组已进战斗」只数**没被控住**的怪：被羊/妖术的那只自己就处于战斗状态，
+    // 它不算（run401 attempt2–5 因此在羊落地的同一毫秒误判 pack_engaged，妖术和闷棍都没来得及放）。
+    bool engaged = false;
+    Creature* looseTarget = nullptr;        // 第一只活着、没被控住、也没被控制图标钉着的前置怪
+    Creature* pendingCcTarget = nullptr;    // 有控制图标但控制还没落地的（次选）
+    for (ObjectGuid const& guid : _prerequisiteGuids)
+    {
+        Creature* creature = map->GetCreature(guid);
+        if (!creature || !creature->IsAlive() || HasIncapacitatingAura(creature))
+            continue;
+        bool ccIcon = false;
+        for (uint8 icon : { uint8(4), uint8(5), uint8(6) })
+            if (group->GetTargetIcon(icon) == guid)
+                ccIcon = true;
+        // 分给控制的怪即使还没被控住也别拉：run406 门禁超时时拉了妖术目标，妖术落地 2 秒就被全队打掉。
+        if (ccIcon)
+        {
+            if (!pendingCcTarget)
+                pendingCcTarget = creature;
+        }
+        else if (!looseTarget)
+            looseTarget = creature;
+        if (creature->IsInCombat())
+            engaged = true;
+    }
+    if (!looseTarget)
+        looseTarget = pendingCcTarget;
+
+    char const* reason = nullptr;
+    if (ccIcons && ccLanded == ccIcons)
+        reason = "cc_ready";                // 控制全部落地：坦克开怪必须紧接着，否则控制空转
+    else if (engaged)
+        reason = "pack_engaged";            // 有没被控住的怪进了战斗（被发现/抗性/打断）：立刻开
+    else if (_ccWaitElapsedMs >= kCcNoPlanMs && !ccIcons)
+        reason = "no_plan";                 // 坦克没打标记（怪不成组/没有控制职业）：没东西可等
+    else if (_ccWaitElapsedMs >= ctx.scenario->GetPrerequisiteCcWaitSeconds() * 1000)
+        reason = "timeout";
+
+    if (!reason)
+    {
+        if (_ccWaitElapsedMs / 5000 != (_ccWaitElapsedMs - diff) / 5000)
+            LOG_INFO("raidtest", "AttemptRunner: cc_pull_wait icons={} landed={} engaged={} elapsed={}ms",
+                ccIcons, ccLanded, engaged, _ccWaitElapsedMs);
+        return false;
+    }
+
+    // 开怪目标 = 坦克标的骷髅（活着的前置怪）。坦克还没来得及挪骷髅时（骷髅刚死、下一轮拉怪），
+    // 退而取第一只没被控住的；都控着就按坦克同样的顺序 十字→方块→月亮 放一只出来。
+    // 绝不能按 PrerequisiteSpawns 顺序拉一只被控着的怪——run401/attempt3 就是这样把妖术打掉的。
+    if (Creature* skull = iconCreature(7))
+        next = skull;
+    else if (looseTarget)
+        next = looseTarget;
+    else
+        for (uint8 icon : { uint8(6), uint8(5), uint8(4) })
+            if (Creature* creature = iconCreature(icon))
+            {
+                next = creature;
+                break;
+            }
+
+    CombatEvent state;
+    state.type = CombatEventType::State;
+    state.source = tank->GetGUID();
+    state.target = next->GetGUID();
+    state.actorEntry = next->GetEntry();
+    state.value = _ccWaitElapsedMs;
+    state.detail = Acore::StringFormat("cc_pull_gate:reason={} icons={} landed={} engaged={} wait_ms={} target={}",
+        reason, ccIcons, ccLanded, engaged, _ccWaitElapsedMs, next->GetGUID().ToString());
+    CombatEventBus::instance().Push(state);
+    LOG_INFO("raidtest", "AttemptRunner: {} elapsed={}ms", state.detail, _preparationElapsed);
+
+    // _ccWaitTarget 留到开怪指令真正发出去（见 TickPrerequisites）再清：拉怪被拒转入接近重试时，
+    // 下一 tick 不能把这组当成新的一组重新进入等待（run393/attempt2 每 tick 重进一次，日志刷屏）。
+    return true;
+}
+
+void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target, float stopDistance)
 {
     if (!target || ctx.bots.empty())
         return;
@@ -1706,8 +1931,25 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
 
     for (auto const& [bot, motion] : validatedMembers)
     {
+        G3D::Vector3 destination(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+        if (stopDistance > 0.0f)
+        {
+            // 沿各自的地面路线往前走，走到「下一个路点距最近的存活前置怪 <= stopDistance」就停在
+            // 当前路点：接近视线，但不进仇恨半径。
+            PathGenerator path(bot);
+            path.CalculatePath(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), false);
+            Movement::PointsArray const& points = path.GetPath();
+            destination = G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+            for (size_t i = 1; i < points.size(); ++i)
+            {
+                if (DistanceToNearestPrerequisite(ctx, Position(points[i].x, points[i].y, points[i].z)) <= stopDistance)
+                    break;
+                destination = points[i];
+            }
+        }
+
         motion->Clear();
-        motion->MovePoint(/*id*/ 0, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(),
+        motion->MovePoint(/*id*/ 0, destination.x, destination.y, destination.z,
                           FORCED_MOVEMENT_NONE, 0.0f, 0.0f, /*generatePath*/ true, /*forceDestination*/ false);
     }
 

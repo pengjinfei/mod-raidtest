@@ -96,6 +96,15 @@ public:
     // 太近、挨打即触发 boss 协助」的房间（奥莫洛克实测 17.1 码即触发，90 毫秒内参战）。
     // 只决定什么时候开怪，不改 bot 的战斗决策、不动仇恨、不削弱 boss。
     float GetPrerequisiteMinBossDistance() const { return _prerequisiteMinBossDistance; }
+    // 清怪控制链的开怪时机门禁（0 = 关闭）。把本次拉怪目标钉在坦克的 "pull target" 上作为
+    // 「准备开这组」的信号，然后最多等这么多秒：等到「已指派的控制图标目标都带上控制光环」
+    // 或「任一前置怪已进战斗」就开怪；坦克没打标记（怪不成组）3 秒后也直接开。
+    // 开怪目标改为队伍骷髅图标所指（没有骷髅时沿用 PrerequisiteSpawns 顺序）。
+    // 同 PrerequisiteMinBossDistance：只决定什么时候开怪、拉哪只，不改 bot 的战斗决策。
+    // 指派、上控、不放 AoE、换目标全部是 mod-playerbots 的事（docs/testing/TRASH-CC-PULL-DESIGN.md）。
+    uint32 GetPrerequisiteCcWaitSeconds() const { return _prerequisiteCcWaitSeconds; }
+    // 每个 attempt 开场前的等待秒数（0 = 关闭）。用于让 bot 的长冷却在连续 attempt 之间复位。
+    uint32 GetAttemptStartDelaySeconds() const { return _attemptStartDelaySeconds; }
     // Optional non-combat route between the preparation point and the first
     // prerequisite pack. Points are traversed in declaration order using mmap
     // pathfinding, never by teleporting through dungeon geometry.
@@ -118,6 +127,8 @@ protected:
     Position _prerequisitePoint{};
     uint32 _prerequisiteTimeoutSeconds{180};
     float _prerequisiteMinBossDistance{0.0f};
+    uint32 _prerequisiteCcWaitSeconds{0};
+    uint32 _attemptStartDelaySeconds{0};
     std::vector<Position> _navigationWaypoints;
     uint32 _navigationTimeoutSeconds{60};
     bool _navigationOnly{false};

@@ -215,7 +215,20 @@ bool CombatTrigger::BeginPullForAll(std::vector<Player*> const& bots, Creature* 
         }
 
         RaidPullAction pull(botAI);
-        bool const initiated = pull.Attack(boss);
+        bool initiated = pull.Attack(boss);
+        if (!initiated)
+        {
+            // 与 BeginAssistForAll 同一判据：AttackAction 对「已在攻击相同目标」按设计返回 false。
+            // 清怪控制链里这是常态——上控把这组拉进战斗后，bot 自己的战斗引擎已经锁定了骷髅，
+            // 编排层再下达同一目标不算失败（run393/attempt2 因此把一次正常开怪循环误判为拉怪被拒）。
+            Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+            if (current == boss && bot->GetVictim() == boss)
+            {
+                LOG_INFO("raidtest", "CombatTrigger::BeginPullForAll: bot {} already attacking {}",
+                    bot->GetName(), boss->GetName());
+                initiated = true;
+            }
+        }
         if (!initiated)
         {
             if (bot == leader)

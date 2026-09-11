@@ -340,6 +340,16 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 _prerequisiteMinBossDistance < 0.0f || _prerequisiteMinBossDistance > 200.0f)
                 failed = true;
         }
+        else if (key == "AttemptStartDelaySeconds")
+        {
+            if (!ParseUint32(value, _attemptStartDelaySeconds) || _attemptStartDelaySeconds > 300)
+                failed = true;
+        }
+        else if (key == "PrerequisiteCcWaitSeconds")
+        {
+            if (!ParseUint32(value, _prerequisiteCcWaitSeconds) || _prerequisiteCcWaitSeconds > 60)
+                failed = true;
+        }
         else if (key == "NavigationTimeoutSeconds")
         {
             if (!ParseUint32(value, _navigationTimeoutSeconds) || !_navigationTimeoutSeconds ||

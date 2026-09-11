@@ -27,15 +27,31 @@ DungeonDifficulty = heroic
 Strategy = wotlk-nex
 RosterFile = "mod-raidtest-roster-normal5-v1.conf"
 GearProfile = none
-EngageX = 519.0
-EngageY = 110.0
+EngageX = 509.0
+EngageY = 62.0
 EngageZ = -16.04
 EngageO = 4.71
 TimeoutSeconds = 60
 EngageTrigger = pull
 PrerequisiteSpawns = 126470,126465,126456,126464
-PreparationX = 519.0
-PreparationY = 110.0
+PreparationX = 509.0
+PreparationY = 62.0
 PreparationZ = -16.04
 PreparationO = 4.71
 PrerequisiteTimeoutSeconds = 180
+
+# 准备点从 (519,110) 改到 (509,62)（2026-09-11）：(519,110) 距最近守卫只有 17.0 码，在 20 码仇恨
+# 半径之内，上控前任何一点走动/转身都会把这组拉起来（run393 attempt1 在 0.47 秒、attempt2 在
+# 5.2 秒「pack_engaged」，控制还没放出去）。北侧走廊 x∈[515,527]、y∈[116,121] 对守卫全部**无视线**
+# （run394 与 probe-cc-l1…l5 实测，`raidtest los` 探针同样结论）。西北侧 (509,116) 有视线且距离够，
+# 但施法怪会朝远离队伍的方向后撤 = 朝 boss 房间退，run402 五场里三场把泰蕾斯特拉拉进来。
+# (509,62) 在守卫西南：对四只守卫都有视线；距守卫 25.8 码、距 boss 30.6 码、距东南下一组 39 码；
+# 怪后撤方向是东北（远离 boss）。vmap 地面 -16.12。两只治疗（变形术/妖术目标）在 30 码施法距离内。
+#
+# 清怪控制链的开怪门禁（2026-09-11，docs/testing/TRASH-CC-PULL-DESIGN.md）：拉怪目标先钉给坦克当信号，
+# 最多等 25 秒让盗贼闷棍（潜行走 22 码约 9 秒）→ 法师羊/萨满妖术落地，再对坦克标的骷髅开怪。0 = 关闭。
+PrerequisiteCcWaitSeconds = 25
+
+# 连续 attempt 之间等 40 秒再开场，让妖术（45 秒冷却）复位；run402/403 里妖术 49 次因冷却放不出来，
+# 那是测试床每场只隔 25–40 秒的伪影，正常副本两组怪之间不会这么快。
+AttemptStartDelaySeconds = 40
