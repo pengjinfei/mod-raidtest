@@ -1612,15 +1612,22 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     {
         float const required = ctx.scenario->GetPrerequisiteMinBossDistance();
         ResolveBoss(ctx);
-        // 量的是「这只前置怪离**最近的活着的副本 boss**多远」，不只是场景 boss：链式场景里
-        // 场景 boss 是凯利丝塔萨，奥莫洛克的守卫组要防的却是奥莫洛克本人（17.1 码即协助参战）。
+        // 量的是前置怪离哪个 boss 多远：默认场景 boss；设了 PrerequisiteMinBossDistanceBossEntry 就量
+        // 那个 entry 的 boss（链式场景里场景 boss 是凯利丝塔萨，奥莫洛克的守卫组要防的是奥莫洛克本人）。
+        // 不能量「最近的任何 boss」：泰蕾斯特拉的守卫本来就站在她 18–22 码内且她不会协助参战，
+        // run410 那样量会让链式第一组永远等不到开怪（1500 秒清怪超时）。
         Creature* nearestBoss = nullptr;
-        if (Map* map = next->GetMap())
-            for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
-                if (creature && creature != next && creature->IsAlive() && creature->IsDungeonBoss() &&
-                    !creature->IsInCombat() &&
-                    (!nearestBoss || next->GetDistance(creature) < next->GetDistance(nearestBoss)))
-                    nearestBoss = creature;
+        if (uint32 const bossEntry = ctx.scenario->GetPrerequisiteMinBossDistanceBossEntry())
+        {
+            if (Map* map = next->GetMap())
+                for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
+                    if (creature && creature->IsAlive() && !creature->IsInCombat() &&
+                        (creature->GetEntry() == bossEntry || creature->GetOriginalEntry() == bossEntry) &&
+                        (!nearestBoss || next->GetDistance(creature) < next->GetDistance(nearestBoss)))
+                        nearestBoss = creature;
+        }
+        else if (ctx.boss && ctx.boss->IsAlive() && !ctx.boss->IsInCombat())
+            nearestBoss = ctx.boss;
         if (nearestBoss)
         {
             float const bossDistance = next->GetDistance(nearestBoss);

@@ -48,5 +48,7 @@ PrerequisiteTimeoutSeconds = 1500
 # ——(519,110) 距最近守卫 17 码在仇恨半径内，北侧走廊无视线，西北侧会让施法怪朝 boss 后撤。
 # (509,62) 对四只守卫都有视线、距守卫 25.8 码、距泰蕾斯特拉 30.6 码（`raidtest los` 探针实测）。
 PrerequisiteCcWaitSeconds = 25
-# 链式里奥莫洛克的守卫组距他 17.1 码即协助参战；门禁量的是前置怪到最近活着的副本 boss 的距离。
+# 链式里奥莫洛克的守卫组距他 17.1 码即协助参战；门禁只量到奥莫洛克(26794)——泰蕾斯特拉的守卫本来就站在她
+# 18–22 码内且她不会协助，量「最近的 boss」会让第一组永远等不到开怪（run410 清怪 1500 秒超时）。
 PrerequisiteMinBossDistance = 24.0
+PrerequisiteMinBossDistanceBossEntry = 26794

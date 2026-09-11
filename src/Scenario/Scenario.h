@@ -105,6 +105,8 @@ public:
     uint32 GetPrerequisiteCcWaitSeconds() const { return _prerequisiteCcWaitSeconds; }
     // 每个 attempt 开场前的等待秒数（0 = 关闭）。用于让 bot 的长冷却在连续 attempt 之间复位。
     uint32 GetAttemptStartDelaySeconds() const { return _attemptStartDelaySeconds; }
+    // PrerequisiteMinBossDistance 量到哪个 boss：0 = 场景 boss；否则是该 creature entry（普通或英雄 entry 皆可）。
+    uint32 GetPrerequisiteMinBossDistanceBossEntry() const { return _prerequisiteMinBossDistanceBossEntry; }
     // Optional non-combat route between the preparation point and the first
     // prerequisite pack. Points are traversed in declaration order using mmap
     // pathfinding, never by teleporting through dungeon geometry.
@@ -129,6 +131,7 @@ protected:
     float _prerequisiteMinBossDistance{0.0f};
     uint32 _prerequisiteCcWaitSeconds{0};
     uint32 _attemptStartDelaySeconds{0};
+    uint32 _prerequisiteMinBossDistanceBossEntry{0};
     std::vector<Position> _navigationWaypoints;
     uint32 _navigationTimeoutSeconds{60};
     bool _navigationOnly{false};
