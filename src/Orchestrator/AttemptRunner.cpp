@@ -1815,6 +1815,10 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
         Creature* creature = map->GetCreature(guid);
         if (!creature || !creature->IsAlive() || HasIncapacitatingAura(creature))
             continue;
+        // 链式场景里 boss 也在前置列表里：小怪还活着时绝不能把 boss 当兜底目标
+        //（run411：骷髅缺席，兜底顺着列表拉到了泰蕾斯特拉）。
+        if (creature->IsDungeonBoss())
+            continue;
         bool ccIcon = false;
         for (uint8 icon : { uint8(4), uint8(5), uint8(6) })
             if (group->GetTargetIcon(icon) == guid)
@@ -1827,11 +1831,13 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
         }
         else if (!looseTarget)
             looseTarget = creature;
-        if (creature->IsInCombat())
+        // 「进战斗」只看这一组附近的：链式列表里还有别的房间的怪和 boss，它们的战斗状态与这组无关。
+        if (creature->IsInCombat() && creature->GetDistance(next) <= 40.0f)
             engaged = true;
     }
     if (!looseTarget)
         looseTarget = pendingCcTarget;
+    // 只剩 boss 时 looseTarget 为空，下面会沿用 next（就是那个 boss，且门禁本来就不对 boss 生效）。
 
     char const* reason = nullptr;
     if (ccIcons && ccLanded == ccIcons)
