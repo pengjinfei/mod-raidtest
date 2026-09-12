@@ -53,6 +53,8 @@ public:
     static bool ResetInstance(RunContext& ctx);
     // 取该 spawn 在本实例里活着的那只；没有就按原始数据库 spawn 重新载入（失败返回 nullptr）。
     static Creature* ResolveOrRestoreSpawn(Map* map, uint32 spawnId);
+    // 只查不恢复：校验趟用它，避免把「已经没了」掩盖成「又摆了一只」。
+    static Creature* FindSpawnInStore(Map* map, uint32 spawnId);
     static void RestoreRoster(RunContext& ctx);
 
 private:
@@ -139,6 +141,10 @@ private:
     // 幂等：已经不可选中（用过或 boss 未死）的直接跳过。每个结果都写入 raidtest_events。
     void UsePrerequisiteGameObjects(RunContext& ctx);
     uint32 _interruptWatchElapsedMs{0};
+    // 清怪期间 boss 从地图上消失了多久。带 CREATURE_FLAG_EXTRA_HARD_RESET 的 boss
+    // 脱战一次就会被 DespawnOnEvade() 下线，默认 20 秒后以新对象重生，缓存的
+    // bossGuid 会悬垂——这是正常复位，不该立刻判尝试失败。
+    uint32 _bossAbsentMs{0};
 
     Stage _stage{Stage::Idle};
     PullStep _pullStep{PullStep::FindBoss};

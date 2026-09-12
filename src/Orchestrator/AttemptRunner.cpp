@@ -31,6 +31,7 @@
 #include <cmath>
 #include <limits>
 #include <sstream>
+#include <vector>
 
 namespace
 {
@@ -85,6 +86,9 @@ namespace
     // 占位行 INSERT 等队列排空的真实时间预算。空载世界循环可远快于 100ms/tick；
     // 因而不能以 tick 数当作 12 秒，否则只会在约 120ms 就误报 DB 卡死。
     constexpr uint32 kAttemptRowResolveMs = 12000;
+    // 清怪期间容忍 boss 缺席多久。带 CREATURE_FLAG_EXTRA_HARD_RESET 的 boss 被
+    // DespawnOnEvade() 下线后默认 20 秒重生（Creature.h），给到 30 秒留余量。
+    constexpr uint32 kBossAbsentBudgetMs = 30000;
     // 队列排空 ≠ 提交完成：async DB worker 把消息从队首取出后、在连接上 commit
     // 完成之前 QueueSize() 已为 0；紧接的同步 SELECT（另一连接）会抢跑读空 ——
     // Task 8 验收 run 4 实机复现：占位 INSERT 已落下、read-back 却返回空，attempt
@@ -146,6 +150,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _navigationComplete = false;
     _navigationFailure.clear();
     _prerequisitePullSent = false;
+    _bossAbsentMs = 0;
     _ccWaitTarget.Clear();
     _ccWaitElapsedMs = 0;
     _ccFirstPullDone = false;
@@ -1025,7 +1030,9 @@ Creature* AttemptRunner::FindBossNear(RunContext const& ctx)
 
 // 按 spawnId 取一只活着的 creature：先看实例里现成的，没有就按原始数据库 spawn 重新载入。
 // 两处调用——reset 开始时，以及 EnterEvadeMode 触发 HARD_RESET 下线之后。
-Creature* AttemptRunner::ResolveOrRestoreSpawn(Map* map, uint32 spawnId)
+// 只在实例里查该 spawn 当前活着的那一只，**不恢复**。校验趟与「先 evade」趟用它，
+// 免得把「其实已经没了」掩盖成「我又给你摆了一只」。
+Creature* AttemptRunner::FindSpawnInStore(Map* map, uint32 spawnId)
 {
     if (!map)
         return nullptr;
@@ -1034,6 +1041,17 @@ Creature* AttemptRunner::ResolveOrRestoreSpawn(Map* map, uint32 spawnId)
     for (auto it = bounds.first; it != bounds.second; ++it)
         if (it->second && it->second->IsAlive() && it->second->IsInWorld())
             return it->second;
+
+    return nullptr;
+}
+
+Creature* AttemptRunner::ResolveOrRestoreSpawn(Map* map, uint32 spawnId)
+{
+    if (!map)
+        return nullptr;
+
+    if (Creature* live = FindSpawnInStore(map, spawnId))
+        return live;
 
     // LoadCreatureFromDB with allowDuplicate=false safely removes old corpses.
     // Clear the saved timer first, otherwise the original spawn loads dead.
@@ -1088,9 +1106,10 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
     if (error || !snapshot)
         return false;
     snapshot << "spawn\tentry\tguid\thealth\tmax_health\tcombat\tmap\tinstance\tdifficulty\tx\ty\tz\n";
-    bool found = false;
-    bool valid = true;
-    uint32 restoredPrerequisites = 0;
+
+    // 本场景范围内的 spawn（boss + 前置怪 + kill gate），按 spawnId 升序固定顺序，
+    // 免得 GetAllCreatureData 的容器序让每次 attempt 走不同路径、难以复现。
+    std::vector<uint32> targets;
     for (auto const& [spawnId, data] : sObjectMgr->GetAllCreatureData())
     {
         if (data.mapid != map->GetId() ||
@@ -1098,36 +1117,58 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
             !(data.spawnMask & (1u << map->GetSpawnMode())))
             continue;
         map->LoadGrid(data.posX, data.posY);
+        targets.push_back(spawnId);
+    }
+    std::sort(targets.begin(), targets.end());
+
+    // ---- 第一趟：只做 evade，让副本脚本的连锁反应一次跑完 ----
+    // 单趟「evade 完立刻清理」的写法在实例脚本把多只怪的 evade 互相串联时收敛不了。
+    // 艾卓-尼鲁布是典型：instance_azjol_nerub::OnCreatureEvade 里，
+    // 任一守望者 evade -> 门卫克里克希尔 evade -> 对三组守望者 DespawnFormation()，
+    // 于是每处理一只就把别的打下去，等走到开怪阶段 boss 已经不在地图上
+    // （run431 是 5/5 场 "boss not found on map"）。
+    // 这一趟只对「当前确实在场且活着」的目标下 evade，不顺手恢复——恢复完马上又会被
+    // 下一只的 evade 打掉，纯属空转。恢复统一放到第二趟。
+    for (uint32 spawnId : targets)
+    {
+        Creature* live = FindSpawnInStore(map, spawnId);
+        if (!live || !live->AI())
+            continue;
+        // 只对**确实需要复位**的目标下 evade。带 CREATURE_FLAG_EXTRA_HARD_RESET 的 boss
+        // 会在 CreatureAI::EnterEvadeMode 末尾被 DespawnOnEvade() 下线，并压一个
+        // 默认 20 秒的重生（Creature.h: DespawnOnEvade(Seconds respawnDelay = 20s)）。
+        // 对一只本来就满血、不在战斗的 boss 调用它纯属自找麻烦：它会在清怪进行到一半时
+        // 突然消失，而这正是 run433/434 的 "boss missing" 作废原因。
+        if (live->IsInCombat() || live->IsInEvadeMode() || !live->IsAlive() ||
+            live->GetHealth() != live->GetMaxHealth())
+            live->AI()->EnterEvadeMode();
+    }
+
+    bool valid = true;
+
+    // ---- 第二趟：逐个恢复到起点并清干净 ----
+    // 到这里连锁反应已经跑完，不会再有「刚摆好就被别人打掉」的情况。
+    for (uint32 spawnId : targets)
+    {
+        auto const* data = sObjectMgr->GetCreatureData(spawnId);
+        if (!data)
+        {
+            valid = false;
+            continue;
+        }
+        // 带 CREATURE_FLAG_EXTRA_HARD_RESET(0x80000000) 的 boss 会在
+        // CreatureAI::EnterEvadeMode 末尾被 DespawnOnEvade() 直接下线
+        // （CreatureAI.cpp 的「despawn bosses at reset」分支）。第一趟之后它多半已经不在场，
+        // 这里按原始数据库 spawn 重新载入。艾卓-尼鲁布的克里克希尔与哈多诺克斯、
+        // 安卡赫特的耶戈达与沃拉兹都带这个标志；UK 与魔枢的 boss 一个都不带，
+        // 所以直到换第三个副本才暴露。
+        // 这不是绕过机制：只是把怪按原始数据库 spawn 摆回起点，与核心 evade 后
+        // 自己会做的重生同义，战斗仍然照常规则进行。
         Creature* alive = ResolveOrRestoreSpawn(map, spawnId);
         if (!alive)
         {
             valid = false;
             continue;
-        }
-        if (alive->AI())
-            alive->AI()->EnterEvadeMode();
-        // 带 CREATURE_FLAG_EXTRA_HARD_RESET(0x80000000) 的 boss 会在
-        // CreatureAI::EnterEvadeMode 末尾被 DespawnOnEvade() 直接下线
-        // （CreatureAI.cpp 的「despawn bosses at reset」分支）。此时手上的指针已经是
-        // 一只被移出世界的尸体，后面的回满血/清战斗全作用在废对象上，干净检查必然失败
-        // （现象：alive=false、death_state=2、血量却是满的，因为 SetFullHealth 更早执行）。
-        // 艾卓-尼鲁布的克里克希尔与哈多诺克斯、安卡赫特的耶戈达与沃拉兹都带这个标志；
-        // UK 与魔枢的 boss 一个都不带，所以直到换第三个副本才暴露。
-        // 这不是绕过机制：只是把 boss 按原始数据库 spawn 重新摆回起点，与 evade 后
-        // 核心自己会做的重生同义，战斗仍然照常规则进行。
-        if (!alive->IsAlive() || !alive->IsInWorld())
-        {
-            Creature* replacement = ResolveOrRestoreSpawn(map, spawnId);
-            if (!replacement)
-            {
-                LOG_ERROR("raidtest", "AttemptRunner: spawn {} despawned by hard reset and could not be "
-                    "reloaded in instance {}", spawnId, map->GetInstanceId());
-                valid = false;
-                continue;
-            }
-            LOG_INFO("raidtest", "AttemptRunner: spawn {} was hard-reset on evade - reloaded as guid {}",
-                spawnId, replacement->GetGUID().ToString());
-            alive = replacement;
         }
         alive->RemoveAllAuras();
         alive->SetFullHealth();
@@ -1137,13 +1178,31 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
         alive->GetMotionMaster()->MoveTargetedHome();
         if (!prerequisites.empty())
         {
-            alive->NearTeleportTo(data.posX, data.posY, data.posZ, data.orientation);
+            alive->NearTeleportTo(data->posX, data->posY, data->posZ, data->orientation);
             if (alive->AI())
                 alive->AI()->Reset();
         }
-        if (prerequisites.count(spawnId))
-            ++restoredPrerequisites;
-        snapshot << spawnId << '\t' << data.id << '\t' << alive->GetGUID().ToString() << '\t'
+    }
+
+    // ---- 第三趟：只读校验 + 落快照 ----
+    // 单独一趟，是因为第二趟里某只怪的 AI()->Reset() 仍可能动到别的怪
+    // （克里克希尔的 Reset 会对三组守望者 RespawnFormation）。逐只清完就地判定，
+    // 判过的可能在后面又被改脏而没人发现；这里等全部改动落定后再统一读一次。
+    // 本趟**不做恢复**：如果到这一步还有缺的或不干净的，那就是真的没收敛，要如实报错。
+    bool found = false;
+    uint32 restoredPrerequisites = 0;
+    for (uint32 spawnId : targets)
+    {
+        auto const* data = sObjectMgr->GetCreatureData(spawnId);
+        Creature* alive = FindSpawnInStore(map, spawnId);
+        if (!data || !alive)
+        {
+            LOG_ERROR("raidtest", "AttemptRunner: spawn {} missing from instance {} after reset",
+                spawnId, map->GetInstanceId());
+            valid = false;
+            continue;
+        }
+        snapshot << spawnId << '\t' << data->id << '\t' << alive->GetGUID().ToString() << '\t'
             << alive->GetHealth() << '\t' << alive->GetMaxHealth() << '\t' << alive->IsInCombat() << '\t'
             << map->GetId() << '\t' << map->GetInstanceId() << '\t' << uint32(map->GetDifficulty()) << '\t'
             << alive->GetPositionX() << '\t' << alive->GetPositionY() << '\t' << alive->GetPositionZ() << '\n';
@@ -1156,12 +1215,16 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
                 alive->IsInCombat(), alive->GetHealth(), alive->GetMaxHealth(),
                 uint32(alive->getDeathState()));
             valid = false;
+            continue;
         }
+        if (prerequisites.count(spawnId))
+            ++restoredPrerequisites;
+        if (data->id == bossEntry)
+            found = true;
         LOG_INFO("raidtest", "AttemptRunner: clean boss spawn {} in instance {} guid {}",
             spawnId, map->GetInstanceId(), alive->GetGUID().ToString());
-        if (data.id == bossEntry)
-            found = true;
     }
+
     ctx.bossGuid.Clear();
     ctx.boss = nullptr;
     snapshot.flush();
@@ -1631,9 +1694,45 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
         Abort("prerequisite_failed: group lost");
         return;
     }
-    if (!ctx.boss || !ctx.boss->IsAlive() || ctx.boss->IsInCombat())
+    // 带 CREATURE_FLAG_EXTRA_HARD_RESET 的 boss（艾卓-尼鲁布的克里克希尔与哈多诺克斯、
+    // 安卡赫特的耶戈达与沃拉兹…）只要脱战一次，CreatureAI::EnterEvadeMode 末尾的
+    // DespawnOnEvade() 就会把它下线，核心默认 20 秒后重新生成一只**新对象、新 GUID**。
+    // FindBoss 阶段缓存的 ctx.bossGuid 会就此悬垂。这在游戏里是正常的 boss 复位，
+    // 不是尝试失败：按 entry 重新寻址即可；一时找不到就给它重生的时间，
+    // 超过预算才判失败（清怪本身照常进行，下面的逻辑不依赖 ctx.boss）。
+    if (!ctx.boss)
     {
-        if (ctx.boss)
+        if (Creature* rebound = FindBossNear(ctx))
+        {
+            LOG_INFO("raidtest", "AttemptRunner: boss re-resolved during prerequisite clearing "
+                "{} -> {} (absent {}ms)", ctx.bossGuid.ToString(), rebound->GetGUID().ToString(),
+                _bossAbsentMs);
+            ctx.bossGuid = rebound->GetGUID();
+            ctx.boss = rebound;
+            _bossAbsentMs = 0;
+        }
+        else
+        {
+            _bossAbsentMs += diff;
+            if (_bossAbsentMs < kBossAbsentBudgetMs)
+            {
+                // 还在重生窗口内：这一 tick 不做 boss 判定，清怪照常继续
+                // （下面的清怪逻辑只在 PrerequisiteMinBossDistance 那处用 ctx.boss，且已判空）。
+            }
+            else
+            {
+                LOG_ERROR("raidtest", "AttemptRunner: boss entry {} absent from instance for {}ms "
+                    "during prerequisite clearing (last guid {})", ctx.scenario->GetBossEntry(),
+                    _bossAbsentMs, ctx.bossGuid.ToString());
+                Abort("prerequisite_invalid: boss missing or engaged before clearing completed");
+                return;
+            }
+        }
+    }
+    else
+        _bossAbsentMs = 0;
+    if (ctx.boss && (!ctx.boss->IsAlive() || ctx.boss->IsInCombat()))
+    {
         {
             CombatEvent state;
             state.type = CombatEventType::State;
