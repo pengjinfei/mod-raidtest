@@ -71,6 +71,9 @@ public:
     std::string const& GetStrategy() const { return _strategy; }
 
     std::vector<uint32> const& GetPrerequisiteSpawns() const { return _prerequisiteSpawns; }
+    // 分段夹具：attempt 开场时把这些 spawn 直接移除（模拟「前面阶段已经打完」）。这是**隔离形态**，
+    // 用它跑出来的结论只能记「该阶段单独可过」，不能记整本正常规则通关（参照 heroic-uk-ingvar-disc 的口径）。
+    std::vector<uint32> const& GetFixtureDespawnSpawns() const { return _fixtureDespawnSpawns; }
     // 清怪全部完成后要「使用」的 gameobject 生成点（gameobject.guid）。用于副本自身的
     // 进度门禁：魔枢的三个封印球体（188526/188527/188528）必须被使用，
     // DATA_*_ORB 才会置 DONE，凯利丝塔萨的冰冻牢笼才会解除。
@@ -120,6 +123,7 @@ public:
 
 protected:
     std::vector<uint32> _prerequisiteSpawns;
+    std::vector<uint32> _fixtureDespawnSpawns;
     std::vector<uint32> _prerequisiteGameObjects;
     uint32 _killGateSpawn{0};
     Position _preparationPoint{};

@@ -1,6 +1,9 @@
 # 链式分段 3（2026-09-12）：从阿诺姆鲁斯房间出发，自主走到奥莫洛克的守卫组（元素，只能妖术）并打奥莫洛克。
 # BossEntry 同样用凯利丝塔萨(26723) 占位收尾。准备点 = anomalus-n5 的 boss 开怪点，
 # 前置 = 4 只守卫 + 奥莫洛克（走 391 码）。守卫距奥莫洛克 17.1 码即协助参战，门禁只量到奥莫洛克(26794)。
+# 隔离形态：开场移除阿诺姆鲁斯 + 他房间口的 2 只法力幼龙（FixtureDespawnSpawns），模拟「前一阶段已打完」。
+# 新实例里它们本来都活着——run415/416 直接传到 boss 脚边被打死。用本场景得出的结论只能记
+# 「该阶段单独可过」，不能记整本正常规则通关。
 [Scenario]
 MapId = 576
 BossEntry = 26723
@@ -24,3 +27,4 @@ PrerequisiteTimeoutSeconds = 900
 PrerequisiteCcWaitSeconds = 25
 PrerequisiteMinBossDistance = 24.0
 PrerequisiteMinBossDistanceBossEntry = 26794
+FixtureDespawnSpawns = 126599,126595,126598

@@ -307,6 +307,19 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _prerequisiteSpawns.push_back(spawn);
             }
         }
+        else if (key == "FixtureDespawnSpawns")
+        {
+            std::set<uint32> seenDespawn;
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                uint32 spawn = 0;
+                if (!ParseUint32(Acore::String::Trim(std::string(token)), spawn) || !spawn ||
+                    !seenDespawn.insert(spawn).second)
+                    failed = true;
+                else
+                    _fixtureDespawnSpawns.push_back(spawn);
+            }
+        }
         else if (key == "PrerequisiteGameObjects")
         {
             std::set<uint32> seenGameObjects;

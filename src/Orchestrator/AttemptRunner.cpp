@@ -566,6 +566,32 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             _observer.Reset();
             ctx.attemptElapsedMs = 0;
 
+            // 分段夹具（FixtureDespawnSpawns）：把「前面阶段已经打完」的 boss/怪直接移除，只为把链式
+            // 拆成可以单独反复跑的阶段。这是隔离形态：写入事件流，结论口径必须跟着降级。
+            if (!ctx.scenario->GetFixtureDespawnSpawns().empty())
+            {
+                Map* map = ctx.bots.front()->GetMap();
+                for (uint32 spawn : ctx.scenario->GetFixtureDespawnSpawns())
+                {
+                    auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawn);
+                    std::vector<Creature*> victims;
+                    for (auto it = bounds.first; it != bounds.second; ++it)
+                        if (it->second)
+                            victims.push_back(it->second);
+                    for (Creature* creature : victims)
+                    {
+                        CombatEvent state;
+                        state.type = CombatEventType::State;
+                        state.source = creature->GetGUID();
+                        state.actorEntry = creature->GetEntry();
+                        state.detail = Acore::StringFormat("fixture_despawn=spawn:{} entry:{}", spawn, creature->GetEntry());
+                        CombatEventBus::instance().Push(state);
+                        LOG_INFO("raidtest", "AttemptRunner: {} ({})", state.detail, creature->GetName());
+                        creature->DespawnOrUnsummon();
+                    }
+                }
+            }
+
             // 双 boss：BossEntry 之外第二个必死生成点。解析其 creature 并登记死亡跟踪，
             // 击杀判定与卡壳判定都以此为准（见 AttemptObserver）。gate 是必打目标，
             // 若已因 bots 邻近参战也接受——不因此阻断。

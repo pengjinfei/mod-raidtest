@@ -3,6 +3,9 @@
 # BossEntry 指向被冰冻牢笼锁着的凯利丝塔萨(26723) 当收尾占位（与 telestra-trash 同法）：
 # 前置清完后那次拉怪以 "pull failed (boss not engaged)" 干净结束，不产出凯利丝塔萨结论。
 # 准备点 = telestra-n5 的 boss 开怪点（泰蕾斯特拉平台），前置 = 阿诺姆鲁斯本人（走 407 码）。
+# 隔离形态：开场移除泰蕾斯特拉 + 她的 4 只守卫（FixtureDespawnSpawns），模拟「前一阶段已打完」。
+# 新实例里它们本来都活着——run415/416 直接传到 boss 脚边被打死。用本场景得出的结论只能记
+# 「该阶段单独可过」，不能记整本正常规则通关。
 [Scenario]
 MapId = 576
 BossEntry = 26723
@@ -23,3 +26,4 @@ PreparationY = 89.1
 PreparationZ = -16.04
 PreparationO = 0.0
 PrerequisiteTimeoutSeconds = 900
+FixtureDespawnSpawns = 126480,126470,126465,126456,126464
