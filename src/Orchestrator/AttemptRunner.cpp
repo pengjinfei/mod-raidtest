@@ -51,10 +51,18 @@ namespace
         if (group && sGroupMgr->GetGroupByGUID(group->GetGUID().GetCounter()) != group)
             valid = false;
         bool tankChecked = false;
+        // 清怪期间有人阵亡是战斗结果，不是「队伍没了」：bot 死后会释放灵魂并被传送到墓地，
+        // 那一瞬 IsInWorld() 为假，原来会把整场判成 raid_invalid 作废。
+        // run441 五场全栽在这上面，作废都发生在首个玩家阵亡后 3–33 秒；其中 a3 已经清掉 7/9 只、
+        // 只死 1 人，却在 140.1 秒作废。全队阵亡由 TickPrerequisites 里单独的
+        // none_of(IsAlive) 判成 wipe，不会因为这条放宽而漏掉。
+        bool const clearingPhase = std::string(phase) == "before_pull";
         for (size_t i = 0; i < ctx.bots.size(); ++i)
         {
             Player* bot = ctx.bots[i];
-            if (!bot || !bot->IsInWorld() || !group || bot->GetGroup() != group)
+            bool const deadOrPorting = bot && (!bot->IsAlive() || bot->IsBeingTeleported());
+            bool const inWorldOk = bot && (bot->IsInWorld() || (clearingPhase && deadOrPorting));
+            if (!bot || !inWorldOk || !group || bot->GetGroup() != group)
                 valid = false;
             if (!tankChecked && i < ctx.rosterSlots.size() && ctx.rosterSlots[i].role == "tank")
             {
@@ -145,6 +153,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _teleportSent = false;
     _followersTeleportSent = false;
     _prerequisiteGuids.clear();
+    _prerequisiteSpawnIds.clear();
     _preBossElapsed = _preparationElapsed = _recoveryElapsed = 0;
     _navigationWaypoint = _navigationElapsed = 0;
     _navigationComplete = false;
@@ -676,6 +685,7 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                         return;
                     }
                     _prerequisiteGuids.push_back(unit->GetGUID());
+                    _prerequisiteSpawnIds.push_back(spawn);
                     CombatEventBus::instance().TrackUnit(unit->GetGUID());
                     CombatEvent state;
                     state.type = CombatEventType::State;
@@ -1761,15 +1771,32 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     }
     Map* map = ctx.bots.front()->GetMap();
     Creature* next = nullptr;
-    for (ObjectGuid const& guid : _prerequisiteGuids)
+    for (size_t i = 0; i < _prerequisiteGuids.size(); ++i)
     {
+        ObjectGuid const& guid = _prerequisiteGuids[i];
         if (CombatEventBus::instance().DeathSeen(guid))
             continue;
         Creature* unit = map->GetCreature(guid);
         if (!unit || !unit->IsAlive())
         {
-            Abort("prerequisite_invalid: spawn disappeared without a recorded death");
-            return;
+            // 缓存的 GUID 悬垂不等于这只怪没了。艾卓-尼鲁布的实例脚本只要 boss 或任一守望者
+            // 脱战，就会对三组守望者 DespawnFormation()，核心随后按原 spawn 重新生成——
+            // 同一只怪，新对象新 GUID。认死 GUID 会把这种复位误判成「凭空消失」
+            // （run440：零死亡、第一组已清 2/3，却在 44.5 秒作废）。按 spawnId 重新绑定。
+            uint32 const spawnId = i < _prerequisiteSpawnIds.size() ? _prerequisiteSpawnIds[i] : 0;
+            Creature* rebound = spawnId ? FindSpawnInStore(map, spawnId) : nullptr;
+            if (!rebound)
+            {
+                LOG_ERROR("raidtest", "AttemptRunner: prerequisite spawn {} (guid {}) gone from instance {} "
+                    "without a recorded death", spawnId, guid.ToString(), map->GetInstanceId());
+                Abort("prerequisite_invalid: spawn disappeared without a recorded death");
+                return;
+            }
+            LOG_INFO("raidtest", "AttemptRunner: prerequisite spawn {} re-bound {} -> {} "
+                "(instance script reset the pack)", spawnId, guid.ToString(), rebound->GetGUID().ToString());
+            _prerequisiteGuids[i] = rebound->GetGUID();
+            CombatEventBus::instance().TrackUnit(rebound->GetGUID());
+            unit = rebound;
         }
         if (!next)
             next = unit;
@@ -2067,7 +2094,8 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
     }
     _ccWaitElapsedMs += diff;
 
-    // 只读地看队伍图标：月亮(4)/方块(5)/十字(6) 是控制图标，骷髅(7) 是击杀目标。
+    // 只读地看队伍图标：三角(3)/月亮(4)/方块(5)/十字(6) 是控制图标，骷髅(7) 是击杀目标。
+    // 三角是牧师束缚亡灵——亡灵副本（艾卓-尼鲁布…）里唯一能落地的控制，漏了它门禁就永远等不到。
     Map* map = ctx.bots.front()->GetMap();
     auto iconCreature = [&](uint8 icon) -> Creature*
     {
@@ -2080,7 +2108,7 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
 
     uint32 ccIcons = 0;
     uint32 ccLanded = 0;
-    for (uint8 icon : { uint8(4), uint8(5), uint8(6) })
+    for (uint8 icon : { uint8(3), uint8(4), uint8(5), uint8(6) })
     {
         Creature* creature = iconCreature(icon);
         if (!creature)

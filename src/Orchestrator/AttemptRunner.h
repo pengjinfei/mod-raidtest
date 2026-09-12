@@ -85,6 +85,9 @@ private:
     bool StartBossPull(RunContext& ctx);
     void RecordPhase(char const* phase, uint32 elapsed);
     std::vector<ObjectGuid> _prerequisiteGuids;
+    // 与 _prerequisiteGuids 一一对应的数据库 spawnId。GUID 会变（副本脚本把整组
+    // DespawnFormation 掉之后核心按原 spawn 重新生成的是新对象），spawnId 不会。
+    std::vector<uint32> _prerequisiteSpawnIds;
     uint32 _preBossElapsed{0};
     uint32 _preparationElapsed{0};
     uint32 _recoveryElapsed{0};

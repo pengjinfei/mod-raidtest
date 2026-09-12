@@ -49,3 +49,12 @@ PreparationY = 692.5
 PreparationZ = 775.60
 PreparationO = 4.71
 PrerequisiteTimeoutSeconds = 200
+
+# 清怪控制链门禁（docs/testing/TRASH-CC-PULL-DESIGN.md）。开这个键同时打开两件事：
+#   1. 拉怪被拒时只接近到 kCcApproachDistance = 24 码（仇恨半径之外），不再走到目标脚下。
+#      基线 run436 五场都是纳吉尔组 + 加什拉组共 6 只在 3–5 秒内一起进战斗
+#      （两个守望者相距仅 15.0 码，走到其中一只的近战距离必然进另一组的 21 码仇恨半径），
+#      坦克改为在 24 码外用制裁之手远程开怪，只把目标那一组拉过来。
+#   2. 等控制落地再对骷髅下达开怪。
+# 本副本小怪全是亡灵（type 6），变形/妖术/闷棍都落不下去，唯一有效的是牧师束缚亡灵（三角图标）。
+PrerequisiteCcWaitSeconds = 25
