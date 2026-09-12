@@ -1,0 +1,26 @@
+# 链式分段 3（2026-09-12）：从阿诺姆鲁斯房间出发，自主走到奥莫洛克的守卫组（元素，只能妖术）并打奥莫洛克。
+# BossEntry 同样用凯利丝塔萨(26723) 占位收尾。准备点 = anomalus-n5 的 boss 开怪点，
+# 前置 = 4 只守卫 + 奥莫洛克（走 391 码）。守卫距奥莫洛克 17.1 码即协助参战，门禁只量到奥莫洛克(26794)。
+[Scenario]
+MapId = 576
+BossEntry = 26723
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+TimeoutSeconds = 60
+EngageTrigger = pull
+EngageX = 641.0
+EngageY = -285.0
+EngageZ = -9.13
+EngageO = 4.03
+PrerequisiteSpawns = 126445,126444,126606,126605,126663
+PreparationX = 641.0
+PreparationY = -285.0
+PreparationZ = -9.13
+PreparationO = 4.03
+PrerequisiteTimeoutSeconds = 900
+PrerequisiteCcWaitSeconds = 25
+PrerequisiteMinBossDistance = 24.0
+PrerequisiteMinBossDistanceBossEntry = 26794

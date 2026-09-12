@@ -1,0 +1,25 @@
+# 链式分段 2（2026-09-12）：从泰蕾斯特拉房间出发，自主走到阿诺姆鲁斯并按 boss 流程打他。
+# 用户要求「每个阶段都成功了再串起来」——整条链一次 30 多分钟，失败在后段时前段全白跑。
+# BossEntry 指向被冰冻牢笼锁着的凯利丝塔萨(26723) 当收尾占位（与 telestra-trash 同法）：
+# 前置清完后那次拉怪以 "pull failed (boss not engaged)" 干净结束，不产出凯利丝塔萨结论。
+# 准备点 = telestra-n5 的 boss 开怪点（泰蕾斯特拉平台），前置 = 阿诺姆鲁斯本人（走 407 码）。
+[Scenario]
+MapId = 576
+BossEntry = 26723
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+TimeoutSeconds = 60
+EngageTrigger = pull
+EngageX = 487.0
+EngageY = 89.1
+EngageZ = -16.04
+EngageO = 0.0
+PrerequisiteSpawns = 126599
+PreparationX = 487.0
+PreparationY = 89.1
+PreparationZ = -16.04
+PreparationO = 0.0
+PrerequisiteTimeoutSeconds = 900
