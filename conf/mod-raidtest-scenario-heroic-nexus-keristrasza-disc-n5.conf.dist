@@ -24,3 +24,6 @@ PreparationZ = -15.48
 PreparationO = 3.14
 FixtureBossStates = 5:3,6:3,7:3
 FixtureBossNotify = 1
+
+# 连续场次间等 300 秒：治疗的暗影魔（5 分钟冷却）在 run419 里只在冷却干净的第 1、3 场放出并击杀，未复位的场次全部因治疗没蓝团灭。
+AttemptStartDelaySeconds = 300
