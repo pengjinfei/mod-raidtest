@@ -52,6 +52,4 @@ PrerequisiteTimeoutSeconds = 180
 # 最多等 25 秒让盗贼闷棍（潜行走 22 码约 9 秒）→ 法师羊/萨满妖术落地，再对坦克标的骷髅开怪。0 = 关闭。
 PrerequisiteCcWaitSeconds = 25
 
-# 连续 attempt 之间等 40 秒再开场，让妖术（45 秒冷却）复位；run402/403 里妖术 49 次因冷却放不出来，
-# 那是测试床每场只隔 25–40 秒的伪影，正常副本两组怪之间不会这么快。
-AttemptStartDelaySeconds = 40
+# 冷却由框架在开怪前统一复位（RestoreRoster），不再需要开场等待。

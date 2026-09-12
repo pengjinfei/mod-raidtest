@@ -980,8 +980,12 @@ void AttemptRunner::RestoreRoster(RunContext& ctx)
             if (bot->GetMaxPower(power) > 0)
                 bot->SetPower(power, bot->GetMaxPower(power));
         }
+        // 冷却也一起复位：每场是独立的单元测试，起点应当一致。run419 里牧师的暗影魔（5 分钟冷却）
+        // 只在冷却干净的第 1、3 场放出并击杀，其余三场治疗 60–80 秒没蓝团灭；早前妖术（45 秒）同理。
+        // 与回满血/蓝一样只作用于开怪前，不改战斗中的任何东西。
+        bot->RemoveAllSpellCooldown();
     }
-    LOG_INFO("raidtest", "AttemptRunner: restored {} bot(s) to full health/resources before pull",
+    LOG_INFO("raidtest", "AttemptRunner: restored {} bot(s) to full health/resources and reset cooldowns before pull",
         ctx.bots.size());
 }
 
