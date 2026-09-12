@@ -4,6 +4,7 @@
 #include "ObjectGuid.h"
 #include "RosterBlueprint.h"
 #include "Scenario.h"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,11 @@ struct RunContext
     uint32 kills = 0;
     uint32 wipes = 0;
     uint32 timeouts = 0;
+    // 各 bot 在**本 run 第一场开怪前**身上的长时效增益（>= 30 分钟或永久，且非被动）。
+    // 团灭会把 1 小时团队 buff 全抹掉，恢复步骤原来只回血蓝+复位冷却，于是 bot 只能在
+    // 下一场战斗中补 buff，把开局的 GCD 花光（run430 a2/a3 实测开场四个团队 buff；
+    // a1 buff 还在时没有这个现象）。用它当参照态，之后每场补齐缺的。
+    std::map<ObjectGuid, std::vector<uint32>> startingBuffs;
 
     // ---- 当前 attempt 运行态 ----
     bool attemptRowQueued = false;

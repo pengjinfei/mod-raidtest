@@ -56,6 +56,10 @@ public:
     // 只查不恢复：校验趟用它，避免把「已经没了」掩盖成「又摆了一只」。
     static Creature* FindSpawnInStore(Map* map, uint32 spawnId);
     static void RestoreRoster(RunContext& ctx);
+    // 团灭会抹掉全队的 1 小时团队 buff，而恢复步骤原来只回血蓝+复位冷却，于是 bot 在
+    // 下一场**战斗中**补 buff，把开局最该用来顶坦克的几个 GCD 花光。按 ctx.startingBuffs
+    // （本 run 第一场的长时效增益）当参照态补齐。只作用于开怪前，不改战斗中的任何东西。
+    static void RestoreStartingBuffs(RunContext& ctx);
 
 private:
     enum class Stage : uint8

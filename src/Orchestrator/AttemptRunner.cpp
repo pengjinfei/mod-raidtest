@@ -1000,8 +1000,75 @@ void AttemptRunner::RestoreRoster(RunContext& ctx)
         // 与回满血/蓝一样只作用于开怪前，不改战斗中的任何东西。
         bot->RemoveAllSpellCooldown();
     }
+    RestoreStartingBuffs(ctx);
     LOG_INFO("raidtest", "AttemptRunner: restored {} bot(s) to full health/resources and reset cooldowns before pull",
         ctx.bots.size());
+}
+
+void AttemptRunner::RestoreStartingBuffs(RunContext& ctx)
+{
+    // 只认「长时效」增益：1 小时团队 buff、自身的心灵之火/圣印这类，滤掉各种触发类短 buff
+    // （借时、圣洁、神圣庇护…）与食物/饮料。永久光环 GetMaxDuration() 为 -1，一并算长时效。
+    constexpr int32 kLongBuffMs = 30 * MINUTE * IN_MILLISECONDS;
+    auto isLongBuff = [](Aura const* aura, SpellInfo const* info)
+    {
+        if (!aura || !info || info->IsPassive() || !info->IsPositive())
+            return false;
+        int32 const maxDuration = aura->GetMaxDuration();
+        return maxDuration < 0 || maxDuration >= kLongBuffMs;
+    };
+
+    if (ctx.startingBuffs.empty())
+    {
+        // 本 run 第一场：此刻 bot 刚完成登录/夹具准备、尚未开怪，身上的增益就是参照态。
+        // 第一场本来就没 buff 的话参照态为空，本段之后什么都不做——不会凭空造出 buff。
+        uint32 recorded = 0;
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot || !bot->IsInWorld())
+                continue;
+
+            std::vector<uint32>& ids = ctx.startingBuffs[bot->GetGUID()];
+            for (auto const& applied : bot->GetAppliedAuras())
+            {
+                AuraApplication const* application = applied.second;
+                Aura* aura = application ? application->GetBase() : nullptr;
+                SpellInfo const* info = aura ? aura->GetSpellInfo() : nullptr;
+                if (!isLongBuff(aura, info))
+                    continue;
+                if (std::find(ids.begin(), ids.end(), info->Id) == ids.end())
+                    ids.push_back(info->Id);
+            }
+            recorded += ids.size();
+        }
+        LOG_INFO("raidtest", "AttemptRunner: recorded {} starting buff(s) across {} bot(s) as the "
+            "per-attempt reference state", recorded, ctx.bots.size());
+        return;
+    }
+
+    uint32 reapplied = 0;
+    for (Player* bot : ctx.bots)
+    {
+        if (!bot || !bot->IsInWorld())
+            continue;
+
+        auto const it = ctx.startingBuffs.find(bot->GetGUID());
+        if (it == ctx.startingBuffs.end())
+            continue;
+
+        for (uint32 spellId : it->second)
+        {
+            if (bot->HasAura(spellId))
+                continue;
+            // 直接补光环而不是让 bot 施法：施法要走目标选择、试剂与 GCD，还会因为
+            // 队友距离/视线漏掉人；这里要的是「起点一致」，与上面的回满血蓝同一性质。
+            bot->AddAura(spellId, bot);
+            ++reapplied;
+        }
+    }
+    if (reapplied)
+        LOG_INFO("raidtest", "AttemptRunner: re-applied {} missing starting buff(s) before pull "
+            "(a wipe strips raid buffs; without this the bots re-buff during the next fight)", reapplied);
 }
 
 Creature* AttemptRunner::FindBossNear(RunContext const& ctx)
