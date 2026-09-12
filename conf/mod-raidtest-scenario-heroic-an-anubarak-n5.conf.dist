@@ -7,13 +7,27 @@
 #   战斗中的小怪全是他自己 75%/50%/25% 下潜时召的（守卫 29216 / 毒疗者 29217 /
 #   刺客 / 掷矛者），英雄难度守卫和毒疗者各翻倍；这些本来就在场景里。
 #
-# 准备点 (551, 280, 224.33)：raidtest los 实测地面 224.33，四周 (541..561, 275..285)
-#   全在 223.4–226.0 的平地上，无洞（x=535 那一列 y=275 已经没有地面，别往西放）。
-#   距 boss 31.7 码 > 22 码（82 级 boss 仇恨半径），los=true。
-#   距区间圆心 26.4 码 < 32，仍在战斗区间内。
-# 开怪点 (551, 260, 224.31)：距 boss 11.7 码，los=true。
-#   三扇房间门 (192396/192397/192398) 在 (550.4,254.7,z≈211) 一带，属 DOOR_TYPE_ROOM，
-#   开怪后 5 秒（EVENT_CLOSE_DOORS）才关，准备点→开怪点这一段不会被挡。
+# ⚠️ 坐标是第二版。第一版准备点 (551,280) / 开怪点 (551,260) **都在三扇房间门的北侧**，
+#   而 boss 在南侧（y=248.3）。三扇门 (192396/192397/192398, gameobject_template.type=0 实体门,
+#   Data0=1 初始开启) 在 y≈252.2–256.2，属 DOOR_TYPE_ROOM，开怪 5 秒后关闭。
+#   结果（run430/run443 实测）：坦克与盗贼进到门内打 boss，治疗/法师/萨满留在门外，
+#   门一关就没有视线 —— 治疗的 PartyMemberToHeal 里那条 IsWithinLOSInMap 把坦克过滤掉，
+#   动作退化成对自己施放（日志：target is immuned to spell / target name 全是牧师本人），
+#   于是**治疗满血满蓝空转 90 秒、坦克从满血掉到 0 都没被治疗过一次**。
+#   教训：`raidtest los` 是静态 vmap 探针，**看不到战斗中才关上的门**。
+#   boss 带 DOOR_TYPE_ROOM 门时，准备点与开怪点必须都在 boss 那一侧。
+#
+# ⚠️ 用 `raidtest los` 时必须把**实测地面高度**当 z1 传进去。它是从 z1+2 量视线的，
+#   传一个"向下找地面"的高起点（比如 z1=240 而地面在 223）等于在离地 18 码处量，
+#   墙沿、坑沿全都越过去了，会得到假的 los=true。第二版坐标 (551,224) 就是这么选错的：
+#   地面 221.65 处实测 los=false，5/5 场 pull_rejected（日志 los=false distance=12.88）。
+#
+# 准备点 (527, 248, 224.35)：距 boss 24.0 码 > 22 码（82 级 boss 仇恨半径），
+#   **以 224.35 为 z1 实测 los=true**，在门线（y≈252–256）以南。
+#   距战斗区间圆心 (550.6,253.6) 24.3 码 < 32。
+#   内圈地面 y 240–251 约为 x 527–575，向南收窄；x≤523 没有地面，别再往西。
+#   门内侧距 boss 最远就是 24 码（东西两翼 y=248/251），没有更远的合法点。
+# 开怪点 (543, 248, 223.44)：距 boss 16.0 码，地面高度实测 los=true，同在门线以南。
 #
 # TimeoutSeconds = 480：他有三次下潜，每次最长 60 秒（守卫/毒疗者全死可提前上来），
 #   首轮基线给足，避免把正常时长误记成超时。
@@ -27,13 +41,13 @@ DungeonDifficulty = heroic
 Strategy = wotlk-an
 RosterFile = "mod-raidtest-roster-normal5-v1.conf"
 GearProfile = none
-EngageX = 551.0
-EngageY = 260.0
-EngageZ = 224.31
+EngageX = 543.0
+EngageY = 248.0
+EngageZ = 223.44
 EngageO = 4.71
 TimeoutSeconds = 480
 EngageTrigger = pull
-PreparationX = 551.0
-PreparationY = 280.0
-PreparationZ = 224.33
+PreparationX = 527.0
+PreparationY = 248.0
+PreparationZ = 224.35
 PreparationO = 4.71
