@@ -1896,6 +1896,9 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
         //（run411：骷髅缺席，兜底顺着列表拉到了泰蕾斯特拉）。
         if (creature->IsDungeonBoss())
             continue;
+        // 兜底只在这一组里选：列表里别的房间的怪不算（run414 选到了 373 码外奥莫洛克的守卫，全队跑了一半）。
+        if (creature->GetDistance(next) > 40.0f)
+            continue;
         bool ccIcon = false;
         for (uint8 icon : { uint8(4), uint8(5), uint8(6) })
             if (group->GetTargetIcon(icon) == guid)
