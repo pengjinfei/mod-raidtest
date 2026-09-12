@@ -6,6 +6,7 @@
 #include <string>
 
 class Unit;
+class Map;
 
 // 单次 attempt 的执行器（design §10「传送→开战→轮询判定→记录」的 attempt 内子流程）。
 // 与 RaidTestOrchestrator（run 级状态机）职责分离：
@@ -50,6 +51,8 @@ public:
     //     生者血量——残血入场曾让 boss 白字一刀秒满血池 bot）。
     // 均世界线程非阻塞（transition-time）。
     static bool ResetInstance(RunContext& ctx);
+    // 取该 spawn 在本实例里活着的那只；没有就按原始数据库 spawn 重新载入（失败返回 nullptr）。
+    static Creature* ResolveOrRestoreSpawn(Map* map, uint32 spawnId);
     static void RestoreRoster(RunContext& ctx);
 
 private:

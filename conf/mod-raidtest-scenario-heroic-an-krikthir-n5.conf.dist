@@ -1,0 +1,43 @@
+# 艾卓-尼鲁布（Azjol-Nerub，map 601）英雄：门卫克里克希尔(28684) + 三守望者组，完整遭遇战。
+# 2026-09-12 新建（用户指定的第三个副本）。装备档 normal5-v1（ilvl 上限 187），难度英雄，BotCheats 为空。
+#
+# 场景范围 = 真实遭遇战，未改小：
+#   守望者三组共 9 只（三个守望者各带 2 只随从）是 boss 脚本的一部分，不是普通路怪——
+#   instance_azjol_nerub.cpp 把它们的 evade 和死亡都接到克里克希尔身上
+#   （OnCreatureEvade -> krikthir->EnterEvadeMode；OnUnitDeath -> ACTION_MINION_DIED 触发补招），
+#   boss_krikthir_the_gatewatcher.cpp 又在第一只随从进战斗后 60s/120s 各"派"一批，
+#   英雄 200 秒时 SetInCombatWithZone 亲自下场。所以这 9 只必须清，且清怪有 200 秒硬时限。
+#   走廊更上方的两组（127229/127235/127338 中段、127230/127339 巡逻）不在 boss 脚本里，
+#   属于普通路怪，与魔枢/UK 各场景一样不纳入本场景。
+#
+# 准备点 (528, 690, 775.5)：
+#   - vmap 地面 775.49（raidtest los 实测，大厅 y646–710 是平的，z≈775.4–777.3）
+#   - 距 boss 43.8 码 > 22 码（英雄 82 级 boss 仇恨半径 = detection 20 − (80−82)）
+#   - 距 9 只守望者组 26.4–35.4 码，全部 > 21 码（守望者 81 级 -> 半径 21）——传送进场不会立刻拉怪
+#   - 对 9 只全部 los=true（实测，逐只探过）
+#   - 拉得动：最近的加什拉 26.4 码，靠 AttemptRunner::ApproachPrerequisiteTarget 分批接近
+# 开怪点 (529.6, 656, 776.8)：boss 正北 9.8 码，地面 776.79，对 boss los=true。
+#
+# TimeoutSeconds = 420：首轮基线故意给足，避免把"清 9 只 + 打 boss"的正常耗时误记成超时。
+# PrerequisiteTimeoutSeconds = 200：与 boss 自己的 200 秒（英雄）SetInCombatWithZone 对齐。
+[Scenario]
+MapId = 601
+BossEntry = 28684
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-an
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 529.6
+EngageY = 656.0
+EngageZ = 776.8
+EngageO = 4.71
+TimeoutSeconds = 420
+EngageTrigger = pull
+# 守望者组 9 只（guid）：纳吉尔 12760 / 加什拉 12759 / 斯尔希克 12758 + 各自随从
+PrerequisiteSpawns = 12760,12765,12766,12758,12761,12762,12759,12763,12764
+PreparationX = 528.0
+PreparationY = 690.0
+PreparationZ = 775.5
+PreparationO = 4.71
+PrerequisiteTimeoutSeconds = 200

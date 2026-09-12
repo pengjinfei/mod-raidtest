@@ -106,9 +106,15 @@ Name = "Nfive-Rogue"
 Race = "human"
 Class = "rogue"
 Role = "dps"
-TalentSpec = "rogue_combat"
-Glyphs = 399,468,469,715,467,406
-RequiredSpells = 48638
+TalentSpec = "rogue_assassination"
+# 2026-09-12 用户指定：盗贼由战斗改刺杀。雕文同步换掉两个对刺杀失效的大雕文——
+#   715 Glyph of Killing Spree（剑刃乱舞系 51 点天赋，刺杀没有该技能）-> 733 Glyph of Mutilate
+#   406 Glyph of Rupture（AssassinationRogueStrategy 注册了 rupture 节点但没有触发器，实际不放）-> 791 Glyph of Envenom
+# 保留 399 Glyph of Expose Armor（刺杀策略有 "expose armor" 触发器）与三个通用小雕文。
+# 槽位大小写顺序必须是 major,minor,minor,major,minor,major（PrepareCharacter 会逐槽比对 TypeFlags）。
+# RequiredSpells 加 1329 Mutilate：它由刺杀 31 点天赋授予，是「天赋真的切过去了」的入场证据。
+Glyphs = 399,468,469,733,467,791
+RequiredSpells = 48638,1329
 RequireNoCheats = true
 MinDefenseSkill = 0
 Supplies = 43231,43233,33443

@@ -1,0 +1,39 @@
+# 艾卓-尼鲁布（map 601）英雄：阿努巴拉克(29120)，完整遭遇战。
+# 2026-09-12 新建。装备档 normal5-v1（ilvl 上限 187），难度英雄，BotCheats 为空。
+#
+# 场景范围 = 真实遭遇战，未改小：他没有前置小怪。核心把他的战斗区间限死在
+#   CircleBoundary((550.6,253.6), 32)，走廊里的两只 Anub'ar Prime Guard
+#   (132274/132275, y≈341) 在 92 码外、不在区间内，和魔枢各场景一样属于路怪，不纳入。
+#   战斗中的小怪全是他自己 75%/50%/25% 下潜时召的（守卫 29216 / 毒疗者 29217 /
+#   刺客 / 掷矛者），英雄难度守卫和毒疗者各翻倍；这些本来就在场景里。
+#
+# 准备点 (551, 280, 224.33)：raidtest los 实测地面 224.33，四周 (541..561, 275..285)
+#   全在 223.4–226.0 的平地上，无洞（x=535 那一列 y=275 已经没有地面，别往西放）。
+#   距 boss 31.7 码 > 22 码（82 级 boss 仇恨半径），los=true。
+#   距区间圆心 26.4 码 < 32，仍在战斗区间内。
+# 开怪点 (551, 260, 224.31)：距 boss 11.7 码，los=true。
+#   三扇房间门 (192396/192397/192398) 在 (550.4,254.7,z≈211) 一带，属 DOOR_TYPE_ROOM，
+#   开怪后 5 秒（EVENT_CLOSE_DOORS）才关，准备点→开怪点这一段不会被挡。
+#
+# TimeoutSeconds = 480：他有三次下潜，每次最长 60 秒（守卫/毒疗者全死可提前上来），
+#   首轮基线给足，避免把正常时长误记成超时。
+# ⚠️ 已知易碎点：boss_anubarak.cpp 的 SummonedCreatureEvade 会直接 EnterEvadeMode——
+#   任何一只召唤怪 evade 就整场重置。基线里若出现"打到一半 boss 满血"要往这里查。
+[Scenario]
+MapId = 601
+BossEntry = 29120
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-an
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 551.0
+EngageY = 260.0
+EngageZ = 224.31
+EngageO = 4.71
+TimeoutSeconds = 480
+EngageTrigger = pull
+PreparationX = 551.0
+PreparationY = 280.0
+PreparationZ = 224.33
+PreparationO = 4.71

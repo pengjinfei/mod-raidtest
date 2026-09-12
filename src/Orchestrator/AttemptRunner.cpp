@@ -1023,6 +1023,34 @@ Creature* AttemptRunner::FindBossNear(RunContext const& ctx)
     return best;
 }
 
+// 按 spawnId 取一只活着的 creature：先看实例里现成的，没有就按原始数据库 spawn 重新载入。
+// 两处调用——reset 开始时，以及 EnterEvadeMode 触发 HARD_RESET 下线之后。
+Creature* AttemptRunner::ResolveOrRestoreSpawn(Map* map, uint32 spawnId)
+{
+    if (!map)
+        return nullptr;
+
+    auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
+    for (auto it = bounds.first; it != bounds.second; ++it)
+        if (it->second && it->second->IsAlive() && it->second->IsInWorld())
+            return it->second;
+
+    // LoadCreatureFromDB with allowDuplicate=false safely removes old corpses.
+    // Clear the saved timer first, otherwise the original spawn loads dead.
+    map->RemoveCreatureRespawnTime(spawnId);
+    Creature* restored = new Creature();
+    if (!restored->LoadCreatureFromDB(spawnId, map, true, false))
+    {
+        delete restored;
+        LOG_ERROR("raidtest", "AttemptRunner: failed to restore boss spawn {} in instance {}",
+            spawnId, map->GetInstanceId());
+        return nullptr;
+    }
+    LOG_INFO("raidtest", "AttemptRunner: restored original boss spawn {} in instance {} guid {}",
+        spawnId, map->GetInstanceId(), restored->GetGUID().ToString());
+    return restored;
+}
+
 bool AttemptRunner::ResetInstance(RunContext& ctx)
 {
     if (ctx.bots.empty() || !ctx.bots[0] || !ctx.scenario)
@@ -1070,34 +1098,37 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
             !(data.spawnMask & (1u << map->GetSpawnMode())))
             continue;
         map->LoadGrid(data.posX, data.posY);
-        Creature* alive = nullptr;
-        auto const bounds = map->GetCreatureBySpawnIdStore().equal_range(spawnId);
-        for (auto it = bounds.first; it != bounds.second; ++it)
-            if (it->second && it->second->IsAlive())
-            {
-                alive = it->second;
-                break;
-            }
+        Creature* alive = ResolveOrRestoreSpawn(map, spawnId);
         if (!alive)
         {
-            // LoadCreatureFromDB with allowDuplicate=false safely removes old corpses.
-            // Clear the saved timer first, otherwise the original spawn loads dead.
-            map->RemoveCreatureRespawnTime(spawnId);
-            Creature* restored = new Creature();
-            if (!restored->LoadCreatureFromDB(spawnId, map, true, false))
-            {
-                delete restored;
-                LOG_ERROR("raidtest", "AttemptRunner: failed to restore boss spawn {} in instance {}",
-                    spawnId, map->GetInstanceId());
-                valid = false;
-                continue;
-            }
-            alive = restored;
-            LOG_INFO("raidtest", "AttemptRunner: restored original boss spawn {} in instance {} guid {}",
-                spawnId, map->GetInstanceId(), alive->GetGUID().ToString());
+            valid = false;
+            continue;
         }
         if (alive->AI())
             alive->AI()->EnterEvadeMode();
+        // 带 CREATURE_FLAG_EXTRA_HARD_RESET(0x80000000) 的 boss 会在
+        // CreatureAI::EnterEvadeMode 末尾被 DespawnOnEvade() 直接下线
+        // （CreatureAI.cpp 的「despawn bosses at reset」分支）。此时手上的指针已经是
+        // 一只被移出世界的尸体，后面的回满血/清战斗全作用在废对象上，干净检查必然失败
+        // （现象：alive=false、death_state=2、血量却是满的，因为 SetFullHealth 更早执行）。
+        // 艾卓-尼鲁布的克里克希尔与哈多诺克斯、安卡赫特的耶戈达与沃拉兹都带这个标志；
+        // UK 与魔枢的 boss 一个都不带，所以直到换第三个副本才暴露。
+        // 这不是绕过机制：只是把 boss 按原始数据库 spawn 重新摆回起点，与 evade 后
+        // 核心自己会做的重生同义，战斗仍然照常规则进行。
+        if (!alive->IsAlive() || !alive->IsInWorld())
+        {
+            Creature* replacement = ResolveOrRestoreSpawn(map, spawnId);
+            if (!replacement)
+            {
+                LOG_ERROR("raidtest", "AttemptRunner: spawn {} despawned by hard reset and could not be "
+                    "reloaded in instance {}", spawnId, map->GetInstanceId());
+                valid = false;
+                continue;
+            }
+            LOG_INFO("raidtest", "AttemptRunner: spawn {} was hard-reset on evade - reloaded as guid {}",
+                spawnId, replacement->GetGUID().ToString());
+            alive = replacement;
+        }
         alive->RemoveAllAuras();
         alive->SetFullHealth();
         alive->CombatStop();
@@ -1117,7 +1148,15 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
             << map->GetId() << '\t' << map->GetInstanceId() << '\t' << uint32(map->GetDifficulty()) << '\t'
             << alive->GetPositionX() << '\t' << alive->GetPositionY() << '\t' << alive->GetPositionZ() << '\n';
         if (!alive->IsAlive() || alive->IsInCombat() || alive->GetHealth() != alive->GetMaxHealth())
+        {
+            // 只返回 bool 时无法归因：健康值写进快照，但 IsAlive() 查的是 m_deathState，
+            // SetFullHealth() 并不会把它改回 ALIVE —— 快照"满血"和这里"不算活着"可以同时成立。
+            LOG_ERROR("raidtest", "AttemptRunner: spawn {} not clean after reset - alive={} "
+                "in_combat={} health={}/{} death_state={}", spawnId, alive->IsAlive(),
+                alive->IsInCombat(), alive->GetHealth(), alive->GetMaxHealth(),
+                uint32(alive->getDeathState()));
             valid = false;
+        }
         LOG_INFO("raidtest", "AttemptRunner: clean boss spawn {} in instance {} guid {}",
             spawnId, map->GetInstanceId(), alive->GetGUID().ToString());
         if (data.id == bossEntry)
@@ -1126,7 +1165,13 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
     ctx.bossGuid.Clear();
     ctx.boss = nullptr;
     snapshot.flush();
-    return found && valid && restoredPrerequisites == prerequisites.size() && bool(snapshot);
+    bool const ok = found && valid && restoredPrerequisites == prerequisites.size() && bool(snapshot);
+    if (!ok)
+        LOG_ERROR("raidtest", "AttemptRunner: ResetInstance failed for scenario boss {} on map {} - "
+            "boss_found={} spawns_clean={} prerequisites_restored={}/{} snapshot_ok={}",
+            bossEntry, map->GetId(), found, valid, restoredPrerequisites, prerequisites.size(),
+            bool(snapshot));
+    return ok;
 }
 
 void AttemptRunner::ResolveBoss(RunContext& ctx)

@@ -1,0 +1,41 @@
+# 艾卓-尼鲁布（map 601）英雄：哈多诺克斯(28921)。**隔离形态**——见下面的口径声明。
+# 2026-09-12 新建。装备档 normal5-v1（ilvl 上限 187），难度英雄，BotCheats 为空。
+#
+# ⚠️ 结论口径：**隔离 boss 战，不是正常规则通关**（与 heroic-uk-ingvar-disc 同例）。
+#   完整遭遇战的开场是「打上层平台的粉碎者包」：boss_hadronox.cpp 里
+#   npc_anub_ar_crusher::DoEngagedWith -> hadronox->DoAction(ACTION_CRUSHER_ENGAGED)
+#   才会 SetBossState(IN_PROGRESS)、再召 2/3 号包、并让她按 45s/70s 分三段爬到平台织门。
+#   这三个包是她 Reset() 时 SummonCreatureGroup 出来的**召唤物**，spawnId=0，
+#   而 mod-raidtest 的 PrerequisiteSpawns 只接受数据库 spawn 的 guid
+#   （AttemptRunner 用 map->GetCreatureBySpawnIdStore() 查），**当前框架表达不了**。
+#   所以本场景直接在坑底拉她：她本体的机制（穿刺护甲 53418/吸血毒 53030/酸云 53400/
+#   蛛网猛拉 53406）和三扇门的持续刷怪（世界触发器在 Reset 时就带上了周期召唤光环）都在，
+#   缺的是三个粉碎者包和"她爬上平台"这段。要做完整形态需要先给框架加"按召唤 entry 的前置门禁"。
+#
+# 准备点 (525, 520, 688.0)：raidtest los 实测地面 688.00；坑是一个连续斜面，
+#   相邻 (515,520)=686.5 / (535,520)=690.3 / (525,515)=691.6 / (525,525)=684.6，无洞。
+#   距 boss 2D 25.0 码、z 差 13.5 → 3D 28.4 码 > 22 码（82 级 boss 仇恨半径），传送进场不会拉怪。
+#   ⚠️ 别往 (505,550) / (515,560) 方向放：那里地面骤降到 655.6 / 660.2，是通往下层
+#   （32593 Skittering Swarmer 所在，z 646–657）的落差，魔枢萨满掉坑的同类陷阱。
+# 开怪点 (525, 535, 678.1)：距 boss 2D 10.2 码、z 差 3.6，los=true。
+#
+# 她的战斗区间由核心限死在 ZRangeBoundary(666, 776)（instance_azjol_nerub.cpp），
+# 低于 666 就 evade；准备点与开怪点都在区间内。
+[Scenario]
+MapId = 601
+BossEntry = 28921
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-an
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 525.0
+EngageY = 535.0
+EngageZ = 678.1
+EngageO = 1.57
+TimeoutSeconds = 360
+EngageTrigger = pull
+PreparationX = 525.0
+PreparationY = 520.0
+PreparationZ = 688.0
+PreparationO = 1.57
