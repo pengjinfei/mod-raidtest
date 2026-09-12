@@ -1,0 +1,26 @@
+# 魔枢（The Nexus，map 576）英雄：凯利丝塔萨(26723)，**隔离 boss 战**（2026-09-12）。
+# 用户决定：当前目的是验证 boss 机制，整本全清等机器人自主寻径成熟后再串。所以按台账路线 (b)：
+# 夹具直接把三个球体 ORB 状态置 DONE（FixtureBossStates 5/6/7 = 3），再通知她重算冰冻牢笼（FixtureBossNotify）。
+# 用本场景得出的结论只能记「隔离 boss 战当前配置击杀」，与 heroic-uk-ingvar-disc 同一口径；
+# 完整进度链路见 heroic-nexus-keristrasza-n5（未打通）。装备档位 normal5-v1，boss 英雄，BotCheats 为空。
+# 准备点/开怪点沿用 keristrasza-n5。
+[Scenario]
+MapId = 576
+BossEntry = 26723
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 309.0
+EngageY = -5.5
+EngageZ = -15.48
+EngageO = 3.14
+TimeoutSeconds = 420
+EngageTrigger = pull
+PreparationX = 309.0
+PreparationY = -5.5
+PreparationZ = -15.48
+PreparationO = 3.14
+FixtureBossStates = 5:3,6:3,7:3
+FixtureBossNotify = 1

@@ -320,6 +320,29 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _fixtureDespawnSpawns.push_back(spawn);
             }
         }
+        else if (key == "FixtureBossStates")
+        {
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                std::string const item = Acore::String::Trim(std::string(token));
+                size_t const colon = item.find(':');
+                uint32 id = 0;
+                uint32 state = 0;
+                if (colon == std::string::npos || !ParseUint32(item.substr(0, colon), id) ||
+                    !ParseUint32(item.substr(colon + 1), state) || state > 5)
+                    failed = true;
+                else
+                    _fixtureBossStates.emplace_back(id, state);
+            }
+        }
+        else if (key == "FixtureBossNotify")
+        {
+            uint32 flag = 0;
+            if (!ParseUint32(value, flag) || flag > 1)
+                failed = true;
+            else
+                _fixtureBossNotify = flag == 1;
+        }
         else if (key == "PrerequisiteGameObjects")
         {
             std::set<uint32> seenGameObjects;

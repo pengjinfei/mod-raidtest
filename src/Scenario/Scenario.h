@@ -74,6 +74,11 @@ public:
     // 分段夹具：attempt 开场时把这些 spawn 直接移除（模拟「前面阶段已经打完」）。这是**隔离形态**，
     // 用它跑出来的结论只能记「该阶段单独可过」，不能记整本正常规则通关（参照 heroic-uk-ingvar-disc 的口径）。
     std::vector<uint32> const& GetFixtureDespawnSpawns() const { return _fixtureDespawnSpawns; }
+    // 隔离夹具：开场把副本脚本的 boss 状态直接置位（"<id>:<state>,..."，state 用 EncounterState 数值，DONE = 3），
+    // 并（FixtureBossNotify = 1 时）对场景 boss 调一次 AI()->SetData(entry, 0) 让它重算门禁。
+    // 用于凯利丝塔萨这类「前三个 boss 的球体都用过才放出来」的进度门禁。同样是隔离形态，结论口径降级。
+    std::vector<std::pair<uint32, uint32>> const& GetFixtureBossStates() const { return _fixtureBossStates; }
+    bool GetFixtureBossNotify() const { return _fixtureBossNotify; }
     // 清怪全部完成后要「使用」的 gameobject 生成点（gameobject.guid）。用于副本自身的
     // 进度门禁：魔枢的三个封印球体（188526/188527/188528）必须被使用，
     // DATA_*_ORB 才会置 DONE，凯利丝塔萨的冰冻牢笼才会解除。
@@ -124,6 +129,8 @@ public:
 protected:
     std::vector<uint32> _prerequisiteSpawns;
     std::vector<uint32> _fixtureDespawnSpawns;
+    std::vector<std::pair<uint32, uint32>> _fixtureBossStates;
+    bool _fixtureBossNotify{false};
     std::vector<uint32> _prerequisiteGameObjects;
     uint32 _killGateSpawn{0};
     Position _preparationPoint{};

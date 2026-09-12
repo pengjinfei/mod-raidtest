@@ -8,6 +8,7 @@
 #include <set>
 #include "DatabaseEnv.h"
 #include "InstanceSaveMgr.h"
+#include "InstanceScript.h"
 #include "GameObject.h"
 #include "Group.h"
 #include "GroupMgr.h"
@@ -588,6 +589,39 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                         CombatEventBus::instance().Push(state);
                         LOG_INFO("raidtest", "AttemptRunner: {} ({})", state.detail, creature->GetName());
                         creature->DespawnOrUnsummon();
+                    }
+                }
+            }
+
+            // 隔离夹具（FixtureBossStates）：直接置副本脚本的 boss 状态，模拟「前面的进度已完成」。
+            // 凯利丝塔萨：三个球体 ORB(5/6/7) 置 DONE 后她的 AI 要被 SetData(entry, 0) 一次才重算冰冻牢笼。
+            if (!ctx.scenario->GetFixtureBossStates().empty())
+            {
+                Map* map = ctx.bots.front()->GetMap();
+                InstanceScript* script = map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
+                if (!script)
+                {
+                    Abort("scene_invalid: FixtureBossStates needs an instance script");
+                    return;
+                }
+                for (auto const& [id, state] : ctx.scenario->GetFixtureBossStates())
+                {
+                    script->SetBossState(id, EncounterState(state));
+                    CombatEvent ev;
+                    ev.type = CombatEventType::State;
+                    ev.detail = Acore::StringFormat("fixture_boss_state=id:{} state:{} now:{}", id, state,
+                        uint32(script->GetBossState(id)));
+                    CombatEventBus::instance().Push(ev);
+                    LOG_INFO("raidtest", "AttemptRunner: {}", ev.detail);
+                }
+                if (ctx.scenario->GetFixtureBossNotify())
+                {
+                    ResolveBoss(ctx);
+                    if (ctx.boss && ctx.boss->AI())
+                    {
+                        ctx.boss->AI()->SetData(ctx.boss->GetEntry(), 0);
+                        LOG_INFO("raidtest", "AttemptRunner: fixture_boss_notify entry={} non_attackable={}",
+                            ctx.boss->GetEntry(), ctx.boss->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE));
                     }
                 }
             }
