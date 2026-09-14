@@ -60,11 +60,25 @@ void AttemptObserver::Reset()
 void AttemptObserver::ResolveBoss(RunContext& ctx)
 {
     ctx.boss = nullptr;
-    if (!ctx.bossGuid || ctx.bots.empty() || !ctx.bots[0])
+    if (!ctx.bossGuid || ctx.bots.empty())
         return;
 
-    if (Map* map = ctx.bots[0]->GetMap())
-        ctx.boss = map->GetCreature(ctx.bossGuid);
+    // 不能只看 bots[0]：坦克阵亡释放灵魂后在墓地地图，从它的地图找不到 boss，血量采样就停在旧值，
+    // boss 随后被打死也判不出 Kill（run 451/4、486/2 都记成了 timeout）。用任何一个还在场景地图上的 bot 来找。
+    uint32 const scenarioMap = ctx.scenario ? ctx.scenario->GetMapId() : 0;
+    for (Player* bot : ctx.bots)
+    {
+        if (!bot)
+            continue;
+        Map* map = bot->GetMap();
+        if (!map || (scenarioMap && map->GetId() != scenarioMap))
+            continue;
+        if (Creature* boss = map->GetCreature(ctx.bossGuid))
+        {
+            ctx.boss = boss;
+            return;
+        }
+    }
 }
 
 AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
