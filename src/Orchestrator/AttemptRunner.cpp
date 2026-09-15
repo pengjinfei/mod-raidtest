@@ -999,6 +999,14 @@ void AttemptRunner::RestoreRoster(RunContext& ctx)
         // 只在冷却干净的第 1、3 场放出并击杀，其余三场治疗 60–80 秒没蓝团灭；早前妖术（45 秒）同理。
         // 与回满血/蓝一样只作用于开怪前，不改战斗中的任何东西。
         bot->RemoveAllSpellCooldown();
+
+        // 「用过一次就不能再受益」的跨场 debuff 也要清：它们的时长比一场周期长，等价于没复位的冷却。
+        // 英勇的疲惫 57723 / 嗜血的餍足 57724 都是 10 分钟，而一场 ~260 秒 + 准备 ~60 秒 ≈ 5.3 分钟，
+        // 下一场必然还带着：run 510 第 2、3 场即使打到最后冲刺、触发器亮了，施法也返回
+        // SPELL_FAILED_TARGET_AURASTATE(111)。第二十轮记的「39 场里 13 场整场没放英勇」多半也是它，
+        // 而不是共享层 BoostTrigger 没触发。
+        for (uint32 spellId : { 57723u, 57724u })
+            bot->RemoveAurasDueToSpell(spellId);
     }
     RestoreStartingBuffs(ctx);
     LOG_INFO("raidtest", "AttemptRunner: restored {} bot(s) to full health/resources and reset cooldowns before pull",
