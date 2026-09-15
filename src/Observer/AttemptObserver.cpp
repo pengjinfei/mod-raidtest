@@ -558,13 +558,13 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
             int32 castingLeftMs = 0;
             for (uint8 slot = 0; slot < CURRENT_MAX_SPELL; ++slot)
             {
-                Spell const* spell = member->GetCurrentSpell(static_cast<CurrentSpellTypes>(slot));
+                Spell* spell = member->GetCurrentSpell(static_cast<CurrentSpellTypes>(slot));
                 if (!spell)
                     continue;
                 if (spell->getState() != SPELL_STATE_PREPARING && spell->getState() != SPELL_STATE_CASTING)
                     continue;
                 castingSpell = spell->m_spellInfo ? spell->m_spellInfo->Id : 0;
-                castingLeftMs = spell->GetTimer();
+                castingLeftMs = spell->GetCastTimeRemaining();
                 break;
             }
             resource.detail = Acore::StringFormat(
