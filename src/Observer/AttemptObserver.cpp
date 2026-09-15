@@ -550,11 +550,28 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
             resource.source = member->GetGUID();
             resource.value = static_cast<int32>(member->GetMapId());
             Powers const powerType = member->getPowerType();
+            // 读条占用：`PlayerbotAI::UpdateAI` 在自身施法处于 SPELL_STATE_PREPARING 时
+            // 直接 return，那几个 tick 触发器与动作一个都不求值。run533 的治疗在死前
+            // 4 秒 + 3 秒两段 `no actions executed`，怀疑就是被自己的长读条锁住，
+            // 但现有采样里没有任何字段能把"读条中"和"没事做"区分开。这里只回读现成状态。
+            uint32 castingSpell = 0;
+            int32 castingLeftMs = 0;
+            for (uint8 slot = 0; slot < CURRENT_MAX_SPELL; ++slot)
+            {
+                Spell const* spell = member->GetCurrentSpell(static_cast<CurrentSpellTypes>(slot));
+                if (!spell)
+                    continue;
+                if (spell->getState() != SPELL_STATE_PREPARING && spell->getState() != SPELL_STATE_CASTING)
+                    continue;
+                castingSpell = spell->m_spellInfo ? spell->m_spellInfo->Id : 0;
+                castingLeftMs = spell->GetTimer();
+                break;
+            }
             resource.detail = Acore::StringFormat(
-                "resource:hp={}/{} power_type={} power={}/{} in_combat={} alive={}",
+                "resource:hp={}/{} power_type={} power={}/{} in_combat={} alive={} casting={} left_ms={}",
                 member->GetHealth(), member->GetMaxHealth(), static_cast<uint32>(powerType),
                 member->GetPower(powerType), member->GetMaxPower(powerType), member->IsInCombat(),
-                member->IsAlive());
+                member->IsAlive(), castingSpell, castingLeftMs);
             CombatEventBus::instance().Push(resource);
 
             // 死亡后角色可能已 worldport 到墓地；该位置与上层实例里的临时斧没有
