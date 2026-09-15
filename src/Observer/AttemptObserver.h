@@ -53,6 +53,9 @@ private:
     uint32 _wipeSamples = 0;
     uint32 _timeoutSamples = 0;
     uint32 _abortSamples = 0;
+    // 「有人阵亡 + boss 已脱战回满血 + 残存者也脱战」的连续采样数：这一局已经结束，
+    // 不必空等超时（本会话 5 次 timeout 每次白跑约 200 秒）。
+    uint32 _encounterResetSamples = 0;
     uint32 _lastPositionSampleMs{0};    // 上次位置采样时刻（attemptElapsedMs 口径）
     uint32 _lastTankSampleMs{0};
     uint32 _lastIngvarSmashSampleMs{0};

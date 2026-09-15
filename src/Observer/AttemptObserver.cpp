@@ -41,6 +41,7 @@ void AttemptObserver::Reset()
     _wipeSamples = 0;
     _timeoutSamples = 0;
     _abortSamples = 0;
+    _encounterResetSamples = 0;
     _lastPositionSampleMs = 0;
     _lastTankSampleMs = 0;
     _lastIngvarSmashSampleMs = 0;
@@ -750,6 +751,29 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     }
     else
         _abortSamples = 0;
+
+    // 「已经打输了但还没死光」：有人阵亡、boss 脱战并回满血、残存者也脱战 —— 这一局已经结束，
+    // 再等下去只是空跑到超时。原实现只有 allDead -> Wipe 与 !anyDead -> Aborted 两条路径，
+    // 萨满自复活独活这类情形两条都不占：run 512/515/520 共 5 次 timeout，每次白跑约 200 秒。
+    // 判成 Wipe（确实没击杀），notes 注明来源，与真正跑满时限的 timeout 区分开。
+    bool const bossReset = bossKnown && !bossInCombat && ctx.boss->IsFullHealth();
+    bool const raidOutOfCombat = std::none_of(ctx.bots.begin(), ctx.bots.end(), [](Player* bot)
+    {
+        return bot && bot->IsAlive() && bot->IsInCombat();
+    });
+    if (anyDead && bossReset && raidOutOfCombat && !gatePending)
+    {
+        if (++_encounterResetSamples >= kStuckAbortTicks)
+        {
+            LOG_INFO("raidtest", "AttemptObserver: encounter reset after partial wipe "
+                "(boss back to full hp and out of combat, {} consecutive sample(s)) - ending attempt early",
+                _encounterResetSamples);
+            ctx.notes = "encounter reset after partial wipe";
+            return AttemptResult::Wipe;
+        }
+    }
+    else
+        _encounterResetSamples = 0;
 
     return AttemptResult::Ongoing;
 }
