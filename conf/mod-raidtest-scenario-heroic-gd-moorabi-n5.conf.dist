@@ -1,0 +1,58 @@
+# 古达克（map 604）英雄：第二个 boss 莫拉比 Moorabi(29305)。
+# 2026-09-16 新建。装备档 normal5-v1，难度英雄，BotCheats 为空。
+#
+# 口径 = **完整遭遇战**：boss 房北面走廊那一组守卫列为前置清怪，无夹具移除。
+#
+# ── 房间地形（raidtest los 实测）──────────────────────────────────────────
+# boss 平台 x 1760–1790、y 800–825，地面 z=129.22；南面 y≤795 掉到 96（深坑）。
+#   平台北面 y 825–830 是下坡，y 830–845 是地面 z≈123.2–124.5 的走廊。
+# 平台太小：任何落在平台上的点距 boss ≤16 码，进不了 >22 码这一关
+#   （英雄 Moorabi 82 级 → 22 码）。走廊里 >22 码的点对 boss **los=false**
+#   （实测 (1772,838,123.6)→boss los=false，下坡的坎挡住）。
+#   → 与斯拉德兰同一原因，必须走「前置清怪 → 传送到开怪点」这条路。
+#
+# 准备点 (1772, 838, 123.4)：实测地面 123.36。距 boss 28.5 码（>22，不会自动拉到 boss）。
+#   对下面每一只前置怪 los=true。
+#   ⚠ 它**落在第一组前置怪的仇恨半径内**（最近 10.7 码）——这是框架显式支持的：
+#     TeleportAndPosition 会先登记全部前置目标再放开 `attack tagged`。
+# 开怪点 (1772.5, 818, 129.22)：平台北缘，距 boss 8.5 码、los=true。boss 不巡逻。
+#
+# ── 前置怪（顺序 = 离准备点由近到远）──────────────────────────────────────
+#   127067 Drakkari Earthshaker (1772.8,848.7) 10.7 码
+#   127113 Drakkari Inciter     (1777.8,850.6) 13.9      ← 编队队长（groupAI=3）
+#   127068 Drakkari Earthshaker (1772.7,852.8) 14.8
+#   127062 Drakkari Fire Weaver (1797.7,847.0) 27.2
+#   127051 Drakkari Lancer      (1797.6,856.0) 31.3
+# 为什么要带上东侧的 127062/127051：127062 距编队队长 127113 只有 20.2 码
+#   < 英雄小怪 21 码仇恨半径，打队长必然把它拉进来；127051 又在 127062 的 9 码内。
+#   列进前置表是承认这条连锁，不是扩大范围。
+# 西侧那一组（127047/127059/127065，编队队长 127059）离最近的交战点 26.8 码，
+#   不在连锁里，保持存活、不列前置。
+#
+# 机制备忘（不影响本 conf，供判读用）：
+#   Transformation(55098) 3 秒读条，每 10 秒一次，**打断才是这个 boss 的判别量**；
+#   变形后 Quake/Numbing Roar/Determined Gore 全面变强。
+#   Mojo Frenzy(55163) 按血量降低施法时间，英雄难度是平方关系（血越少读条越快）。
+#   上游 mod-playerbots 的 GD 策略**对莫拉比一条触发器都没有**（GDStrategy.cpp 里是空注释）。
+#
+# TimeoutSeconds = 480 / PrerequisiteTimeoutSeconds = 200。
+[Scenario]
+MapId = 604
+BossEntry = 29305
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 1772.5
+EngageY = 818.0
+EngageZ = 129.22
+EngageO = 4.71
+PreparationX = 1772.0
+PreparationY = 838.0
+PreparationZ = 123.40
+PreparationO = 4.71
+PrerequisiteSpawns = 127067,127113,127068,127062,127051
+PrerequisiteTimeoutSeconds = 200
+TimeoutSeconds = 480
+EngageTrigger = pull

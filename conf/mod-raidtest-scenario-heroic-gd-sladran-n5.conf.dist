@@ -1,0 +1,77 @@
+# 古达克（Gundrak，map 604）英雄：第一个 boss 毒蛇领主斯拉德兰 Slad'ran(29304)。
+# 2026-09-16 新建（第五个副本）。装备档 normal5-v1（ilvl 上限 187），难度英雄，BotCheats 为空。
+#
+# 口径 = **完整遭遇战（含通往 boss 的走廊清怪）**。同目录另有隔离档
+# `heroic-gd-sladran-disc-n5`，两者**分开记账、不混算**。
+#
+# ── 房间地形（raidtest los 实测，非猜测）────────────────────────────────────
+# boss 站在一块很小的平台上：x 1765–1790、y 665–685，地面 z=129.22。
+#   平台北面 y≥690 地面掉到 95–105（中央深坑）；西面 x 1735–1755 是断崖（z 96–107）。
+#   **唯一进出口是南面一条下沉走廊**（x 1765–1790、y 605–655，地面 z≈124.5），
+#   走廊两侧 x≤1760 / x≥1795 是 z≈129.1 的抬高台。
+# 平台本身太小：任何落在平台上的点距 boss 都 ≤18 码，**进不了「>22 码仇恨半径」这一关**
+#   （英雄 Slad'ran = 31370，82 级 → 20−(80−82)=22 码）。
+# 而走廊里 >22 码的点，**对 boss 全部 los=false**——平台南沿挡住视线。
+#   ⚠ 这一条我第一轮差点写错：网格探针统一用 z1=129.3 扫的，而走廊地面是 124.5，
+#     `raidtest los` 是从 z1+2 量的，等于站在半空看，整条走廊都报 los=true。
+#     换成**逐点实测地面高度**当 z1 之后，(1775,650,124.5)→boss 是 **los=false**。
+#     （LESSONS「raidtest los 探针的 z 用法」，这轮又踩一次。）
+#
+# 结论：这个 boss **必须走「前置清怪 → 恢复 → 传送到开怪点」这条路**——框架只有走完
+#   这条路才会把队伍送到 EngagePoint（AttemptRunner 的 Recovery → BossPosition）；
+#   没有前置怪的场景队伍停在准备点开怪，而准备点这里既够不着又看不见。
+#
+# 准备点 (1775, 607, 124.5)：走廊南端，实测地面 124.47，距 boss 68 码。
+#   对下面每一只前置怪 los=true（逐只实测，见前置顺序）。
+# 开怪点 (1775, 666, 129.22)：平台南缘，距 boss 9 码、los=true。boss 不巡逻（MovementType=0），
+#   出生点即战斗位，不存在德雷德那种「开怪点要对整条巡逻线有视线」的问题。
+#
+# ── 前置怪：走廊里的九只蛇（顺序 = 离准备点由近到远）────────────────────────
+#   127028 Spitting Cobra        (1770.8,613.2)   7.5 码
+#   127029 Spitting Cobra        (1771.5,616.5)  10.1
+#   127014 Unyielding Constrictor(1785.0,628.0)  23.3  ← 巡逻 path 1270140（x1780–1790, y605–650）
+#   127017 Unyielding Constrictor(1771.3,639.6)  32.8  ← 巡逻 path 1270170（x1767–1776, y610–642）
+#   127027 Spitting Cobra        (1802.1,629.6)  35.3  ← 东侧抬高台（z 129.1）
+#   127015 Unyielding Constrictor(1777.4,645.1)  38.2
+#   127026 Spitting Cobra        (1805.6,633.5)  40.5  ← 东侧抬高台
+#   127016 Unyielding Constrictor(1802.6,638.8)  42.1  ← 东侧抬高台
+#   127025 Spitting Cobra        (1781.7,648.9)  42.4  ← 离 boss 最近（27.4 码），放最后
+#
+# 为什么东侧三只（127016/127026/127027）也要列进来：打 127014 的位置 (1785,628) 距
+#   127016 (1802.6,638.8) 只有 20.7 码 < 英雄小怪仇恨半径 21 码（81 级 → 20−(80−81)），
+#   它们**必然被卷进来**。列进前置表只是让框架承认它们，不是扩大范围。
+# 编队（creature_formations）：127014 领队 {127014,127015,127025}；127017 领队
+#   {127017,127028,127029}；127026 领队 {127016,127026,127027}。拉一只等于拉一组。
+#
+# ⚠ 已知风险（第一轮要盯的）：最后两只 127015/127025 在 y=645–649，距 boss 27–30 码，
+#   清它们时队伍会贴到 boss 的 22 码半径边缘。若出现
+#   `prerequisite_invalid: boss engaged before clearing completed`，
+#   就退到隔离档 `heroic-gd-sladran-disc-n5`（德雷德同款处理）。
+#
+# 未列入的：127200 Crafty Snake(29637, 70 级, faction 190) 是中立摆设，不参战。
+#   boss 自己召的 Viper(29680)/Constrictor(29713) 属机制，不是路怪：
+#   90% 血在 (1717.4,630.0)/(1716.8,635.2) 放 2 只毒蛇，英雄 75% 血在
+#   (1783.8,646.6)/(1775.0,606.6)/(1765.7,646.5) 放 3 只缠绕者
+#   （缠绕叠 5 层 → Snake Wrap 29742，上游 GD 策略有 "attack snake wrap"）。
+#
+# TimeoutSeconds = 480 / PrerequisiteTimeoutSeconds = 240：首轮基线故意给足。
+[Scenario]
+MapId = 604
+BossEntry = 29304
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 1775.0
+EngageY = 666.0
+EngageZ = 129.22
+EngageO = 1.57
+PreparationX = 1775.0
+PreparationY = 607.0
+PreparationZ = 124.50
+PreparationO = 1.57
+PrerequisiteSpawns = 127028,127029,127014,127017,127027,127015,127026,127016,127025
+PrerequisiteTimeoutSeconds = 240
+TimeoutSeconds = 480
+EngageTrigger = pull

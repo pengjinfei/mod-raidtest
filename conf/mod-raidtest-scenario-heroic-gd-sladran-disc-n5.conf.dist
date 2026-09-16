@@ -1,0 +1,48 @@
+# 古达克（map 604）英雄：斯拉德兰 Slad'ran(29304) —— **隔离档**。
+# 2026-09-16 与完整档 `heroic-gd-sladran-n5` 同时建立，作为后者被走廊清怪拖垮时的退路。
+#
+# 口径 = **隔离 boss 战（夹具移除走廊里八只蛇，只留一只当前置）**。
+# **不能记「正常规则机制验收通过」**，台账里与完整档分开记、不混算
+# （先例：`heroic-uk-ingvar-disc` 9/9 对官方档 1/5）。
+#
+# 地形与「为什么非要留一只前置」见完整档 conf 的注释，简短版：
+#   boss 平台太小（任何点距 boss ≤18 码 < 22 码仇恨半径），而走廊里 >22 码的点
+#   对 boss 全部 los=false；框架只有走完「前置清怪 → 恢复」才会把队伍传送到开怪点。
+#   所以**至少要留一只前置怪**，否则队伍停在准备点，既够不着也看不见。
+#
+# 留下的那一只：127015 Unyielding Constrictor (1777.4,645.1,124.43)
+#   - 距 boss 30.3 码 > 22 码仇恨半径（走廊里活着的蛇里离 boss 最远的一只）
+#   - 距准备点 24.2 码、los=true（实测）：拉得动，且清它时队伍不必北上贴近 boss
+#   - 它原本是 127014 编队的成员，队长与另一名成员都已由夹具移除，等于单只
+#
+# 准备点 (1775, 621, 124.25)：实测地面 124.21。距 boss 54 码、距 127015 24.2 码。
+# 开怪点 (1775, 666, 129.22)：平台南缘，距 boss 9 码、los=true。
+#
+# 夹具移除的八只（全部是通往 boss 的走廊/东侧台上的路怪，真人打法路上就清了；
+# 斯拉德兰没有任何机制会用到它们——他的蛇是自己召的 29680/29713）：
+#   127028,127029 Spitting Cobra（走廊南段）
+#   127017        Unyielding Constrictor（走廊巡逻，path 1270170）
+#   127014        Unyielding Constrictor（走廊巡逻，path 1270140）
+#   127025        Spitting Cobra（1781.7,648.9，离 boss 27.4 码）
+#   127016,127026,127027（东侧抬高台 z 129.1，距 boss 45–53 码）
+[Scenario]
+MapId = 604
+BossEntry = 29304
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 1775.0
+EngageY = 666.0
+EngageZ = 129.22
+EngageO = 1.57
+PreparationX = 1775.0
+PreparationY = 621.0
+PreparationZ = 124.25
+PreparationO = 1.57
+PrerequisiteSpawns = 127015
+PrerequisiteTimeoutSeconds = 150
+FixtureDespawnSpawns = 127028,127029,127017,127014,127025,127016,127026,127027
+TimeoutSeconds = 480
+EngageTrigger = pull

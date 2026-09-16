@@ -1,0 +1,44 @@
+# 古达克（map 604）英雄：最后一个 boss 迦尔达拉 Gal'darah(29306)。
+# 2026-09-16 新建。装备档 normal5-v1，难度英雄，BotCheats 为空。
+#
+# 口径 = **隔离 boss 战（不清房内犀牛，也不移除它们）**。
+#   房里四只 Drakkari Rhino（127111 27.2 码 / 127110 36.5 / 127112 36.7 / 127207 49.7，
+#   全在 boss 西侧）保持存活：它们距准备点 42–62 码，既不会在开局被拉，
+#   也没有被夹具删掉。若实测中它们参战，那是真实数据，按实际记录。
+#
+# ── 房间地形（raidtest los 实测）──────────────────────────────────────────
+# 竞技场是一整块平地，z≈135.1–136.6，x 1865–1955、y 705–785 之间 los 全 true。
+#   与前两个 boss 不同，**这里准备点对 boss 有视线**，所以不需要前置怪：
+#   队伍停在准备点直接开怪（AttemptRunner 里隔离型场景跳过 BossPosition）。
+# 准备点 (1922, 768, 135.32)：实测地面 135.32，距 boss 25.4 码
+#   （>22 码仇恨半径、<30 码制裁之手射程），对 boss los=true；距最近的犀牛 42.6 码。
+# 开怪点 (1910, 750, 136.42)：只用于 ResolveBoss 选中哪一只 29306，距 boss 8 码。
+#
+# 门：Gal'darah Door(192568) 是 DOOR_TYPE_ROOM，战斗中才关；193208/193209 是通关后开的
+#   PASSAGE 门。队伍是传送进来的，三祭坛的桥（GO_GUNDRAK_COLLISION 192633）不影响。
+#
+# 机制备忘：两形态每 32 秒互换。
+#   巨魔形态：Stampede(55218) 指定一人后召犀牛冲撞、Puncture(55276) 叠坦克、
+#             Whirling Slash(55250/英雄 59824) 范围——上游 GD 策略有 "avoid whirling slash"。
+#   犀牛形态：Impaling Charge(54956) 随机挑人并把他挂到角上、Enrage(55285)、Stomp(55292)。
+#   上游 GD 策略只覆盖了旋刃，冲锋/践踏/叠加没有任何触发器。
+#
+# TimeoutSeconds = 480：首轮基线故意给足。
+[Scenario]
+MapId = 604
+BossEntry = 29306
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 1910.0
+EngageY = 750.0
+EngageZ = 136.42
+EngageO = 3.14
+PreparationX = 1922.0
+PreparationY = 768.0
+PreparationZ = 135.32
+PreparationO = 3.93
+TimeoutSeconds = 480
+EngageTrigger = pull
