@@ -1,0 +1,30 @@
+# 达克萨隆要塞（map 600）英雄：第四个 boss 先知塔隆金 The Prophet Tharon'ja(26632)。
+# 2026-09-16 新建。装备档 normal5-v1，难度英雄，BotCheats 为空。口径 = 隔离 boss 战：
+#   平台上没有任何敌对怪，最近的复生德拉克瑞破狼者(26830) 在下层 55 码外。
+#
+# 机制要点：塔隆金会把全队变成骷髅（Gift of Tharon'ja），动作条整个换掉
+#   （生命之触/骨甲/杀戮打击）。上游 playerbots 的 DTK 策略里已有这四条行为
+#   （`gift of tharon'ja` → touch of life / bone armor / taunt / slaying strike，
+#   以及把远程拉进近战的 `tharon'ja out of melee`），首轮基线正是要看它们跑不跑得起来。
+#
+# 准备点 (-264,-675,131.2)：实测 vmap 地面 131.2、对 boss los=true、距 boss 27.2 码 > 22。
+#   平台是 x∈[-265,-210]、y∈[-710,-640] 的大圆台，整片 z≈131.2。
+# 开怪点 (-247,-675,131.2)：boss 正西 10.2 码。
+[Scenario]
+MapId = 600
+BossEntry = 26632
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-dtk
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = -247.0
+EngageY = -675.0
+EngageZ = 131.2
+EngageO = 0.0
+PreparationX = -264.0
+PreparationY = -675.0
+PreparationZ = 131.2
+PreparationO = 0.0
+TimeoutSeconds = 480
+EngageTrigger = pull

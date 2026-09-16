@@ -164,6 +164,9 @@ private:
     uint32 _confirmTicks{0};        // 进战斗确认泵（仅计算确实检查了战斗态的 tick）
     uint32 _tankAggroElapsedMs{0};  // Boss 连续锁定 tank 的 lead 时间（真实经过毫秒）
     uint32 _tankAggroAcquireMs{0};  // 等待 tank 首次/再次获得 victim 的真实经过毫秒
+    // 巡逻中的 boss 可能恰好被柱子挡住或走出施法距离，这不是"开不了怪"，是"这一刻开不了"。
+    // 给一个重试预算，逐 tick 重来；超预算才判 abort。见 StartBossPull。
+    uint32 _pullRetryMs{0};
     ObjectGuid _pullTank;           // 本次两段式 pull 的真实拉怪者
     std::vector<ObjectGuid> _heldFollowers; // 暂停 attack tagged、等待 tank lead 的从属 bot
     AttemptObserver _observer;

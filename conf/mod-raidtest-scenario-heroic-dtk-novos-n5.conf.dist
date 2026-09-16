@@ -1,0 +1,43 @@
+# 达克萨隆要塞（map 600）英雄：第二个 boss 召唤者诺沃斯 Novos the Summoner(26631)。
+# 2026-09-16 新建。装备档 normal5-v1，难度英雄，BotCheats 为空。口径 = 隔离 boss 战（房间内无路怪，
+# 50 码内只有甲虫/老鼠这类中立小动物）。
+#
+# 遭遇战结构（boss_novos.cpp，全部是 boss 脚本的一部分，不是路怪）：
+#   P1：开怪后 boss 立刻挂 NON_ATTACKABLE|NOT_SELECTABLE + 奥术力场(47346)，
+#       16/32/48/64 秒各召一只水晶操控者(26627)，左右交替
+#       （右 (-341.31,-724.40,28.57) / 左 (-408.87,-730.21,28.58)）；
+#       楼梯的引导目标 (-378.40,-813.13,59.74) 每 3 秒放腐臭巨魔尸体(27598)、
+#       约 10 秒放复生暗影施法者(27600)、30 秒放笨重的尸体(27597)。
+#       四只操控者死光 -> 光束引导断 -> P2。
+#   P2：boss 可选中，寒冰箭 49037 / 暴风雪 49034 / 痛苦之怒 50089，英勇额外 59910 召唤随从。
+#
+#   ⚠ P1 里 boss 带 NOT_SELECTABLE，**上游 playerbots 的 `find target novos the summoner` 取不到它**
+#     （同阿努巴拉克潜地期那条坑）。`ArcaneFieldTrigger::IsActive` 正是先取 boss 再判，
+#     所以 DTK 策略那三条 Novos 行为（avoid arcane field / novos positioning / novos target priority）
+#     很可能整个 P1 都不亮。首轮基线要先量这一条，别先改。
+#
+# 准备点 (-378.85,-760.35,28.59)：与上游 `NOVOS_PARTY_POSITION` 同一点（DTKActions.h:17），
+#   距 boss 22.7 码、对 boss los=true、实测地面 28.59。boss 的 `MoveInLineOfSight` 被重写成空，
+#   开怪前不会因为靠近而拉怪，所以这里不需要额外的仇恨半径余量。
+# 开怪点 (-379,-748,27.71)：boss 正南 10.3 码，los=true。
+#
+# TimeoutSeconds = 480：P1 有 ≥70 秒的硬结构（四只操控者 16/32/48/64 秒才召齐），
+#   再加 P2，首轮基线给足，避免把正常耗时误记成超时。
+[Scenario]
+MapId = 600
+BossEntry = 26631
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-dtk
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = -379.0
+EngageY = -748.0
+EngageZ = 27.71
+EngageO = 1.57
+PreparationX = -378.85
+PreparationY = -760.35
+PreparationZ = 28.59
+PreparationO = 1.57
+TimeoutSeconds = 480
+EngageTrigger = pull

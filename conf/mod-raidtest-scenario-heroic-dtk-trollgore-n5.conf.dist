@@ -1,0 +1,45 @@
+# 达克萨隆要塞（Drak'Tharon Keep，map 600）英雄：第一个 boss 巨魔之喉 Trollgore(26630)。
+# 2026-09-15 新建（第四个副本；等级档 74–76，接在艾卓-尼鲁布之后）。
+# 装备档 normal5-v1（ilvl 上限 187），难度英雄，BotCheats 为空。
+#
+# 口径 = 隔离 boss 战（同凯利丝塔萨 -disc / 因格瓦尔）：本场景不清任何路怪。
+#   房间里本来就没有路怪——最近的一组（食尸鬼拷问者/督军 127605/127584/127558，z≈11）
+#   在西侧下层 34 码外，boss 的 SetInCombatWithZone 只对玩家生效，不会把它们拉进来。
+#   因此 PrerequisiteSpawns 留空不是简化，是这一个房间的实情。
+#
+# 遭遇战的小怪是 boss 自己召的，属于机制、不是路怪：
+#   boss_trollgore.cpp 的 events2 每 30 秒（**脱战也跑**）放 49456/49457/49458 三只
+#   Drakkari Invader(27709/27753/27754)，从东侧 (-227.5,-6xx,43) 骑蝠飞入，落点固定在
+#   (-250,-672.9) / (-254,-665.9) / (-250,-658.9)，落地后 SmartAI 去掉 768(免疫PC/NPC)
+#   再放 49405 挑衅。所以准备点必须同时避开 boss 仇恨半径和这三个落点。
+#   Consume(49380) 吞噬尸体给 boss 叠 49381；Corpse Explode(49555) 让尸体爆炸——
+#   上游 playerbots 的 DTK 策略已有 "corpse explode spread"（尸体 5+2 码内就走开），
+#   本轮基线正是要量它到底排不排得上队。
+#
+# 准备点 (-261, -633, 26.52)：
+#   - vmap 地面 26.52（raidtest los 实测；房间地板整体 z≈26.5）
+#   - 距 boss 27.6 码 > 22 码（英雄 Trollgore = 31362，82 级 -> 20-(80-82)=22）
+#   - 距三个小怪落点 26.0–29.3 码，落地挑衅前不会被卷进去
+#   - 对 boss los=true（实测）
+#   - 在 boss 的 CheckInRoom 盒子内（y∈[-700,-628]），不会把 boss 拉出房间判 evade
+# 开怪点 (-260, -660, 26.55)：boss 正东 6.2 码，los=true；无前置怪，队伍从准备点直接开怪。
+#
+# TimeoutSeconds = 420：首轮基线故意给足，避免把正常耗时误记成超时。
+[Scenario]
+MapId = 600
+BossEntry = 26630
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-dtk
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = -260.0
+EngageY = -660.0
+EngageZ = 26.55
+EngageO = 3.14
+PreparationX = -261.0
+PreparationY = -633.0
+PreparationZ = 26.52
+PreparationO = 4.52
+TimeoutSeconds = 420
+EngageTrigger = pull

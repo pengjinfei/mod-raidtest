@@ -54,6 +54,15 @@ bool CombatTrigger::BeginAssistForAll(std::vector<Player*> const& bots, Player* 
         return false;
     }
 
+    // 有些遭遇战一开怪就把 boss 变成不可选中（诺沃斯 P1 的奥术力场、阿努巴拉克潜地同理）：
+    // 此刻跟随者对 boss 的 IsValidAttackTarget 必然为 false，"让所有人 assist boss" 这道
+    // 门槛在这类 boss 上永远过不了，整场被误判成框架中止（run 548 即为此）。
+    // boss 是否真的进了战斗已经在 AwaitTankAggro 里确认过，BossAI::_JustEngagedWith 的
+    // DoZoneInCombat 也已经把全队拉进战斗；这里只需要把跟随者从 hold 状态放出来，
+    // 之后打什么由 bot 自己的引擎决定——框架不代它们选目标。
+    bool const bossUnattackable = boss->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE) ||
+                                  boss->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+
     uint32 assisted = 0;
     for (Player* bot : bots)
     {
@@ -95,6 +104,17 @@ bool CombatTrigger::BeginAssistForAll(std::vector<Player*> const& bots, Player* 
                     uint32(botAI->GetState()));
                 continue;
             }
+            if (bossUnattackable)
+            {
+                // 不可选中不是 assist 失败，是 boss 进入了自己的阶段。放行并记下来。
+                ++assisted;
+                LOG_INFO("raidtest", "CombatTrigger::BeginAssistForAll: boss {} is unattackable "
+                    "(encounter phase) - releasing follower {} without an assist target "
+                    "(combat={} ai={})", boss->GetName(), bot->GetName(), bot->IsInCombat(),
+                    uint32(botAI->GetState()));
+                continue;
+            }
+
             LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: bot {} could not begin assist "
                 "(combat={} ai={} current={} victim={} dist={} los={} valid={} tagged={})",
                 bot->GetName(), bot->IsInCombat(), uint32(botAI->GetState()),

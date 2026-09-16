@@ -109,6 +109,9 @@ namespace
     // tank 没有在这段时间内真正获得 boss victim，说明组队/职业 AI/拉怪状态失效；
     // 中止本次样本，而不是把无效开怪记作首领机制失败。
     constexpr uint32 kTankAggroAcquireMs = 8000;
+    // 巡逻 boss 的开怪重试预算：德雷德整条 waypoint 路径走一圈约 30 秒，20 秒足够等到
+    // 一个既有视线又在施法距离内的位置。超预算才把「开不了怪」判成 abort。
+    constexpr uint32 kPullRetryBudgetMs = 20000;
 
 }
 
@@ -870,6 +873,7 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
     }
 
     case Stage::BossPosition:
+        _pullRetryMs += diff;
         RosterLogin::PumpTeleportAcks(ctx.bots);
         if (!RosterLogin::AllOnMapNow(ctx.bots, ctx.scenario->GetMapId()))
         {
@@ -1731,11 +1735,24 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
         Abort("pull failed (could not hold follower auto-attack)");
         return false;
     }
+    // 重试时会再次经过这里；先清空避免同一个 bot 被记多次（RestoreHeldFollowerStrategies 幂等）。
+    _heldFollowers.clear();
     for (Player* bot : ctx.bots)
         if (bot && bot != tank)
             _heldFollowers.push_back(bot->GetGUID());
     if (!CombatTrigger::BeginTankPull(tank, ctx.boss))
     {
+        // 巡逻 boss：开怪那一刻他可能正好在柱子后面或走出施法距离（德雷德 14 点 waypoint
+        // 路径，实测同一个开怪点对 8 个 waypoint 只有 6–8 个有视线，距离 11–34 码之间摆动）。
+        // 直接 abort 会把「这一刻开不了」误记成「开不了怪」——run 554 / 558 各丢一场。
+        // 预算内逐 tick 重来（Stage::BossPosition 每 tick 都会再进来）。
+        if (_pullRetryMs < kPullRetryBudgetMs)
+        {
+            LOG_INFO("raidtest", "AttemptRunner: pull not possible right now (boss {} at {:.1f} yd), "
+                "retrying (budget {}/{} ms)", ctx.boss->GetName(), tank->GetDistance(ctx.boss),
+                _pullRetryMs, kPullRetryBudgetMs);
+            return false;
+        }
         Abort("pull failed (boss not engaged)");
         return false;
     }
