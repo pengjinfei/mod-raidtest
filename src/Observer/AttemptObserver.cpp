@@ -567,11 +567,20 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
                 castingLeftMs = spell->GetCastTimeRemaining();
                 break;
             }
+            // 只读探针：这一秒该 bot 的 "main tank" 取值解不解得出来。
+            // PartyMemberValue::Check 把视线当候选过滤条件，看不见坦克时这个值是空，
+            // 于是所有 `if (!mainTank) return false;` 的行为（嫁祸/消失/隐形/渐隐、
+            // 给坦克的 buff、以及共享层"追敌不离主坦"那道护栏）整组静默跳过。
+            // 先量这一条到底有多少秒，再决定值不值得改取值。
+            int mainTankResolved = -1;  // -1 = 没有 bot AI，无法采样
+            if (PlayerbotAI* memberAI = GET_PLAYERBOT_AI(member))
+                mainTankResolved = memberAI->GetAiObjectContext()->GetValue<Unit*>("main tank")->Get() ? 1 : 0;
+
             resource.detail = Acore::StringFormat(
-                "resource:hp={}/{} power_type={} power={}/{} in_combat={} alive={} casting={} left_ms={}",
+                "resource:hp={}/{} power_type={} power={}/{} in_combat={} alive={} casting={} left_ms={} mt={}",
                 member->GetHealth(), member->GetMaxHealth(), static_cast<uint32>(powerType),
                 member->GetPower(powerType), member->GetMaxPower(powerType), member->IsInCombat(),
-                member->IsAlive(), castingSpell, castingLeftMs);
+                member->IsAlive(), castingSpell, castingLeftMs, mainTankResolved);
             CombatEventBus::instance().Push(resource);
 
             // 死亡后角色可能已 worldport 到墓地；该位置与上层实例里的临时斧没有
