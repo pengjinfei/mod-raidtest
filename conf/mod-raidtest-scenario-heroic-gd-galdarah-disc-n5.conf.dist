@@ -1,0 +1,65 @@
+# 古达克（map 604）英雄：迦尔达拉 Gal'darah(29306) —— **隔离档**。
+# 2026-09-16 深夜新建，因为原 `heroic-gd-galdarah-n5` 的 run 578 五场**混了两种口径**：
+# 三场团灭全部是竞技场里没清的犀牛群参战造成的，两场击杀里它们一次没参战。
+# 那五场的 2/5 **不是迦尔达拉的击杀率**，本档是为了拿干净的 boss 单体基线。
+#
+# 口径 = **隔离 boss 战（夹具移除竞技场四组犀牛）**，不能记「正常规则机制验收通过」。
+# 完整档保留为 `heroic-gd-galdarah-n5`（原样不动，run 578 仍可按它复现），
+# 两者**分开记账、不混算**。
+#
+# ── 为什么必须移除（run 578 实测，不是预防性删除）──────────────────────────
+# 判别量 = 「全队有没有人进过犀牛群的 21 码仇恨半径」（英雄小怪 81 级 → 20−(80−81)）：
+#   seq1 wipe 最近 15.9 码（坦克, t=28s）→ 犀牛 28.5s 参战
+#   seq2 kill 最近 41.1 码              → 从未参战
+#   seq3 kill 最近 22.9 码（擦边没进）  → 从未参战
+#   seq4 wipe 最近 13.9 码（盗贼, t=60s）→ 犀牛 63.9s 参战
+#   seq5 wipe 最近 15.8 码（盗贼, t=58s）→ 犀牛 59.4s 参战
+# **3/3 团灭进了，2/2 击杀没进。** 犀牛群占团灭场承伤的 53–67%，
+# 承伤速率从 ~1475/s 抬到 ~2570/s（+74%）；同时吃掉 60–211k 输出而**一只都没死**。
+#
+# 队伍怎么漂过去的（战场离犀牛群只有 27 码，本来就没有漂移余量）：
+#   - seq1：Whirling Slash 22.8s 落地后 1 秒，坦克按 `AvoidWhirlingSlashAction`
+#     （对坦克是 `MoveAway(boss, 2*5+2-dist)` = 背离 boss 挪到 12 码）开始移动，
+#     方向完全由「坦克在 boss 哪一侧」决定，这场正好朝犀牛群；boss `MoveChase` 跟上，
+#     **坦克-boss 这一对整体西移 20 码**，其余三人全程原地不动。
+#   - seq4/5：盗贼单独直线冲 33 码过去并主动开打（比犀牛首次命中早 2.9 秒 / 71 毫秒），
+#     **触发原因未定位**。
+#
+# ── 夹具移除的四组（真人打法先清竞技场犀牛；迦尔达拉没有任何机制用到它们——
+#    他的 Stampede 55218 是自己召的）──────────────────────────────────────
+#   127110 (1880.7,756.7)  Drakkari Rhino 29838，距 boss 36.5 码
+#   127111 (1887.6,742.9)  Drakkari Rhino 29838，距 boss 27.2 码  ← 最近的一只
+#   127112 (1881.3,728.5)  Drakkari Rhino 29838，距 boss 36.7 码
+#   127207 (1865.1,742.8)  Drakkari Rhino 29931，距 boss 49.7 码（本轮未参战，一并移除以免口径含糊）
+#
+# ⚠ **实际怪数是 spawn 数的两倍以上**：`vehicle_template_accessory` 里
+#   29838 是**载具**，每只自带一名 Drakkari Battle Rider(29836) 坐 0 号座；
+#   29931 自带三名 Drakkari Raider(29982)。所以这四行 spawn = **3×2 + 1×4 = 10 只**。
+#   `DespawnOrUnsummon()` 会经 `Vehicle::Uninstall()` 把 accessory 一起带走，
+#   但**首轮必须回读确认**：`raidtest_events` 里不应再出现 actor_entry=29836/29982 的伤害。
+#   建夹具只数 `creature` 表会把载具型小怪算少一半——这条已写进 LESSONS。
+#
+# ── 坐标（与完整档相同，run 578 已验证可用）────────────────────────────────
+# 准备点 (1922, 768, 135.32)：实测地面 135.32，距 boss 25.4 码
+#   （>22 码仇恨半径、<30 码制裁之手射程），对 boss `los=true`。**无前置怪**，
+#   队伍停在准备点直接开怪（隔离型场景跳过 BossPosition）。
+# 开怪点 (1910, 750, 136.42)：只用于 `ResolveBoss` 选中哪一只 29306。
+[Scenario]
+MapId = 604
+BossEntry = 29306
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 1910.0
+EngageY = 750.0
+EngageZ = 136.42
+EngageO = 3.14
+PreparationX = 1922.0
+PreparationY = 768.0
+PreparationZ = 135.32
+PreparationO = 3.93
+FixtureDespawnSpawns = 127110,127111,127112,127207
+TimeoutSeconds = 480
+EngageTrigger = pull
