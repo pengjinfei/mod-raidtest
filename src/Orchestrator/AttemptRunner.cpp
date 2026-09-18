@@ -1992,6 +1992,12 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             LOG_INFO("raidtest", "AttemptRunner: boss re-resolved during prerequisite clearing "
                 "{} -> {} (absent {}ms)", ctx.bossGuid.ToString(), rebound->GetGUID().ToString(),
                 _bossAbsentMs);
+            // 必须同步给事件总线：StartAttempt 在 boss 拉起时把当时那个 guid 写成
+            // _bossGuid，而 boss 死亡确认（_bossDeathSeen）比的是 event.source == _bossGuid。
+            // 只改 ctx.bossGuid 会让新对象的真实死亡事件永远对不上，于是「血已经打到 0%、
+            // 确实死了」被 AttemptObserver 记成 boss lost combat state（run665 seq2：
+            // 65 -> 240、缺席 19713ms，hp=0% 但无死亡确认，40 个采样后 aborted）。
+            CombatEventBus::instance().RebindBoss(rebound->GetGUID());
             ctx.bossGuid = rebound->GetGUID();
             ctx.boss = rebound;
             _bossAbsentMs = 0;

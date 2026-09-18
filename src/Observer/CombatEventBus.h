@@ -49,6 +49,22 @@ public:
     void TrackUnit(ObjectGuid const& guid) { _observedGuids.insert(guid); }
     bool DeathSeen(ObjectGuid const& guid) const { return _deadGuids.count(guid) != 0; }
 
+    // 换绑本次 attempt 的 boss（副本复位后核心重新生成的是新对象、新 GUID）。
+    // 清怪期间 boss 脱战被 DespawnOnEvade 下线、稍后按原 spawn 重生时，
+    // AttemptRunner 会重新寻址 ctx.bossGuid；总线这边也必须跟着换，否则
+    // 死亡确认比的是旧 GUID（event.source == _bossGuid），新对象的真实死亡
+    // 事件永远对不上 —— 表现为「血已经打到 0%、确实死了」却被记成
+    // boss lost combat state（run665 seq2）。旧 guid 保留在 _observedGuids 里，
+    // 免得复位前的残留事件被过滤掉。
+    void RebindBoss(ObjectGuid const& bossGuid)
+    {
+        if (bossGuid == _bossGuid)
+            return;
+        if (_bossGuid)
+            _observedGuids.insert(_bossGuid);
+        _bossGuid = bossGuid;
+    }
+
     // 结束当前 attempt：FlushToStore() 把剩余缓冲落库，复位采集状态并 LOG 分型
     // 统计（冒烟/诊断用）。清掉 boss 关联，等待下次 StartAttempt。
     void EndAttempt();
