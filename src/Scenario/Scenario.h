@@ -60,6 +60,9 @@ public:
     Position const& GetEngagePoint() const { return _engagePoint; }
     uint32 GetTimeoutSeconds() const { return _timeoutSeconds; }
     EncounterTrigger GetEngageTrigger() const { return _engageTrigger; }
+    // EngageTrigger=summon 时需要的召唤物 entry。只匹配当前场景 boss 直接召出的临时单位，
+    // 不会把同 entry 的世界刷怪纳入目标。
+    uint32 GetSummonTriggerEntry() const { return _summonTriggerEntry; }
     // 团队副本难度（RAID_DIFFICULTY_10MAN_NORMAL=0 / 25MAN_NORMAL=1，DBCEnums.h）。
     // 场景 conf 可选键 RaidDifficulty = 10|25（缺省 10）。影响：①进本前全队
     // Player::SetRaidDifficulty → 实例按对应难度加载；②roster 实际起人数量（由
@@ -128,6 +131,7 @@ public:
 
 protected:
     std::vector<uint32> _prerequisiteSpawns;
+    uint32 _summonTriggerEntry{0};
     std::vector<uint32> _fixtureDespawnSpawns;
     std::vector<std::pair<uint32, uint32>> _fixtureBossStates;
     bool _fixtureBossNotify{false};

@@ -87,6 +87,8 @@ private:
     float DistanceToNearestPrerequisite(RunContext& ctx, Position const& from) const;
     bool NavigationWaypointReached(RunContext const& ctx) const;
     bool StartBossPull(RunContext& ctx);
+    bool StartSummonTriggerPull(RunContext& ctx);
+    void SampleSummonTriggerState(RunContext const& ctx, Player const* tank) const;
     void RecordPhase(char const* phase, uint32 elapsed);
     std::vector<ObjectGuid> _prerequisiteGuids;
     // 与 _prerequisiteGuids 一一对应的数据库 spawnId。GUID 会变（副本脚本把整组
@@ -94,6 +96,9 @@ private:
     std::vector<uint32> _prerequisiteSpawnIds;
     uint32 _preBossElapsed{0};
     uint32 _preparationElapsed{0};
+    // 前置清怪时首次进入场景 boss 的原生仇恨半径（且有 LOS）的只读诊断标记。
+    // 只记录一次，避免每个 world tick 重复写入事件总线。
+    bool _preclearBossProximityObserved{false};
     uint32 _recoveryElapsed{0};
     bool _prerequisitePullSent{false};
     // 清怪控制链的开怪门禁（PrerequisiteCcWaitSeconds）。返回 true 表示可以开怪，并可能把
@@ -164,10 +169,14 @@ private:
     uint32 _confirmTicks{0};        // 进战斗确认泵（仅计算确实检查了战斗态的 tick）
     uint32 _tankAggroElapsedMs{0};  // Boss 连续锁定 tank 的 lead 时间（真实经过毫秒）
     uint32 _tankAggroAcquireMs{0};  // 等待 tank 首次/再次获得 victim 的真实经过毫秒
+    uint32 _summonTriggerElapsedMs{0};
+    uint32 _summonTriggerSampleElapsedMs{0};
     // 巡逻中的 boss 可能恰好被柱子挡住或走出施法距离，这不是"开不了怪"，是"这一刻开不了"。
     // 给一个重试预算，逐 tick 重来；超预算才判 abort。见 StartBossPull。
     uint32 _pullRetryMs{0};
     ObjectGuid _pullTank;           // 本次两段式 pull 的真实拉怪者
+    // 只读诊断：记录本次触发巨像开战的临时 Mojo，不能跨 tick 保留 Creature*。
+    ObjectGuid _summonTriggerGuid;
     std::vector<ObjectGuid> _heldFollowers; // 暂停 attack tagged、等待 tank lead 的从属 bot
     AttemptObserver _observer;
     AttemptResult _result{AttemptResult::Ongoing};

@@ -287,10 +287,21 @@ bool Scenario::LoadFromFile(std::string const& filePath)
         {
             if (ToLower(value) == "pull")
                 _engageTrigger = EncounterTrigger::Pull;
+            else if (ToLower(value) == "summon")
+                _engageTrigger = EncounterTrigger::Summon;
             else
             {
-                LOG_ERROR("raidtest", "Scenario: unknown EngageTrigger '{}' (expected 'pull') "
+                LOG_ERROR("raidtest", "Scenario: unknown EngageTrigger '{}' (expected 'pull' or 'summon') "
                     "at line {} in '{}'", value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "SummonTriggerEntry")
+        {
+            if (!ParseUint32(value, _summonTriggerEntry) || !_summonTriggerEntry)
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid SummonTriggerEntry '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
                 failed = true;
             }
         }
@@ -547,6 +558,22 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 nonTankPreparation[2], nonTankPreparation[3]);
         }
     }
+    if (_engageTrigger == EncounterTrigger::Summon && !_summonTriggerEntry)
+    {
+        LOG_ERROR("raidtest", "Scenario: EngageTrigger=summon requires SummonTriggerEntry");
+        failed = true;
+    }
+    if (_engageTrigger != EncounterTrigger::Summon && _summonTriggerEntry)
+    {
+        LOG_ERROR("raidtest", "Scenario: SummonTriggerEntry requires EngageTrigger=summon");
+        failed = true;
+    }
+    if (_engageTrigger == EncounterTrigger::Summon && !_prerequisiteSpawns.empty())
+    {
+        LOG_ERROR("raidtest", "Scenario: EngageTrigger=summon cannot combine with PrerequisiteSpawns");
+        failed = true;
+    }
+
     _prerequisitePoint = _preparationPoint;
     if (!_prerequisiteSpawns.empty())
     {
@@ -572,7 +599,7 @@ bool Scenario::LoadFromFile(std::string const& filePath)
         _engagePoint.GetPositionX(), _engagePoint.GetPositionY(),
         _engagePoint.GetPositionZ(), _engagePoint.GetOrientation(),
         _timeoutSeconds,
-        _engageTrigger == EncounterTrigger::Pull ? "pull" : "?",
+        _engageTrigger == EncounterTrigger::Pull ? "pull" : "summon",
         _gearProfile == GearProfile::Epic ? "epic" : "none",
         _rosterFile);
 

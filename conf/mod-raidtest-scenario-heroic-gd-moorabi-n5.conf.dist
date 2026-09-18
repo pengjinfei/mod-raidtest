@@ -11,10 +11,9 @@
 #   （实测 (1772,838,123.6)→boss los=false，下坡的坎挡住）。
 #   → 与斯拉德兰同一原因，必须走「前置清怪 → 传送到开怪点」这条路。
 #
-# 准备点 (1772, 838, 123.4)：实测地面 123.36。距 boss 28.5 码（>22，不会自动拉到 boss）。
-#   对下面每一只前置怪 los=true。
-#   ⚠ 它**落在第一组前置怪的仇恨半径内**（最近 10.7 码）——这是框架显式支持的：
-#     TeleportAndPosition 会先登记全部前置目标再放开 `attack tagged`。
+# 准备点 (1772, 875, 124.44)：首组前置怪北侧，距 Earthshaker 约 26 码、距 boss 约 65 码。
+#   run635 证明北侧能避免莫拉比 proximity aggro；y=858 仍在首怪仇恨圈，run636 在控制
+#   图标落地前 0.376 秒就自然进战。此点在约 30 码控制施法范围内但在小怪 21 码仇恨圈外。
 # 开怪点 (1772.5, 818, 129.22)：平台北缘，距 boss 8.5 码、los=true。boss 不巡逻。
 #
 # ── 前置怪（顺序 = 离准备点由近到远）──────────────────────────────────────
@@ -49,8 +48,8 @@ EngageY = 818.0
 EngageZ = 129.22
 EngageO = 4.71
 PreparationX = 1772.0
-PreparationY = 838.0
-PreparationZ = 123.40
+PreparationY = 875.0
+PreparationZ = 124.44
 PreparationO = 4.71
 PrerequisiteSpawns = 127067,127113,127068,127062,127051
 PrerequisiteTimeoutSeconds = 200

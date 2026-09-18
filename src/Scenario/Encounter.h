@@ -4,11 +4,13 @@
 #include "Define.h"
 
 // 开战方式（design §7）：Encounter 的 engage 触发方式。
-// 当前唯一取值 Pull：leader bot 主动 pull 目标，走 CombatTrigger::BeginPull +
-// 逐 tick 确认进战斗（Task 4 已实机验证 leader 拉起 Patchwerk 并确认进入战斗）。
+// Pull：坦克主动拉场景 boss。Summon：坦克主动拉场景 boss 自己召出的指定 entry；
+// 后者用于「先触发召唤物，脚本才放开 boss」的原生进战机制，仍走真实 AttackAction +
+// 逐 tick 的 boss 战斗确认。
 enum class EncounterTrigger : uint8
 {
     Pull = 0,
+    Summon = 1,
 };
 
 // 一场遭遇战的生效配置（一次 attempt 的静态常量，非运行状态）。

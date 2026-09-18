@@ -27,9 +27,12 @@
 #include "ResultStore.h"
 #include "RosterLogin.h"
 #include "RosterBuilder.h"
+#include "StringFormat.h"
+#include "ThreatManager.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <list>
 #include <sstream>
 #include <vector>
 
@@ -109,9 +112,53 @@ namespace
     // tank 没有在这段时间内真正获得 boss victim，说明组队/职业 AI/拉怪状态失效；
     // 中止本次样本，而不是把无效开怪记作首领机制失败。
     constexpr uint32 kTankAggroAcquireMs = 8000;
+    // 召唤物开战不能沿用 20 个 tick 的通用确认窗口：空载 worldserver 的 20 tick
+    // 可以少于 40ms，坦克尚未走到 Mojo 身边，原生 JustEngagedWith 根本来不及触发。
+    // 这里只等待真实 AttackAction 的原生触发，不创建 boss 的战斗/威胁引用。
+    constexpr uint32 kSummonTriggerConfirmMs = 6000;
+    constexpr uint32 kSummonTriggerSampleMs = 250;
     // 巡逻 boss 的开怪重试预算：德雷德整条 waypoint 路径走一圈约 30 秒，20 秒足够等到
     // 一个既有视线又在施法距离内的位置。超预算才把「开不了怪」判成 abort。
     constexpr uint32 kPullRetryBudgetMs = 20000;
+
+    // 清怪时 boss 意外进战，首个可观察状态必须留下仇恨来源；这只读 ThreatManager，
+    // 不重算目标、不改仇恨，也不改变中止条件。
+    std::string DescribePreclearBossEngagement(Creature const* boss)
+    {
+        ThreatManager const& mgr = boss->GetThreatMgr();
+        Unit const* victim = mgr.GetLastVictim();
+        uint64 topGuid[3] = {};
+        float topThreat[3] = {};
+        uint32 rank = 0;
+        for (ThreatReference const* ref : mgr.GetSortedThreatList())
+        {
+            if (!ref || !ref->GetVictim())
+                continue;
+            topGuid[rank] = ref->GetVictim()->GetGUID().GetCounter();
+            topThreat[rank] = ref->GetThreat();
+            if (++rank == 3)
+                break;
+        }
+
+        return Acore::StringFormat(
+            "preclear_boss_engaged:victim={} threat_n={} t1={}:{:.0f} t2={}:{:.0f} t3={}:{:.0f}",
+            victim ? victim->GetGUID().GetCounter() : 0, mgr.GetThreatListSize(),
+            topGuid[0], topThreat[0], topGuid[1], topThreat[1], topGuid[2], topThreat[2]);
+    }
+
+    std::string DescribeSummonTriggerState(Creature const* boss, Player const* tank, Creature const* trigger)
+    {
+        ThreatManager const& mgr = boss->GetThreatMgr();
+        Unit const* victim = boss->GetVictim();
+
+        return Acore::StringFormat(
+            "summon_trigger_state:boss_combat={} boss_victim={} threat_n={} tank_threat={:.0f} "
+            "tank_combat={} trigger_present={} trigger_alive={} trigger_combat={} non_attackable={} not_selectable={}",
+            boss->IsInCombat(), victim ? victim->GetGUID().ToString() : "none", mgr.GetThreatListSize(),
+            tank ? mgr.GetThreat(tank, true) : 0.0f, tank && tank->IsInCombat(), trigger != nullptr,
+            trigger && trigger->IsAlive(), trigger && trigger->IsInCombat(),
+            boss->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE), boss->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE));
+    }
 
 }
 
@@ -179,7 +226,10 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _confirmTicks = 0;
     _tankAggroElapsedMs = 0;
     _tankAggroAcquireMs = 0;
+    _summonTriggerElapsedMs = 0;
+    _summonTriggerSampleElapsedMs = 0;
     _pullTank.Clear();
+    _summonTriggerGuid.Clear();
     _result = AttemptResult::Ongoing;
     _notes.clear();
     _observer.Reset();
@@ -752,8 +802,22 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 return;
             }
 
+            bool const summonTrigger = ctx.scenario->GetEngageTrigger() == EncounterTrigger::Summon;
+            if (summonTrigger)
+            {
+                _summonTriggerElapsedMs += diff;
+                _summonTriggerSampleElapsedMs += diff;
+                if (_summonTriggerSampleElapsedMs >= kSummonTriggerSampleMs)
+                {
+                    _summonTriggerSampleElapsedMs = 0;
+                    SampleSummonTriggerState(ctx, tank);
+                }
+            }
+
             if (!CombatTrigger::ConfirmBossInCombat(ctx.boss))
             {
+                if (summonTrigger && _summonTriggerElapsedMs < kSummonTriggerConfirmMs)
+                    return;
                 if (++_stuckTicks < CombatTrigger::kCombatConfirmTicks)
                     return;
                 Abort("pull failed (boss left combat during tank aggro lead)");
@@ -1687,6 +1751,8 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
         Abort("raid_invalid: instance combat strategy inactive before pull");
         return false;
     }
+    if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::Summon)
+        return StartSummonTriggerPull(ctx);
     if (!_prerequisiteGuids.empty())
     {
         for (ObjectGuid const& guid : _prerequisiteGuids)
@@ -1762,10 +1828,100 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
     _confirmTicks = 0;
     _tankAggroElapsedMs = 0;
     _tankAggroAcquireMs = 0;
+    _summonTriggerElapsedMs = 0;
+    _summonTriggerSampleElapsedMs = kSummonTriggerSampleMs;
     _stuckTicks = 0;
     _stage = Stage::Pull;
     _pullStep = PullStep::AwaitTankAggro;
     return true;
+}
+
+bool AttemptRunner::StartSummonTriggerPull(RunContext& ctx)
+{
+    uint32 const entry = ctx.scenario->GetSummonTriggerEntry();
+    if (!entry || !ctx.boss)
+    {
+        Abort("pull failed (summon trigger misconfigured)");
+        return false;
+    }
+    Player* tank = FindTank(ctx);
+    if (!tank)
+    {
+        Abort("pull failed (roster has no tank)");
+        return false;
+    }
+
+    std::list<Creature*> candidates;
+    ctx.boss->GetCreatureListWithEntryInGrid(candidates, entry, 30.0f);
+    Creature* trigger = nullptr;
+    for (Creature* candidate : candidates)
+        if (candidate && candidate->IsAlive() && candidate->GetSummonerGUID() == ctx.boss->GetGUID() &&
+            (!trigger || tank->GetDistance(candidate) < tank->GetDistance(trigger)))
+            trigger = candidate;
+
+    if (!trigger)
+    {
+        if (++_stuckTicks < CombatTrigger::kCombatConfirmTicks)
+            return false;
+        Abort("pull failed (boss summon trigger missing)");
+        return false;
+    }
+    if (!CombatTrigger::HoldFollowerAttackTagged(ctx.bots, tank))
+    {
+        Abort("pull failed (could not hold follower auto-attack)");
+        return false;
+    }
+    _heldFollowers.clear();
+    for (Player* bot : ctx.bots)
+        if (bot && bot != tank)
+            _heldFollowers.push_back(bot->GetGUID());
+
+    if (!CombatTrigger::BeginTankPull(tank, trigger))
+    {
+        RestoreHeldFollowerStrategies();
+        Abort("pull failed (boss summon trigger not engaged)");
+        return false;
+    }
+
+    CombatEvent event;
+    event.type = CombatEventType::State;
+    event.source = trigger->GetGUID();
+    event.target = ctx.boss->GetGUID();
+    event.actorEntry = trigger->GetEntry();
+    event.detail = Acore::StringFormat("summon_trigger:entry={} summon={} owner={}", entry,
+        trigger->GetGUID().ToString(), ctx.boss->GetGUID().ToString());
+    CombatEventBus::instance().Push(event);
+    LOG_INFO("raidtest", "AttemptRunner: {}", event.detail);
+
+    _pullContextHeld = true;
+    _pullLeader = tank->GetGUID();
+    _pullTank = tank->GetGUID();
+    _summonTriggerGuid = trigger->GetGUID();
+    _confirmTicks = 0;
+    _tankAggroElapsedMs = 0;
+    _tankAggroAcquireMs = 0;
+    _stuckTicks = 0;
+    _stage = Stage::Pull;
+    _pullStep = PullStep::AwaitTankAggro;
+    RecordPhase("summon_trigger_pull", 0);
+    return true;
+}
+
+void AttemptRunner::SampleSummonTriggerState(RunContext const& ctx, Player const* tank) const
+{
+    if (!ctx.boss)
+        return;
+
+    Creature const* trigger = ctx.boss->GetMap()->GetCreature(_summonTriggerGuid);
+    CombatEvent event;
+    event.type = CombatEventType::State;
+    event.source = ctx.boss->GetGUID();
+    event.actorEntry = ctx.boss->GetEntry();
+    if (Unit const* victim = ctx.boss->GetVictim())
+        event.target = victim->GetGUID();
+    event.detail = DescribeSummonTriggerState(ctx.boss, tank, trigger);
+    CombatEventBus::instance().Push(event);
+    LOG_INFO("raidtest", "AttemptRunner: {}", event.detail);
 }
 
 void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
@@ -1833,6 +1989,37 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     }
     else
         _bossAbsentMs = 0;
+    // 不等 boss 已进战才回看位置：BossAI 进战后会 DoZoneInCombat，把全队以 0
+    // threat 加入列表，届时无法再从 threat table 还原首个触发者。这里仅在原生
+    // proximity aggro 的三个条件同时成立时记一次快照，不改变移动、目标或仇恨。
+    if (ctx.boss && ctx.boss->IsAlive() && !ctx.boss->IsInCombat() && !_preclearBossProximityObserved)
+    {
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot || !bot->IsInWorld() || bot->GetMap() != ctx.boss->GetMap())
+                continue;
+
+            float const distance = bot->GetDistance(ctx.boss);
+            float const aggro = ctx.boss->GetAggroRange(bot);
+            if (distance > aggro || !bot->IsWithinLOSInMap(ctx.boss))
+                continue;
+
+            PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+            Unit* current = ai ? ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() : nullptr;
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = bot->GetGUID();
+            state.target = ctx.boss->GetGUID();
+            state.detail = Acore::StringFormat(
+                "preclear_boss_proximity:dist={:.2f} aggro={:.2f} target={} pos={:.2f},{:.2f},{:.2f}",
+                distance, aggro, current ? current->GetGUID().GetCounter() : 0,
+                bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+            CombatEventBus::instance().Push(state);
+            LOG_INFO("raidtest", "AttemptRunner: {}", state.detail);
+            _preclearBossProximityObserved = true;
+            break;
+        }
+    }
     if (ctx.boss && (!ctx.boss->IsAlive() || ctx.boss->IsInCombat()))
     {
         {
@@ -1844,6 +2031,39 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
                 ctx.boss->IsAlive(), ctx.boss->IsInCombat(), ctx.boss->GetPositionX(),
                 ctx.boss->GetPositionY(), ctx.boss->GetPositionZ());
             CombatEventBus::instance().Push(state);
+        }
+        if (ctx.boss->IsInCombat())
+        {
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = ctx.boss->GetGUID();
+            state.actorEntry = ctx.boss->GetEntry();
+            state.detail = DescribePreclearBossEngagement(ctx.boss);
+            CombatEventBus::instance().Push(state);
+            LOG_INFO("raidtest", "AttemptRunner: {}", state.detail);
+
+            // Threat can already have been expanded to the entire group by BossAI's
+            // DoZoneInCombat(). Capture each member's pre-abort geometry so the next
+            // diagnosis can distinguish ordinary proximity aggro from a social/scripted
+            // engagement without changing any combat state.
+            for (Player* bot : ctx.bots)
+            {
+                if (!bot || !bot->IsInWorld() || bot->GetMap() != ctx.boss->GetMap())
+                    continue;
+
+                PlayerbotAI* ai = GET_PLAYERBOT_AI(bot);
+                Unit* current = ai ? ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() : nullptr;
+                CombatEvent member;
+                member.type = CombatEventType::State;
+                member.source = bot->GetGUID();
+                member.target = ctx.boss->GetGUID();
+                member.detail = Acore::StringFormat(
+                    "preclear_member_at_engage:dist={:.2f} aggro={:.2f} los={} combat={} target={} pos={:.2f},{:.2f},{:.2f}",
+                    bot->GetDistance(ctx.boss), ctx.boss->GetAggroRange(bot), bot->IsWithinLOSInMap(ctx.boss),
+                    bot->IsInCombat(), current ? current->GetGUID().GetCounter() : 0,
+                    bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+                CombatEventBus::instance().Push(member);
+            }
         }
         Abort("prerequisite_invalid: boss missing or engaged before clearing completed");
         return;

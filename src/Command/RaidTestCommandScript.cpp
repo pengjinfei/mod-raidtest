@@ -94,6 +94,7 @@ namespace
         switch (t)
         {
         case EncounterTrigger::Pull: return "pull";
+        case EncounterTrigger::Summon: return "summon";
         }
         return "?";
     }

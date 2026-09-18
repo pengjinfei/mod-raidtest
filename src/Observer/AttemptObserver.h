@@ -60,6 +60,7 @@ private:
     uint32 _lastTankSampleMs{0};
     uint32 _lastIngvarSmashSampleMs{0};
     bool _ingvarSmashWindowObserved{false};
+    bool _moorabiUnreachableObserved{false};
     std::unordered_set<ObjectGuid> _ingvarOverlappingMembers;
     std::unordered_set<ObjectGuid> _ingvarObservedAxes;
     std::unordered_map<ObjectGuid, IngvarAxeMemberState> _ingvarAxeMemberStates;

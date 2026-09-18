@@ -7,35 +7,31 @@
 #include "RaidTestConfig.h"
 #include "StringFormat.h"
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <string>
 #include <thread>
 
-namespace
-{
-    // 清洗场景 key 为前缀：只留小写字母数字，限制长度（角色名/账号名共用）。
-    std::string SanitizePrefix(std::string const& text, size_t maxLen)
-    {
-        std::string out;
-        out.reserve(text.size());
-        for (unsigned char c : text)
-        {
-            if (std::isalnum(c))
-                out += static_cast<char>(std::tolower(c));
-        }
-
-        if (out.size() > maxLen)
-            out.resize(maxLen);
-
-        return out;
-    }
-}
-
 std::string RosterManager::MakeScenarioPrefix(std::string const& scenarioKey)
 {
-    std::string prefix = RaidTestConfig::instance().AccountPrefix();
-    prefix += SanitizePrefix(scenarioKey, 16);
+    // MakeCharacterName keeps only the first six letters of this value.  Prefixing it
+    // with RaidTest.AccountPrefix made every scenario start with "raidte", so after
+    // six scenarios had used a slot's fallback suffixes, a new scenario could not
+    // create a character despite having an empty raidtest_accounts mapping.  Accounts
+    // still use AccountPrefix in RosterBuilder; this value is only the per-scenario
+    // character-name namespace.
+    uint32 hash = 2166136261u;
+    for (unsigned char c : scenarioKey)
+    {
+        hash ^= c;
+        hash *= 16777619u;
+    }
+
+    std::string prefix(6, 'a');
+    for (size_t i = prefix.size(); i > 0; --i)
+    {
+        prefix[i - 1] = static_cast<char>('a' + hash % 26);
+        hash /= 26;
+    }
     return prefix;
 }
 

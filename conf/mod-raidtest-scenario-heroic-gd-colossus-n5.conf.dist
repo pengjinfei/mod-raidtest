@@ -1,0 +1,38 @@
+# 古达克（map 604）英雄：第三个 boss 德拉克瑞巨像 Drakkari Colossus (29307)。
+# 装备档 normal5-v1，Heroic，BotCheats 为空；隔离 boss 战口径。
+#
+# 关键机制（core boss_drakkari_colossus.cpp）：Reset 时 boss 在自身周围召 5 只
+# Living Mojo (29830)。任意一只被玩家真实拉到后，npc_living_mojoAI::JustEngagedWith
+# 通知 boss ACTION_INFORM；boss 随即 SetInCombatWithZone，命令所有 Mojo merge 并在
+# 3.5 秒后解除 NON_ATTACKABLE。它们不是五只必须逐一击杀的前置路怪。
+#
+# `EngageTrigger = summon` 只匹配 `GetSummonerGUID()==bossGuid` 的临时 29830，
+# 因此不会选中房间西侧的四个世界刷新 Living Mojo (127076–127079)。这四只与巨像
+# 无关的房间路怪和巨像编队的两只 Drakkari Golem (127080/127081) 由
+# FixtureDespawnSpawns 在每场开战前移除；巨像重置时的五只临时 Mojo 不带数据库 spawn，
+# 不受影响。框架仅令坦克对该原生触发器发一次真实拉怪指令；其余
+# 进战、合并、解锁、仇恨与战斗行为仍由核心脚本和 mod-playerbots 决定。
+#
+# 准备/接战点是巨像生成点 (1672.96,743.49,143.34)：boss 的 MoveInLineOfSight
+# 在冻结阶段显式为空，不会自动开战；world Mojo 又在 39 码外。进入战斗后由现有
+# 两段式「坦克先手、确认仇恨后其余成员 assist」流程接管。
+[Scenario]
+MapId = 604
+BossEntry = 29307
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 1672.96
+EngageY = 743.49
+EngageZ = 143.34
+EngageO = 3.12
+PreparationX = 1672.96
+PreparationY = 743.49
+PreparationZ = 143.34
+PreparationO = 3.12
+TimeoutSeconds = 480
+EngageTrigger = summon
+SummonTriggerEntry = 29830
+FixtureDespawnSpawns = 127076,127077,127078,127079,127080,127081

@@ -7,6 +7,7 @@
 #include "Log.h"
 #include "MotionMaster.h"
 #include "Map.h"
+#include "PathGenerator.h"
 #include "Player.h"
 #include "Playerbots.h"
 #include "Spell.h"
@@ -29,6 +30,7 @@ namespace
     constexpr uint32 kIngvarDarkSmashSpell = 42723;
     constexpr uint32 kIngvarDarkSmashHeroicSpell = 59709;
     constexpr uint32 kIngvarThrowEntry = 23997;
+    constexpr uint32 kMoorabiEntry = 29305;
     constexpr uint32 kRemoveCurseSpell = 475;
     constexpr uint32 kIngvarDarkSmashSampleMs = 250;
     constexpr float kIngvarDarkSmashConeRadians = 1.04719755f;
@@ -46,6 +48,7 @@ void AttemptObserver::Reset()
     _lastTankSampleMs = 0;
     _lastIngvarSmashSampleMs = 0;
     _ingvarSmashWindowObserved = false;
+    _moorabiUnreachableObserved = false;
     _ingvarOverlappingMembers.clear();
     _ingvarObservedAxes.clear();
     _ingvarAxeMemberStates.clear();
@@ -126,6 +129,51 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
                 ctx.boss->HasInArc(kIngvarDarkSmashConeRadians, member), ctx.boss->isInBack(member), member->GetHealth(),
                 lastMove.lastMoveToX, lastMove.lastMoveToY, lastMove.lastMoveToZ, uint32(lastMove.priority),
                 getMSTimeDiff(lastMove.msTime, getMSTime()));
+            CombatEventBus::instance().Push(state);
+        }
+    }
+
+    // The normal boss-state sample shows that a target is unreachable, but not
+    // whether TargetedMovementGenerator rejected the target's accessibility
+    // state or a separate mmap route. Record both once per transition. This is
+    // observation only: PathGenerator is never handed to a MotionMaster.
+    bool const moorabiUnreachable = ctx.boss && ctx.boss->GetEntry() == kMoorabiEntry &&
+        ctx.boss->CanNotReachTarget();
+    if (!moorabiUnreachable)
+        _moorabiUnreachableObserved = false;
+    else if (!_moorabiUnreachableObserved)
+    {
+        _moorabiUnreachableObserved = true;
+        Unit* victim = ctx.boss->GetVictim();
+        if (victim && victim->IsInWorld() && victim->GetMap() == ctx.boss->GetMap())
+        {
+            PathGenerator path(ctx.boss);
+            bool const pathCalculated = path.CalculatePath(victim->GetPositionX(), victim->GetPositionY(),
+                victim->GetPositionZ(), false);
+            G3D::Vector3 const& actualEnd = path.GetActualEndPosition();
+            PathRouteDiagnostics const diagnostics = path.GetRouteDiagnostics();
+            LiquidStatus const victimLiquid = victim->GetLiquidData().Status;
+
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = ctx.boss->GetGUID();
+            state.target = victim->GetGUID();
+            state.actorEntry = kMoorabiEntry;
+            state.detail = Acore::StringFormat(
+                "moorabi_unreachable_probe: accessible={} can_attack={} dist2d={:.2f} dz={:.2f} "
+                "boss_motion={} victim_motion={} boss_transport={} victim_transport={} liquid=0x{:X} "
+                "water={} falling={} boss_walk={} boss_fly={} path_calculated={} path_type=0x{:X} "
+                "actual_end={:.2f},{:.2f},{:.2f} tiles={}/{} projections={}/{} find_path=0x{:08X} "
+                "component={}",
+                victim->isInAccessiblePlaceFor(ctx.boss), ctx.boss->CanCreatureAttack(victim, true),
+                ctx.boss->GetExactDist2d(victim), std::fabs(ctx.boss->GetPositionZ() - victim->GetPositionZ()),
+                uint32(ctx.boss->GetMotionMaster()->GetCurrentMovementGeneratorType()),
+                uint32(victim->GetMotionMaster()->GetCurrentMovementGeneratorType()), ctx.boss->GetTransport() != nullptr,
+                victim->GetTransport() != nullptr, uint32(victimLiquid), victim->IsInWater(), victim->IsFalling(),
+                ctx.boss->CanWalk(), ctx.boss->CanFly(), pathCalculated, uint32(path.GetPathType()), actualEnd.x, actualEnd.y,
+                actualEnd.z, diagnostics.startTileLoaded, diagnostics.endTileLoaded, uint64(diagnostics.start.polyRef),
+                uint64(diagnostics.end.polyRef), diagnostics.findPathStatus,
+                diagnostics.endReachable ? "connected" : (diagnostics.connectivitySearchCapped ? "capped" : "disconnected"));
             CombatEventBus::instance().Push(state);
         }
     }
