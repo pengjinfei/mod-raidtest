@@ -100,6 +100,8 @@ namespace
     // 清怪期间容忍 boss 缺席多久。带 CREATURE_FLAG_EXTRA_HARD_RESET 的 boss 被
     // DespawnOnEvade() 下线后默认 20 秒重生（Creature.h），给到 30 秒留余量。
     constexpr uint32 kBossAbsentBudgetMs = 30000;
+    // formation 脱战重置后的 Creature 重生默认可达 20 秒；给 5 秒调度余量。
+    constexpr uint32 kPrerequisiteRebindBudgetMs = 25000;
     // 队列排空 ≠ 提交完成：async DB worker 把消息从队首取出后、在连接上 commit
     // 完成之前 QueueSize() 已为 0；紧接的同步 SELECT（另一连接）会抢跑读空 ——
     // Task 8 验收 run 4 实机复现：占位 INSERT 已落下、read-back 却返回空，attempt
@@ -112,6 +114,11 @@ namespace
     // tank 没有在这段时间内真正获得 boss victim，说明组队/职业 AI/拉怪状态失效；
     // 中止本次样本，而不是把无效开怪记作首领机制失败。
     constexpr uint32 kTankAggroAcquireMs = 8000;
+    // 坦克首仇恨成立时，boss 可能已经离开场景的 EngagePoint，个别 follower 在同一 tick
+    // 对 boss 暂无 LOS。先恢复其正常的 "attack tagged" 策略并给一小段真实时间接敌，
+    // 不能把这个位置时序直接记为框架 abort；但也不能无限等，避免掩盖真实拉起失败。
+    constexpr uint32 kAssistAcquireMs = 8000;
+    constexpr uint32 kAssistRetryMs = 1000;
     // 召唤物开战不能沿用 20 个 tick 的通用确认窗口：空载 worldserver 的 20 tick
     // 可以少于 40ms，坦克尚未走到 Mojo 身边，原生 JustEngagedWith 根本来不及触发。
     // 这里只等待真实 AttackAction 的原生触发，不创建 boss 的战斗/威胁引用。
@@ -204,6 +211,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _followersTeleportSent = false;
     _prerequisiteGuids.clear();
     _prerequisiteSpawnIds.clear();
+    _prerequisiteRebindElapsedMs.clear();
     _preBossElapsed = _preparationElapsed = _recoveryElapsed = 0;
     _navigationWaypoint = _navigationElapsed = 0;
     _navigationComplete = false;
@@ -226,6 +234,8 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _confirmTicks = 0;
     _tankAggroElapsedMs = 0;
     _tankAggroAcquireMs = 0;
+    _assistAcquireMs = 0;
+    _assistRetryMs = kAssistRetryMs;
     _summonTriggerElapsedMs = 0;
     _summonTriggerSampleElapsedMs = 0;
     _pullTank.Clear();
@@ -840,12 +850,27 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             if (_tankAggroElapsedMs < kTankAggroLeadMs)
                 return;
 
+            _assistAcquireMs += diff;
+            _assistRetryMs += diff;
+            if (_assistRetryMs < kAssistRetryMs)
+                return;
+            _assistRetryMs = 0;
+
             if (!CombatTrigger::BeginAssistForAll(ctx.bots, tank, ctx.boss))
             {
+                if (_assistAcquireMs < kAssistAcquireMs)
+                {
+                    if (_assistAcquireMs / 1000 != (_assistAcquireMs - diff) / 1000)
+                        LOG_INFO("raidtest", "AttemptRunner: waiting for followers to acquire boss assist {}/{}ms",
+                            _assistAcquireMs, kAssistAcquireMs);
+                    return;
+                }
                 Abort("pull failed (not all followers entered combat)");
                 return;
             }
 
+            _assistAcquireMs = 0;
+            _assistRetryMs = 0;
             RecordPhase("pull_assist", 0);
             ConfirmAndEnterObserving(ctx);
             return;
@@ -1828,6 +1853,8 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
     _confirmTicks = 0;
     _tankAggroElapsedMs = 0;
     _tankAggroAcquireMs = 0;
+    _assistAcquireMs = 0;
+    _assistRetryMs = kAssistRetryMs;
     _summonTriggerElapsedMs = 0;
     _summonTriggerSampleElapsedMs = kSummonTriggerSampleMs;
     _stuckTicks = 0;
@@ -2099,8 +2126,14 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             Creature* rebound = spawnId ? FindSpawnInStore(map, spawnId) : nullptr;
             if (!rebound)
             {
-                LOG_ERROR("raidtest", "AttemptRunner: prerequisite spawn {} (guid {}) gone from instance {} "
-                    "without a recorded death", spawnId, guid.ToString(), map->GetInstanceId());
+                if (_prerequisiteRebindElapsedMs.size() < _prerequisiteGuids.size())
+                    _prerequisiteRebindElapsedMs.resize(_prerequisiteGuids.size());
+                uint32& elapsed = _prerequisiteRebindElapsedMs[i];
+                elapsed += diff;
+                if (elapsed < kPrerequisiteRebindBudgetMs)
+                    return;
+                LOG_ERROR("raidtest", "AttemptRunner: prerequisite spawn {} (guid {}) stayed absent for {}ms "
+                    "without a recorded death", spawnId, guid.ToString(), elapsed);
                 Abort("prerequisite_invalid: spawn disappeared without a recorded death");
                 return;
             }
@@ -2108,6 +2141,8 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
                 "(instance script reset the pack)", spawnId, guid.ToString(), rebound->GetGUID().ToString());
             _prerequisiteGuids[i] = rebound->GetGUID();
             CombatEventBus::instance().TrackUnit(rebound->GetGUID());
+            if (i < _prerequisiteRebindElapsedMs.size())
+                _prerequisiteRebindElapsedMs[i] = 0;
             unit = rebound;
         }
         if (!next)
@@ -2326,6 +2361,31 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
                     tankAI->GetAiObjectContext()->GetValue<ObjectGuid>("pull target")->Set(ObjectGuid::Empty);
             _ccWaitTarget.Clear();
         }
+        // 清怪拉怪必须全队一起上。BeginPullForAll 只把 leader 的拒绝当作失败，
+        // 跟随者留在准备点（无视线/超距）时它同样返回 true，于是框架把坦克一个人
+        // 留在怪堆里：run661 里坦克单挑东侧平台，81.7 秒阵亡后再没有人能发起拉怪，
+        // 200 秒清怪超时。这里要求每个活着的 bot 都真的拿到这次拉怪目标，否则继续
+        // 按接近流程把队伍带到共同落点，下一 tick 再重试拉怪。
+        uint32 aliveBots = 0;
+        uint32 engagedBots = 0;
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot || !bot->IsAlive() || bot->GetMap() != next->GetMap())
+                continue;
+            ++aliveBots;
+            PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
+            Unit* current = botAI ? botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() : nullptr;
+            if (current == next || bot->GetVictim() == next)
+                ++engagedBots;
+        }
+        if (aliveBots > 1 && engagedBots < aliveBots)
+        {
+            LOG_WARN("raidtest", "AttemptRunner: prerequisite pull engaged only {}/{} bot(s) on {} - "
+                "approaching as a party before retrying", engagedBots, aliveBots, next->GetGUID().ToString());
+            _pullRejectedAt = _preparationElapsed ? _preparationElapsed : 1;
+            ApproachPrerequisiteTarget(ctx, next);
+            return;
+        }
         _prerequisitePullSent = true;
         _ccFirstPullDone = true;
     }
@@ -2524,7 +2584,12 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
     // 只在没人还在走、且与上次尝试间隔足够时重新发令，避免每个 tick 清运动状态造成抖动。
     // 计时必须覆盖失败路径：目标本身在网格外时这里每个 tick 都会失败，若只在成功时记时刻，
     // 无路线告警会按 tick × 人数刷屏（实测 180 秒 73,185 条）。
+    Player* const leader = ctx.bots.front();
+    if (!leader)
+        return;
+
     bool const sameTarget = _prerequisiteApproachGuid == target->GetGUID();
+    // 全队一起走，所以任一人还在走都算本次接近尚未结束（不然会每秒重发移动指令）。
     bool const stillWalking = std::any_of(ctx.bots.begin(), ctx.bots.end(),
         [](Player* bot) { return bot && bot->isMoving(); });
     if (sameTarget && (stillWalking || _preparationElapsed - _prerequisiteApproachAt < 1000))
@@ -2539,9 +2604,25 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
     if (!destination)
         return;
 
-    std::vector<std::pair<Player*, MotionMaster*>> validatedMembers;
-    validatedMembers.reserve(ctx.bots.size());
-    for (Player* bot : ctx.bots)
+    struct ApproachMember
+    {
+        Player* bot;
+        MotionMaster* motion;
+        G3D::Vector3 destination;
+    };
+
+    std::vector<ApproachMember> validatedMembers;
+    // 落点必须由一个人决定、全队共用，两个极端都已实测失败：
+    //  · 每个 bot 各自算路径末端 → 远程各绕各的，脱离治疗范围甚至跌落（莫拉比东侧上下平台）；
+    //  · 只让 leader 走、跟随者留在准备点 → 坦克一个人进怪堆。run661 里坦克单挑东侧平台，
+    //    81.7 秒阵亡后没有任何人还能发起拉怪，200 秒清怪超时。
+    // 因此 leader（ctx.bots.front()）沿自己的可走路径选「最后一个能看到目标的点」当共同落点，
+    // 全队走到同一个点；预检仍是整队全或无，之后接战与走位完全交还 playerbots。
+    std::vector<Player*> const& approachBots = ctx.bots;
+    validatedMembers.reserve(approachBots.size());
+    G3D::Vector3 sharedDestination;
+    bool sharedDestinationReady = false;
+    for (Player* bot : approachBots)
     {
         if (!bot || !bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != destination)
             return;
@@ -2578,20 +2659,60 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
             }
             return;
         }
-        validatedMembers.emplace_back(bot, motion);
+
+        // 仅「路径末端靠近目标」不足以保证能开怪：莫拉比东侧前置怪在上层平台，
+        // 低层台阶上的末端虽然只有数码，仍被边缘遮挡。用 leader 自己可走路径上
+        // **第一个**看得到目标的点当全队的共同落点：那是能开怪的最短走法。
+        // 用最后一个可见点（≈怪脚下）会把全队多拖一段路，run663 seq3 就是这样
+        // 被拖到平台西侧、把不在前置表里的西侧那组卷进来。（stopDistance > 0 的
+        // CC 门禁形态仍由各自的路线在下面的移动循环里决定停止点。）
+        G3D::Vector3 approachDestination = actualEnd;
+        if (stopDistance <= 0.0f)
+        {
+            if (!sharedDestinationReady)
+            {
+                Movement::PointsArray const& points = path.GetPath();
+                auto const visiblePoint = std::find_if(points.begin(), points.end(),
+                    [target](G3D::Vector3 const& point)
+                    {
+                        return target->IsWithinLOS(point.x, point.y, point.z);
+                    });
+                sharedDestination = visiblePoint == points.end() ? actualEnd : *visiblePoint;
+                sharedDestinationReady = true;
+                if (visiblePoint == points.end() && logFailure)
+                {
+                    LOG_WARN("raidtest", "AttemptRunner: prerequisite approach has no visible ground point bot={} target={} entry={} "
+                        "- falling back to path end {:.2f},{:.2f},{:.2f}",
+                        bot->GetName(), target->GetGUID().ToString(), target->GetEntry(), actualEnd.x, actualEnd.y,
+                        actualEnd.z);
+                    _prerequisiteApproachLoggedAt = _preparationElapsed;
+                }
+            }
+            approachDestination = sharedDestination;
+        }
+        validatedMembers.push_back({bot, motion, approachDestination});
     }
 
-    for (auto const& [bot, motion] : validatedMembers)
+    // 接近期间不再压制跟随者的 masterless "attack tagged"。
+    //
+    // 早先的版本在 leader 单独探路时用 HoldFollowerAttackTagged 把其余人留在准备点，
+    // 结果是坦克一个人进怪堆（run661）：跟随者既没被拉怪指令带上（无视线/超距时
+    // BeginPullForAll 只记日志、不报错），又因被压制而不能自行接战，坦克阵亡后
+    // 没有任何人能发起下一次拉怪。现在全队一起走到共同落点，并且明确希望他们
+    // 自己接战；压制只会重新制造“只有 leader 进战”。
+
+    for (ApproachMember const& member : validatedMembers)
     {
-        G3D::Vector3 destination(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ());
+        G3D::Vector3 destination = member.destination;
         if (stopDistance > 0.0f)
         {
             // 沿各自的地面路线往前走，走到「下一个路点距最近的存活前置怪 <= stopDistance」就停在
             // 当前路点：接近视线，但不进仇恨半径。
-            PathGenerator path(bot);
+            PathGenerator path(member.bot);
             path.CalculatePath(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), false);
             Movement::PointsArray const& points = path.GetPath();
-            destination = G3D::Vector3(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+            destination = G3D::Vector3(member.bot->GetPositionX(), member.bot->GetPositionY(),
+                member.bot->GetPositionZ());
             for (size_t i = 1; i < points.size(); ++i)
             {
                 if (DistanceToNearestPrerequisite(ctx, Position(points[i].x, points[i].y, points[i].z)) <= stopDistance)
@@ -2600,8 +2721,8 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
             }
         }
 
-        motion->Clear();
-        motion->MovePoint(/*id*/ 0, destination.x, destination.y, destination.z,
+        member.motion->Clear();
+        member.motion->MovePoint(/*id*/ 0, destination.x, destination.y, destination.z,
                           FORCED_MOVEMENT_NONE, 0.0f, 0.0f, /*generatePath*/ true, /*forceDestination*/ false);
     }
 

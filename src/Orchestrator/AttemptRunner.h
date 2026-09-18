@@ -94,6 +94,9 @@ private:
     // 与 _prerequisiteGuids 一一对应的数据库 spawnId。GUID 会变（副本脚本把整组
     // DespawnFormation 掉之后核心按原 spawn 重新生成的是新对象），spawnId 不会。
     std::vector<uint32> _prerequisiteSpawnIds;
+    // 副本脚本重置 formation 时，旧 GUID 会先消失、原 spawn 在稍后的 world tick 才重新载入。
+    // 按 slot 计时，等待期间绝不把它当成击杀；超时仍作为状态不一致作废。
+    std::vector<uint32> _prerequisiteRebindElapsedMs;
     uint32 _preBossElapsed{0};
     uint32 _preparationElapsed{0};
     // 前置清怪时首次进入场景 boss 的原生仇恨半径（且有 LOS）的只读诊断标记。
@@ -169,6 +172,8 @@ private:
     uint32 _confirmTicks{0};        // 进战斗确认泵（仅计算确实检查了战斗态的 tick）
     uint32 _tankAggroElapsedMs{0};  // Boss 连续锁定 tank 的 lead 时间（真实经过毫秒）
     uint32 _tankAggroAcquireMs{0};  // 等待 tank 首次/再次获得 victim 的真实经过毫秒
+    uint32 _assistAcquireMs{0};     // 放行 follower 后等待其建立普通攻击目标的真实经过毫秒
+    uint32 _assistRetryMs{0};       // follower assist 指令的节流计时，避免每 tick 重发
     uint32 _summonTriggerElapsedMs{0};
     uint32 _summonTriggerSampleElapsedMs{0};
     // 巡逻中的 boss 可能恰好被柱子挡住或走出施法距离，这不是"开不了怪"，是"这一刻开不了"。
