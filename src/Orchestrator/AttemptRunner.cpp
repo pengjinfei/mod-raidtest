@@ -2986,9 +2986,15 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
     validatedMembers.reserve(approachBots.size());
     G3D::Vector3 sharedDestination;
     bool sharedDestinationReady = false;
+    uint32 unavailableBots = 0;
     for (Player* bot : approachBots)
     {
-        if (!bot || !bot->IsAlive() || !bot->IsInWorld() || bot->GetMap() != destination)
+        if (!bot || !bot->IsAlive() || !bot->IsInWorld())
+        {
+            ++unavailableBots;
+            continue;
+        }
+        if (bot->GetMap() != destination)
             return;
         MotionMaster* motion = bot->GetMotionMaster();
         if (!motion)
@@ -3064,6 +3070,13 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
     // BeginPullForAll 只记日志、不报错），又因被压制而不能自行接战，坦克阵亡后
     // 没有任何人能发起下一次拉怪。现在全队一起走到共同落点，并且明确希望他们
     // 自己接战；压制只会重新制造“只有 leader 进战”。
+
+    if (validatedMembers.empty())
+        return;
+
+    if (unavailableBots)
+        LOG_INFO("raidtest", "AttemptRunner: prerequisite approach retrying with {}/{} living bot(s)",
+            validatedMembers.size(), approachBots.size());
 
     for (ApproachMember const& member : validatedMembers)
     {
