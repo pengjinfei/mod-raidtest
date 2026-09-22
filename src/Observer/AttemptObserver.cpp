@@ -3,6 +3,7 @@
 #include "Creature.h"
 #include "Group.h"
 #include "GroupMgr.h"
+#include "InstanceScript.h"
 #include "LastMovementValue.h"
 #include "Log.h"
 #include "MotionMaster.h"
@@ -750,6 +751,27 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     // boss 死亡事件（BossDeathSeen）。单凭 boss 指针消失（!bossKnown = evade/
     // reset/瞬时失效）不得判 Kill —— 指针找不到 ≠ boss 已死；击杀后 boss 尸体
     // 仍在场且血量读 0，配合 Death 事件才是确凿信号（击杀后 despawn 需守卫确认）。
+    if (ctx.scenario && ctx.scenario->GetEventStarterEntry())
+    {
+        // Escort survival is a hard normal-rule condition and must win over any
+        // transient/stale instance state. The starter is tracked as ctx.boss.
+        if (!ctx.boss || !ctx.boss->IsAlive())
+        {
+            ctx.notes = "scripted event escort died";
+            LOG_INFO("raidtest", "AttemptObserver: scripted event escort {} died", ctx.bossGuid.ToString());
+            return AttemptResult::Wipe;
+        }
+
+        Map* map = ctx.bots.empty() ? nullptr : ctx.bots.front()->GetMap();
+        InstanceScript* script = map && map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
+        if (script && script->GetBossState(ctx.scenario->GetEventCompletionBossState()) == DONE)
+        {
+            LOG_INFO("raidtest", "AttemptObserver: scripted event completion state {} reached DONE",
+                ctx.scenario->GetEventCompletionBossState());
+            return AttemptResult::Kill;
+        }
+    }
+
     bool const bossDeathSeen = CombatEventBus::instance().BossDeathSeen();
     // 双 boss（KillGateSpawn）：BossEntry 死后还需第二个必死目标收到真实死亡才判
     // Kill；gate 存活期间不算击杀（uk 斯卡瓦德先死会变幽灵，须等达尔隆也死）。
@@ -813,7 +835,7 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     bool const bossInCombat = ctx.boss && ctx.boss->IsInCombat();
     // 双 boss：gate 未死期间 encounter 仍进行（BossEntry 可能已死变幽灵），卡壳判定
     // 挂起，终态交给 Kill（gate 死）/ Wipe / Timeout。
-    if (bossKnown && !bossInCombat && !anyDead && !gatePending)
+    if ((!ctx.scenario || !ctx.scenario->GetEventStarterEntry()) && bossKnown && !bossInCombat && !anyDead && !gatePending)
     {
         if (++_abortSamples >= kStuckAbortTicks)
         {
@@ -835,7 +857,7 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     {
         return bot && bot->IsAlive() && bot->IsInCombat();
     });
-    if (anyDead && bossReset && raidOutOfCombat && !gatePending)
+    if ((!ctx.scenario || !ctx.scenario->GetEventStarterEntry()) && anyDead && bossReset && raidOutOfCombat && !gatePending)
     {
         if (++_encounterResetSamples >= kStuckAbortTicks)
         {

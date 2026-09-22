@@ -1,0 +1,20 @@
+# Heroic HoS / Maiden of Grief isolated-boss baseline only.
+# No fixtures; nearby east-side pack has not yet been classified as full-room preconditions.
+[Scenario]
+MapId = 599
+BossEntry = 27975
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+PreparationX = 867.0
+PreparationY = 666.0
+PreparationZ = 190.31
+PreparationO = 3.14
+EngageX = 867.0
+EngageY = 666.0
+EngageZ = 190.31
+EngageO = 3.14
+TimeoutSeconds = 480
+EngageTrigger = pull

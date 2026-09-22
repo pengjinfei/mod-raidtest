@@ -1,0 +1,60 @@
+# 古达克（map 604）英雄：第五个 boss 凶残的艾克 Eck the Ferocious (29932)。
+# 装备档 normal5-v1，Heroic，BotCheats 为空。
+#
+# 本场景使用通用 `BossSpawnMode=script`：boss 开场不存在，清完指定 DB 前置怪后
+# 等待副本脚本生成它；这是正常规则完整遭遇，不是隔离夹具。
+#
+# ── 原生机制（core）──────────────────────────────────────────────────────
+# `src/server/scripts/Northrend/Gundrak/instance_gundrak.cpp:OnUnitDeath`：
+#   英雄难度下，当一只 Ruins Dweller(29920) 所属编队 `IsAnyMemberAlive()==false`
+#   （即整组三只死完）且 `!IsBossDone(DATA_ECK_THE_FEROCIOUS)` 时，
+#   1 秒后 `instance->SummonCreature(29932, {1624.70, 891.43, 95.08, 1.2})`。
+# 编队：127203（leader） + 127201 + 127202（`creature_formations` groupAI=3）。
+# 另有三只单体 Dweller 127204/127205/127206 不在该编队内、不触发召唤。
+#
+# `boss_eck.cpp`：InitializeAI 把艾克 MovePoint 到 EckCombatStartPosition
+# (1638.55,919.76,104.95)、SetHomePosition (1642.712,934.646,107.205)、REACT_PASSIVE；
+# 走到位后自施 55837 并转 REACT_AGGRESSIVE。战斗技能：55813 Bite / 55814 Spit /
+# 55815 Spring（命中后 ResetAllThreat 并把该目标威胁置 1）/ 55816 Berserk(90s)。
+#
+# ── 通用脚本召唤模式 ────────────────────────────────────────────────────
+# `creature` 表里 29932 的 spawn 数为 0；run686 曾证实旧 ResetInstance 因此在 0ms 作废。
+# BossSpawnMode=script 现在会：①以 DB 前置怪为 reset 合约；②清怪期间允许 boss 缺席；
+# ③在前置全灭后按 entry 解析 m_spawnId=0 临时 creature；④等它进入开怪点且转主动再拉。
+# 默认 BossSpawnMode=database 的既有场景不变。详见 docs/testing/bosses/heroic-gd-eck/README.md。
+[Scenario]
+MapId = 604
+BossEntry = 29932
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+# 开怪点 = 艾克原生 EckCombatStartPosition（他也正是走到这里才开始可攻击）。
+EngageX = 1638.55
+EngageY = 919.76
+EngageZ = 104.95
+EngageO = 0.0
+# 准备点 = Dweller 编队所在高台 (1650,940)，实测地面 z=107.20；
+# 距艾克开怪点 23.3 码、对该点 los=true（raidtest los 实测）。
+PreparationX = 1650.0
+PreparationY = 940.0
+PreparationZ = 107.20
+PreparationO = 0.0
+TimeoutSeconds = 480
+# 艾克开场不存在：清掉 127203/127201/127202 编队后由 instance script 召唤。
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 30
+# boss_eck.cpp 会从召唤点走到 Engage 点；到点前 REACT_PASSIVE，故必须两项都等到。
+ScriptBossReadyRadius = 5
+ScriptBossRequireActive = 1
+# 艾克走到开怪点会在当前清怪高台的原生仇恨半径内自动开战；这是正常机制，
+# 显式接受并记录 script_boss_auto_engage，而不是假装它是坦克手动 pull。
+ScriptBossAcceptAutoEngage = 1
+EngageTrigger = pull
+PrerequisiteSpawns = 127203,127201,127202
+PrerequisiteX = 1650.0
+PrerequisiteY = 940.0
+PrerequisiteZ = 107.20
+PrerequisiteO = 0.0
+PrerequisiteTimeoutSeconds = 240

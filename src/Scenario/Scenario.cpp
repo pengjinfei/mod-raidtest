@@ -2,6 +2,7 @@
 #include "Config.h"
 #include "Tokenize.h"
 #include <set>
+#include <sstream>
 #include "Log.h"
 #include "StringConvert.h"   // Acore::StringTo
 #include "StringFormat.h"    // Acore::String::Trim
@@ -296,6 +297,128 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 failed = true;
             }
         }
+        else if (key == "BossSpawnMode")
+        {
+            if (ToLower(value) == "database")
+                _bossSpawnMode = BossSpawnMode::Database;
+            else if (ToLower(value) == "script")
+                _bossSpawnMode = BossSpawnMode::Script;
+            else
+            {
+                LOG_ERROR("raidtest", "Scenario: unknown BossSpawnMode '{}' (expected 'database' or 'script') "
+                    "at line {} in '{}'", value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "ScriptBossAppearTimeoutSeconds")
+        {
+            if (!ParseUint32(value, _scriptBossAppearTimeoutSeconds) || !_scriptBossAppearTimeoutSeconds)
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid ScriptBossAppearTimeoutSeconds '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "ScriptBossReadyRadius")
+        {
+            if (!ParseFloat(value, _scriptBossReadyRadius) || _scriptBossReadyRadius < 0.0f)
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid ScriptBossReadyRadius '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "ScriptBossRequireActive")
+        {
+            if (!ParseBool(value, _scriptBossRequireActive))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid ScriptBossRequireActive '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "ScriptBossAcceptAutoEngage")
+        {
+            if (!ParseBool(value, _scriptBossAcceptAutoEngage))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid ScriptBossAcceptAutoEngage '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "EventStarterEntry")
+        {
+            if (!ParseUint32(value, _eventStarterEntry) || !_eventStarterEntry)
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EventStarterEntry '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "EventCompletionBossState")
+        {
+            if (!ParseUint32(value, _eventCompletionBossState))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EventCompletionBossState '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "EventPhases")
+        {
+            std::stringstream stream(value);
+            std::string phase;
+            while (std::getline(stream, phase, ','))
+            {
+                size_t const colon = phase.find(':');
+                uint32 stateId = 0;
+                uint32 stateValue = 0;
+                if (colon == std::string::npos || !ParseUint32(Acore::String::Trim(phase.substr(0, colon)), stateId) ||
+                    !ParseUint32(Acore::String::Trim(phase.substr(colon + 1)), stateValue))
+                {
+                    LOG_ERROR("raidtest", "Scenario: invalid EventPhases item '{}' at line {} in '{}'", phase,
+                        lineNumber, filePath);
+                    failed = true;
+                    break;
+                }
+                _eventPhases.push_back({ stateId, stateValue });
+            }
+        }
+        else if (key == "EventFailureEscortEntry")
+        {
+            if (!ParseUint32(value, _eventFailureEscortEntry) || !_eventFailureEscortEntry)
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EventFailureEscortEntry '{}' at line {} in '{}'", value,
+                    lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "EventTrackEntries")
+        {
+            std::stringstream stream(value);
+            std::string entry;
+            while (std::getline(stream, entry, ','))
+            {
+                uint32 parsed = 0;
+                if (!ParseUint32(Acore::String::Trim(entry), parsed) || !parsed)
+                {
+                    LOG_ERROR("raidtest", "Scenario: invalid EventTrackEntries item '{}' at line {} in '{}'", entry,
+                        lineNumber, filePath);
+                    failed = true;
+                    break;
+                }
+                _eventTrackEntries.push_back(parsed);
+            }
+        }
+        else if (key == "EventFollowStarter")
+        {
+            if (!ParseBool(value, _eventFollowStarter))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EventFollowStarter '{}' at line {} in '{}'", value,
+                    lineNumber, filePath);
+                failed = true;
+            }
+        }
         else if (key == "SummonTriggerEntry")
         {
             if (!ParseUint32(value, _summonTriggerEntry) || !_summonTriggerEntry)
@@ -400,6 +523,11 @@ bool Scenario::LoadFromFile(std::string const& filePath)
         else if (key == "PrerequisiteCcWaitSeconds")
         {
             if (!ParseUint32(value, _prerequisiteCcWaitSeconds) || _prerequisiteCcWaitSeconds > 60)
+                failed = true;
+        }
+        else if (key == "PrerequisiteCcEngagedGraceSeconds")
+        {
+            if (!ParseUint32(value, _prerequisiteCcEngagedGraceSeconds) || _prerequisiteCcEngagedGraceSeconds > 10)
                 failed = true;
         }
         else if (key == "NavigationTimeoutSeconds")
@@ -558,6 +686,22 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 nonTankPreparation[2], nonTankPreparation[3]);
         }
     }
+    if ((_eventStarterEntry == 0) != (_eventCompletionBossState == 0))
+    {
+        LOG_ERROR("raidtest", "Scenario: EventStarterEntry and EventCompletionBossState must be configured together");
+        failed = true;
+    }
+    if (_eventStarterEntry && (!_dungeonScenario || _eventPhases.empty() || !_eventFailureEscortEntry))
+    {
+        LOG_ERROR("raidtest", "Scenario: scripted event requires dungeon mode, EventPhases, EventFailureEscortEntry, "
+            "and no PrerequisiteSpawns");
+        failed = true;
+    }
+    if (!_eventStarterEntry && (!_eventPhases.empty() || _eventFailureEscortEntry || !_eventTrackEntries.empty()))
+    {
+        LOG_ERROR("raidtest", "Scenario: EventPhases/EventFailureEscortEntry/EventTrackEntries require EventStarterEntry");
+        failed = true;
+    }
     if (_engageTrigger == EncounterTrigger::Summon && !_summonTriggerEntry)
     {
         LOG_ERROR("raidtest", "Scenario: EngageTrigger=summon requires SummonTriggerEntry");
@@ -571,6 +715,19 @@ bool Scenario::LoadFromFile(std::string const& filePath)
     if (_engageTrigger == EncounterTrigger::Summon && !_prerequisiteSpawns.empty())
     {
         LOG_ERROR("raidtest", "Scenario: EngageTrigger=summon cannot combine with PrerequisiteSpawns");
+        failed = true;
+    }
+    if (_bossSpawnMode == BossSpawnMode::Script)
+    {
+        if (_engageTrigger != EncounterTrigger::Pull || _prerequisiteSpawns.empty())
+        {
+            LOG_ERROR("raidtest", "Scenario: BossSpawnMode=script requires EngageTrigger=pull and PrerequisiteSpawns");
+            failed = true;
+        }
+    }
+    else if (_scriptBossRequireActive || _scriptBossAcceptAutoEngage)
+    {
+        LOG_ERROR("raidtest", "Scenario: ScriptBoss* options require BossSpawnMode=script");
         failed = true;
     }
 

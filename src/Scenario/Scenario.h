@@ -18,6 +18,23 @@ enum class GearProfile : uint8
     Epic        // 史诗档兜底配装（NAXX 团测基准）
 };
 
+// Boss 是否在 attempt 起点就有数据库 spawn。Script 模式用于「清前置后由副本脚本
+// 运行时召唤」的遭遇；默认 Database 保持所有既有场景语义不变。
+enum class BossSpawnMode : uint8
+{
+    Database,
+    Script
+};
+
+// A normal in-world scripted-event phase. The runner waits for the declared
+// instance state, then performs the next real gossip interaction with the
+// configured starter; no direct AI action or instance-state mutation occurs.
+struct ScriptedEventPhase
+{
+    uint32 stateId{0};
+    uint32 stateValue{0};
+};
+
 // 配置名（"none"/"epic"，忽略大小写）-> GearProfile；无法识别返回 None 并 LOG_WARN。
 GearProfile GearProfileFromString(std::string const& value);
 
@@ -60,9 +77,24 @@ public:
     Position const& GetEngagePoint() const { return _engagePoint; }
     uint32 GetTimeoutSeconds() const { return _timeoutSeconds; }
     EncounterTrigger GetEngageTrigger() const { return _engageTrigger; }
-    // EngageTrigger=summon 时需要的召唤物 entry。只匹配当前场景 boss 直接召出的临时单位，
+    BossSpawnMode GetBossSpawnMode() const { return _bossSpawnMode; }
+    uint32 GetScriptBossAppearTimeoutSeconds() const { return _scriptBossAppearTimeoutSeconds; }
+    float GetScriptBossReadyRadius() const { return _scriptBossReadyRadius; }
+    bool GetScriptBossRequireActive() const { return _scriptBossRequireActive; }
+    // 默认 false：script boss 在拉怪阶段前被队伍自然仇恨时仍作废。仅原生设计为
+    // 靠 boss 接近队伍自动开战的遭遇可显式放开，并以 script_boss_auto_engage 留证。
+    bool GetScriptBossAcceptAutoEngage() const { return _scriptBossAcceptAutoEngage; }
+    // EngageTrigger=summon 时需要的召唤物 entry。只匹配当前场景 boss 直接召出的临时单位,
     // 不会把同 entry 的世界刷怪纳入目标。
     uint32 GetSummonTriggerEntry() const { return _summonTriggerEntry; }
+    // Scripted instance event: interact with this gossip creature using the tank,
+    // then finish when the declared instance boss-state reaches DONE.
+    uint32 GetEventStarterEntry() const { return _eventStarterEntry; }
+    uint32 GetEventCompletionBossState() const { return _eventCompletionBossState; }
+    std::vector<ScriptedEventPhase> const& GetEventPhases() const { return _eventPhases; }
+    uint32 GetEventFailureEscortEntry() const { return _eventFailureEscortEntry; }
+    std::vector<uint32> const& GetEventTrackEntries() const { return _eventTrackEntries; }
+    bool GetEventFollowStarter() const { return _eventFollowStarter; }
     // 团队副本难度（RAID_DIFFICULTY_10MAN_NORMAL=0 / 25MAN_NORMAL=1，DBCEnums.h）。
     // 场景 conf 可选键 RaidDifficulty = 10|25（缺省 10）。影响：①进本前全队
     // Player::SetRaidDifficulty → 实例按对应难度加载；②roster 实际起人数量（由
@@ -114,6 +146,9 @@ public:
     // 同 PrerequisiteMinBossDistance：只决定什么时候开怪、拉哪只，不改 bot 的战斗决策。
     // 指派、上控、不放 AoE、换目标全部是 mod-playerbots 的事（docs/testing/TRASH-CC-PULL-DESIGN.md）。
     uint32 GetPrerequisiteCcWaitSeconds() const { return _prerequisiteCcWaitSeconds; }
+    // 包已意外进战、但已有至少一个控制落地且另一控制尚未完成时，额外保留的短读条宽限。
+    // 0 = 保持旧行为（立即开怪）；只影响编排层何时下拉怪命令。
+    uint32 GetPrerequisiteCcEngagedGraceSeconds() const { return _prerequisiteCcEngagedGraceSeconds; }
     // 每个 attempt 开场前的等待秒数（0 = 关闭）。用于让 bot 的长冷却在连续 attempt 之间复位。
     uint32 GetAttemptStartDelaySeconds() const { return _attemptStartDelaySeconds; }
     // PrerequisiteMinBossDistance 量到哪个 boss：0 = 场景 boss；否则是该 creature entry（普通或英雄 entry 皆可）。
@@ -132,6 +167,17 @@ public:
 protected:
     std::vector<uint32> _prerequisiteSpawns;
     uint32 _summonTriggerEntry{0};
+    uint32 _eventStarterEntry{0};
+    uint32 _eventCompletionBossState{0};
+    std::vector<ScriptedEventPhase> _eventPhases;
+    uint32 _eventFailureEscortEntry{0};
+    std::vector<uint32> _eventTrackEntries;
+    bool _eventFollowStarter{false};
+    BossSpawnMode _bossSpawnMode{BossSpawnMode::Database};
+    uint32 _scriptBossAppearTimeoutSeconds{30};
+    float _scriptBossReadyRadius{0.0f};
+    bool _scriptBossRequireActive{false};
+    bool _scriptBossAcceptAutoEngage{false};
     std::vector<uint32> _fixtureDespawnSpawns;
     std::vector<std::pair<uint32, uint32>> _fixtureBossStates;
     bool _fixtureBossNotify{false};
@@ -145,6 +191,7 @@ protected:
     uint32 _prerequisiteTimeoutSeconds{180};
     float _prerequisiteMinBossDistance{0.0f};
     uint32 _prerequisiteCcWaitSeconds{0};
+    uint32 _prerequisiteCcEngagedGraceSeconds{0};
     uint32 _attemptStartDelaySeconds{0};
     uint32 _prerequisiteMinBossDistanceBossEntry{0};
     std::vector<Position> _navigationWaypoints;

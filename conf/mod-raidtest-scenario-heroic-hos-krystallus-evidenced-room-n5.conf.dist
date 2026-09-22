@@ -1,0 +1,24 @@
+# Heroic HoS / Krystallus evidenced-room candidate.
+# All listed DB spawns joined run700 under normal Ground Slam movement. Temporary
+# Controller summons are deliberately absent: prerequisites use DB spawn IDs only.
+# Scope remains evidence-bounded, not a claim that the entire dungeon is cleared.
+[Scenario]
+MapId = 599
+BossEntry = 27977
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+PrerequisiteSpawns = 126728,126732,126757,126758,126759,126760,126761,126776,126777,126778,126779,126780,126781,126782,126783,126784,126785,126786,126787,126788
+# Lower-room preclear point: vmap floor 192.87, 79.4 yd from boss and 16.8 yd from 126728.
+PreparationX = 940.0
+PreparationY = 800.0
+PreparationZ = 192.87
+PreparationO = 2.57
+EngageX = 985.0
+EngageY = 750.0
+EngageZ = 207.56
+EngageO = 2.57
+TimeoutSeconds = 480
+EngageTrigger = pull

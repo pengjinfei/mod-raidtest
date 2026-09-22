@@ -1,0 +1,23 @@
+# Heroic HoS / Krystallus: controller-chain survey, not yet a complete-room claim.
+# run697 proved Ground Slam spread can push a member into Controller 126732's patrol.
+# Keep that natural preclear; no fixtures or state/cheat/gear/difficulty changes.
+# Other room entities are intentionally not claimed absent until their relation is measured.
+[Scenario]
+MapId = 599
+BossEntry = 27977
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+PrerequisiteSpawns = 126732
+PreparationX = 985.0
+PreparationY = 750.0
+PreparationZ = 207.56
+PreparationO = 2.57
+EngageX = 985.0
+EngageY = 750.0
+EngageZ = 207.56
+EngageO = 2.57
+TimeoutSeconds = 480
+EngageTrigger = pull

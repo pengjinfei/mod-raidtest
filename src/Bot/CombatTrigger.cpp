@@ -85,6 +85,7 @@ bool CombatTrigger::BeginAssistForAll(std::vector<Player*> const& bots, Player* 
         if (!assist.Attack(boss))
         {
             Unit* current = botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+            bool const los = bot->IsWithinLOSInMap(boss);
             bool const alreadyAssisting = current == boss && bot->GetVictim() == boss;
             if (alreadyAssisting)
             {
@@ -115,13 +116,32 @@ bool CombatTrigger::BeginAssistForAll(std::vector<Player*> const& bots, Player* 
                 continue;
             }
 
+            // run679 seq4 的萨满已经 combat=true，却因同点 Engage 传送后的个别落点
+            // 被遮挡（los=false/current=none）而无法立即 Attack。该门禁只负责释放
+            // follower，不应把这个已进战状态误报为“未进入 combat”。run684 也证明
+            // MoveChase 不会改变该落点的位置/移动生成器；但 follower
+            // 已在同一场 combat，原 8 秒门禁把它误报为“未进入 combat”。此门仅释放 follower，
+            // 后续正常 AI 的实际目标/输出仍由观察层记录；未进战或有其它目标绝不在此放行。
+            if (bot->IsInCombat() && !los && !current && !bot->GetVictim() && bot->IsValidAttackTarget(boss))
+            {
+                ++assisted;
+                LOG_INFO("raidtest", "CombatTrigger::BeginAssistForAll: releasing combat follower {} with temporary boss LOS loss "
+                    "(pos={:.2f},{:.2f},{:.2f} boss={:.2f},{:.2f},{:.2f})", bot->GetName(),
+                    bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), boss->GetPositionX(),
+                    boss->GetPositionY(), boss->GetPositionZ());
+                continue;
+            }
+
             LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: bot {} could not begin assist "
-                "(combat={} ai={} current={} victim={} dist={} los={} valid={} tagged={})",
+                "(combat={} ai={} current={} victim={} dist={} los={} valid={} tagged={} "
+                "bot_pos={:.2f},{:.2f},{:.2f} boss_pos={:.2f},{:.2f},{:.2f} movement={})",
                 bot->GetName(), bot->IsInCombat(), uint32(botAI->GetState()),
                 current ? current->GetGUID().ToString() : "none",
                 bot->GetVictim() ? bot->GetVictim()->GetGUID().ToString() : "none",
-                bot->GetDistance(boss), bot->IsWithinLOSInMap(boss), bot->IsValidAttackTarget(boss),
-                botAI->HasStrategy("attack tagged", BOT_STATE_NON_COMBAT));
+                bot->GetDistance(boss), los, bot->IsValidAttackTarget(boss),
+                botAI->HasStrategy("attack tagged", BOT_STATE_NON_COMBAT), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+                boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ(),
+                bot->GetMotionMaster() ? uint32(bot->GetMotionMaster()->GetCurrentMovementGeneratorType()) : 0);
             continue;
         }
 

@@ -10,6 +10,7 @@
 
 class Creature;
 class Player;
+class InstanceScript;
 
 // 一次 attempt 的判定结果（design §10）。Ongoing 仅在战斗未结束时出现。
 enum class AttemptResult : uint8
@@ -53,6 +54,7 @@ struct RunContext
     uint32 bossHpMin = 100;             // 本 attempt 采样到的最低 boss 血量%
     ObjectGuid bossGuid;
     Creature* boss = nullptr;           // 每 tick 由 observer 重寻址（防悬垂）
+    InstanceScript* eventInstanceScript = nullptr; // captured once after instance entry
     ObjectGuid killGateGuid;            // 双 boss：BossEntry 之外第二个必死目标（KillGateSpawn 解析）
 
     // ---- 落库载荷（SERIALIZE_RESULT 时填充）----

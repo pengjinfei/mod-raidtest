@@ -1,0 +1,23 @@
+# Heroic HoS / Krystallus minimum evidenced room chain.
+# Evidence: 126732 Controller, 126776 and 126777 Shardlings are DB spawns that
+# entered Krystallus combat after Ground Slam spread. This is not yet a claim
+# that no further room spawns exist.
+[Scenario]
+MapId = 599
+BossEntry = 27977
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+PrerequisiteSpawns = 126732,126776,126777
+PreparationX = 985.0
+PreparationY = 750.0
+PreparationZ = 207.56
+PreparationO = 2.57
+EngageX = 985.0
+EngageY = 750.0
+EngageZ = 207.56
+EngageO = 2.57
+TimeoutSeconds = 480
+EngageTrigger = pull

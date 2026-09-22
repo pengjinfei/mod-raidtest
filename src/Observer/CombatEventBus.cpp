@@ -1,8 +1,11 @@
 #include "CombatEventBus.h"
+#include "Creature.h"
 #include "EventStore.h"
+#include "AllCreatureScript.h"
 #include "AllSpellScript.h"
 #include "Errors.h"
 #include "Log.h"
+#include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Spell.h"
 #include "StringFormat.h"
@@ -16,9 +19,27 @@
 namespace
 {
 constexpr uint32 kIngvarEntry = 23954;
+constexpr uint32 kSearingGazeTriggerEntry = 28265;
+constexpr uint32 kTribunalProtectorEntry = 27983;
+constexpr uint32 kTribunalStormcallerEntry = 27984;
+constexpr uint32 kTribunalCustodianEntry = 27985;
 constexpr uint32 kIngvarSmashHeroicSpell = 59706;
 constexpr uint32 kIngvarDarkSmashHeroicSpell = 59709;
 constexpr float kIngvarSmashConeRadians = 1.04719755f;
+
+// Only observational provenance: a DB creature has a nonzero spawn id, while a
+// temporary summon normally has spawn_id=0 and identifies its summoner. Keep it
+// on the emitting creature event so room-boundary analysis does not infer origin
+// from a per-instance low GUID.
+std::string CreatureOriginDetail(Unit const* unit)
+{
+    Creature const* creature = unit ? unit->ToCreature() : nullptr;
+    if (!creature)
+        return {};
+
+    return Acore::StringFormat("origin:spawn_id={} summoner={}", creature->GetSpawnId(),
+        creature->GetSummonerGUID().ToString());
+}
 }
 
 // core 战斗 hooks（文件局部声明，仅在 RegisterRaidTestCombatHooks 注册，不对外暴露）。
@@ -39,6 +60,16 @@ public:
     void OnHeal(Unit* healer, Unit* receiver, uint32& gain) override;
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override;
     void OnUnitDeath(Unit* unit, Unit* killer) override;
+};
+
+// Tribunal Gaze is a 10-second temporary trigger created at the selected
+// player's current position. Capture creation in the core add-world hook: the
+// normal spell hook only sees the trigger's self-cast and has no destination.
+class RaidTestCreatureScript : public AllCreatureScript
+{
+public:
+    RaidTestCreatureScript() : AllCreatureScript("RaidTestCreatureScript") { }
+    void OnCreatureAddWorld(Creature* creature) override;
 };
 
 CombatEventBus& CombatEventBus::instance()
@@ -306,7 +337,8 @@ void RaidTestSpellScript::OnSpellCast(Spell* spell, Unit* caster, SpellInfo cons
     }
     if (Unit* target = spell->m_targets.GetUnitTarget())
         e.target = target->GetGUID();
-    e.detail = Acore::StringFormat("cast:cast_ms={}", spell->GetCastTime());
+    e.detail = CreatureOriginDetail(caster);
+    e.detail += Acore::StringFormat("{}cast:cast_ms={}", e.detail.empty() ? "" : " ", spell->GetCastTime());
     if (spell->m_targets.HasDst())
     {
         auto const* dst = spell->m_targets.GetDstPos();
@@ -435,8 +467,40 @@ void RaidTestUnitScript::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
 
     // value（伤害量）是关键；uint32 超 int32 上限时截断到 INT32_MAX 防溢出。
     e.value = int32(std::min<uint32>(damage, static_cast<uint32>(INT32_MAX)));
+    e.detail = CreatureOriginDetail(attacker);
+    if (attacker && attacker->IsCreature() && attacker->GetEntry() == kSearingGazeTriggerEntry && victim)
+    {
+        e.detail += Acore::StringFormat(" gaze_tick:trigger_pos={:.2f},{:.2f},{:.2f} target_dist={:.2f} "
+            "target_moving={} target_pos={:.2f},{:.2f},{:.2f}",
+            attacker->GetPositionX(), attacker->GetPositionY(), attacker->GetPositionZ(), attacker->GetDistance2d(victim),
+            victim->isMoving(), victim->GetPositionX(), victim->GetPositionY(), victim->GetPositionZ());
+    }
     bus.Push(e);
 
+}
+
+void RaidTestCreatureScript::OnCreatureAddWorld(Creature* creature)
+{
+    CombatEventBus& bus = CombatEventBus::instance();
+    if (!bus.IsActive() || !creature)
+        return;
+
+    uint32 const entry = creature->GetEntry();
+    if (entry != kSearingGazeTriggerEntry && entry != kTribunalProtectorEntry && entry != kTribunalStormcallerEntry &&
+        entry != kTribunalCustodianEntry)
+        return;
+
+    CombatEvent e;
+    e.type = CombatEventType::State;
+    e.source = creature->GetGUID();
+    e.actorEntry = entry;
+    e.value = static_cast<int32>(creature->GetMapId());
+    e.detail = entry == kSearingGazeTriggerEntry
+        ? Acore::StringFormat("gaze_spawn:trigger_pos={:.2f},{:.2f},{:.2f} summoner={}", creature->GetPositionX(),
+            creature->GetPositionY(), creature->GetPositionZ(), creature->GetSummonerGUID().ToString())
+        : Acore::StringFormat("tribunal_add_spawn:pos={:.2f},{:.2f},{:.2f} summoner={}", creature->GetPositionX(),
+            creature->GetPositionY(), creature->GetPositionZ(), creature->GetSummonerGUID().ToString());
+    bus.Push(e);
 }
 
 void RaidTestUnitScript::OnUnitDeath(Unit* unit, Unit* killer)
@@ -455,7 +519,39 @@ void RaidTestUnitScript::OnUnitDeath(Unit* unit, Unit* killer)
     }
     if (killer)
         e.target = killer->GetGUID();
+
+    // 前置清怪的角色死亡不能只记录「谁杀了谁」：run681/682 的所有作废都是
+    // 29819 -> 盗贼，但仅凭死亡事件分不清是站位被 Lancer 追上、当前目标错误，
+    // 还是 Retaliation 的正常反伤累积。只记录死亡瞬间的既有状态，不改变行动。
+    e.detail = CreatureOriginDetail(unit);
+    if (unit && unit->IsPlayer())
+    {
+        Unit* const victimTarget = unit->GetVictim();
+        Unit* const killerTarget = killer ? killer->GetVictim() : nullptr;
+        e.detail = fmt::format("death_snapshot:unit_pos={:.2f},{:.2f},{:.2f} unit_target={} unit_move={} "
+            "killer_pos={:.2f},{:.2f},{:.2f} killer_target={}",
+            unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(),
+            victimTarget ? victimTarget->GetGUID().ToString() : "none",
+            unit->GetMotionMaster() ? uint32(unit->GetMotionMaster()->GetCurrentMovementGeneratorType()) : 0,
+            killer ? killer->GetPositionX() : 0.0f, killer ? killer->GetPositionY() : 0.0f,
+            killer ? killer->GetPositionZ() : 0.0f,
+            killerTarget ? killerTarget->GetGUID().ToString() : "none");
+    }
     bus.Push(e);
+
+    if (unit && unit->IsCreature() && (unit->GetEntry() == kTribunalProtectorEntry ||
+        unit->GetEntry() == kTribunalStormcallerEntry || unit->GetEntry() == kTribunalCustodianEntry))
+    {
+        CombatEvent lifecycle;
+        lifecycle.type = CombatEventType::State;
+        lifecycle.source = unit->GetGUID();
+        if (killer)
+            lifecycle.target = killer->GetGUID();
+        lifecycle.actorEntry = unit->GetEntry();
+        lifecycle.value = static_cast<int32>(unit->GetMapId());
+        lifecycle.detail = "tribunal_add_death";
+        bus.Push(lifecycle);
+    }
 }
 
 // 由 AddRaidTestScripts 调用一次；ScriptRegistry 接管 new 出的对象生命周期。
@@ -463,4 +559,5 @@ void RegisterRaidTestCombatHooks()
 {
     new RaidTestSpellScript();
     new RaidTestUnitScript();
+    new RaidTestCreatureScript();
 }

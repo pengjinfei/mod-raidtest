@@ -1,0 +1,33 @@
+# Heroic HoS Tribunal of Ages: normal-rule scripted event lifecycle smoke.
+# Two real Brann gossip selections; completion is instance tribunal state DONE.
+[Scenario]
+MapId = 599
+BossEntry = 28070
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EventStarterEntry = 28070
+EventPhases = 4:3,2:3
+EventCompletionBossState = 2
+EventFailureEscortEntry = 28070
+# Normal path movement only; no teleport after event start.
+EventFollowStarter = true
+# Encounter coordination only; playerbots retain normal target legality and range checks.
+EventTrackEntries = 27983,27984,27985,28265,30898
+# First observed Brann corridor segment; keep the pre-event pull bounded.
+# Lifecycle baseline: six serial pulls can otherwise spend the default 180s before the
+# final engaged target dies; this changes only the harness observation budget.
+PrerequisiteTimeoutSeconds = 300
+PrerequisiteSpawns = 126738,126739,126744,126746,126749,126750
+PreparationX = 1077.41
+PreparationY = 474.16
+PreparationZ = 207.80
+PreparationO = 2.705
+EngageX = 1077.41
+EngageY = 474.16
+EngageZ = 207.80
+EngageO = 2.705
+TimeoutSeconds = 900
+EngageTrigger = pull

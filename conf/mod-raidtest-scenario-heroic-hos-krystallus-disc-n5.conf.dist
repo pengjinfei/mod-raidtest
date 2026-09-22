@@ -1,0 +1,28 @@
+# 英雄岩石大厅（map 599）/ 克莱斯塔卢斯 Krystallus（27977）。
+#
+# 口径：隔离 boss 基线；不等于完整房间或副本通关。
+# 没有 FixtureDespawnSpawns、状态直写、召唤、仇恨干预或数值改动。
+# 完整房间的常驻 shardling、Worker/Shaper/Controller 与巡逻归属尚在勘测，
+# 因此不能把本场的空 PrerequisiteSpawns 解读为「房间没有前置」。
+#
+# Preparation = Engage 不是笔误：无前置时框架从 Preparation 直接开怪。
+# (985,750,207.56) 已逐点先读真实地面 z 后复测：距 boss 25.6 码、LOS=true。
+# 仍须在首场回读导航、全队实际站位、Ground Slam -> spread 的执行和外部单位参战情况。
+[Scenario]
+MapId = 599
+BossEntry = 27977
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+EngageX = 985.0
+EngageY = 750.0
+EngageZ = 207.56
+EngageO = 2.57
+PreparationX = 985.0
+PreparationY = 750.0
+PreparationZ = 207.56
+PreparationO = 2.57
+TimeoutSeconds = 480
+EngageTrigger = pull

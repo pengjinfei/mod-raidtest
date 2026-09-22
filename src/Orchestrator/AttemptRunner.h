@@ -88,6 +88,9 @@ private:
     bool NavigationWaypointReached(RunContext const& ctx) const;
     bool StartBossPull(RunContext& ctx);
     bool StartSummonTriggerPull(RunContext& ctx);
+    bool StartScriptedEventGossip(RunContext& ctx);
+    void TickScriptedEvent(RunContext& ctx);
+    void UpdateScriptedEventTargetIcon(RunContext& ctx);
     void SampleSummonTriggerState(RunContext const& ctx, Player const* tank) const;
     void RecordPhase(char const* phase, uint32 elapsed);
     std::vector<ObjectGuid> _prerequisiteGuids;
@@ -109,6 +112,17 @@ private:
     bool CcPullGateReady(RunContext& ctx, Creature*& next, uint32 diff);
     ObjectGuid _ccWaitTarget;               // 正在等控制的那组的拉怪目标（信号已发给坦克）
     uint32 _ccWaitElapsedMs{0};
+    // 已有控制落地后，意外进战时给其余控制读条的场景级短宽限（0 = 旧行为）。
+    uint32 _ccEngagedGraceMs{0};
+    // 本 attempt 在「拉怪被拒转入接近重试」时**累计**已花在控制链等待上的毫秒。
+    // _ccWaitElapsedMs 会在重新进入等待时被清零（那一组算新的），所以它只能用来判
+    // no_plan/timeout；没有这个累计值就无法给重试次数封顶 —— 实测 run668 在
+    // 一只够不着的 29822 上循环了 16 轮 no_plan、把 260 秒预算全烧完。
+    uint32 _ccWaitTotalMs{0};
+    uint32 _ccWaitCycles{0};                // 累计重进控制链等待的轮数（同上，用于封顶）
+    // 本组是否真的分出了控制图标（_ccPlanActive）。只有这时接近才停在仇恨半径外：
+    // 没计划时限制接近会让队伍永远拿不到东侧上层平台那两只的视线（详见 CcPullGateReady 尾部）。
+    bool _ccPlanActive{false};
     bool _ccFirstPullDone{false};           // 本 attempt 是否已发出过第一次清怪开怪指令
     uint32 _startDelayElapsedMs{0};         // AttemptStartDelaySeconds 已等待的毫秒
     uint32 _pullRejectedAt{0};              // 上次清怪拉怪被拒的时刻（_preparationElapsed 口径，0 = 无）
@@ -179,9 +193,12 @@ private:
     // 巡逻中的 boss 可能恰好被柱子挡住或走出施法距离，这不是"开不了怪"，是"这一刻开不了"。
     // 给一个重试预算，逐 tick 重来；超预算才判 abort。见 StartBossPull。
     uint32 _pullRetryMs{0};
+    uint32 _scriptBossWaitElapsedMs{0};
     ObjectGuid _pullTank;           // 本次两段式 pull 的真实拉怪者
     // 只读诊断：记录本次触发巨像开战的临时 Mojo，不能跨 tick 保留 Creature*。
     ObjectGuid _summonTriggerGuid;
+    uint32 _eventPhase{0};
+    uint32 _eventGossipWaitMs{0};
     std::vector<ObjectGuid> _heldFollowers; // 暂停 attack tagged、等待 tank lead 的从属 bot
     AttemptObserver _observer;
     AttemptResult _result{AttemptResult::Ongoing};

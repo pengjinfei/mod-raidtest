@@ -43,6 +43,13 @@ namespace
     constexpr float kCcApproachDistance = 24.0f;
     // 坦克打标记需要几个 AI tick（run401 实测 3.5–4.6 秒），这之前不能判定「没有计划」。
     constexpr uint32 kCcNoPlanMs = 10000;
+    // 控制链等待的总上限（防活锁）：拉怪被拒→接近重试→重进等待 这个循环没有天然上限，
+    // 因为 _ccWaitElapsedMs 在每次重进时清零，而外层 PrerequisiteTimeoutSeconds 又很大。
+    // 实测 run668：一只对全队都无视线、够不着的 29822 循环了 16 轮 no_plan，
+    // 把 260 秒预算全烧完，队伍从未开怪。到顶就放行、退回普通拉怪。
+    // 3 轮 ≈ 3×25s 上限，足够正常一组走完「指派→上控→开怪」。
+    constexpr uint32 kCcMaxWaitCycles = 3;
+    constexpr uint32 kCcMaxWaitTotalMs = 90000;
 
     bool ValidateRaid(RunContext const& ctx, char const* phase)
     {
@@ -153,6 +160,35 @@ namespace
             topGuid[0], topThreat[0], topGuid[1], topThreat[1], topGuid[2], topThreat[2]);
     }
 
+    // boss 是否真的**被队伍**拉进了战斗。
+    //
+    // ⚠ 不能用裸 IsInCombat()：莫拉比的 boss_moorabiAI 有一个**无战斗门禁**的 events2 定时器，
+    // 从出生起每 21s（之后 20–25s）自召一次幻影（55205，ImplicitTargetA=18 自召、
+    // Attributes 不含 SPELL_ATTR0_NOT_IN_COMBAT）。自召会把施法者自己拉进战斗，
+    // 于是 boss 在清怪全程反复 IsInCombat()==true，与队伍毫无关系。
+    // 实测 run671 seq1：清怪拉到 113s、跨了 5 个幻影周期（20634/44985/67504/90706/110792ms），
+    // 恢复期判定命中裸 IsInCombat()，把一场 5/5 清完、零死亡的正常 attempt 记成作废。
+    //
+    // 真正要问的是「boss 的仇恨表里有没有我方成员」——这才是「被队伍拉进来」的判据。
+    bool BossEngagedByParty(Creature const* boss, std::vector<Player*> const& bots)
+    {
+        if (!boss || !boss->IsInCombat())
+            return false;
+
+        ThreatManager const& mgr = boss->GetThreatMgr();
+        for (Player const* bot : bots)
+            if (bot && mgr.GetThreat(bot, true) > 0.0f)
+                return true;
+
+        // 仇恨表被 DoZoneInCombat 填成 0 threat 时的兜底：看当前 victim 是不是我方。
+        if (Unit const* victim = boss->GetVictim())
+            for (Player const* bot : bots)
+                if (bot && victim == bot)
+                    return true;
+
+        return false;
+    }
+
     std::string DescribeSummonTriggerState(Creature const* boss, Player const* tank, Creature const* trigger)
     {
         ThreatManager const& mgr = boss->GetThreatMgr();
@@ -220,6 +256,10 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _bossAbsentMs = 0;
     _ccWaitTarget.Clear();
     _ccWaitElapsedMs = 0;
+    _ccEngagedGraceMs = 0;
+    _ccWaitTotalMs = 0;
+    _ccWaitCycles = 0;
+    _ccPlanActive = false;
     _ccFirstPullDone = false;
     _startDelayElapsedMs = 0;
     _pullRejectedAt = 0;
@@ -266,6 +306,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     ctx.bossHpMin = 100;
     ctx.bossGuid.Clear();
     ctx.boss = nullptr;
+    ctx.eventInstanceScript = nullptr;
     ctx.killGateGuid.Clear();
     ctx.deaths = 0;
     ctx.deathNames.clear();
@@ -562,6 +603,17 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             Creature* boss = FindBossNear(ctx);
             if (!boss)
             {
+                // Script-spawned bosses do not exist until prerequisite clearing invokes the
+                // instance script. Open the attempt/event stream now so that clearing remains
+                // observable, then bind the real boss GUID when it appears.
+                if (ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script)
+                {
+                    ResultStore::QueueStartAttemptRow(ctx.runId, ctx.attemptSeq);
+                    ctx.attemptRowQueued = true;
+                    _rowResolveElapsedMs = 0;
+                    _pullStep = PullStep::AwaitAttemptRow;
+                    return;
+                }
                 if (++_stuckTicks >= kBossFindStuckTicks)
                 {
                     _result = AttemptResult::Aborted;
@@ -773,6 +825,15 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 _stage = Stage::Prerequisites;
                 return;
             }
+            if (ctx.scenario->GetEventStarterEntry())
+            {
+                if (!StartScriptedEventGossip(ctx))
+                    return;
+                _eventPhase = 0;
+                _stage = Stage::Observing;
+                RecordPhase("scripted_event_gossip_0", 0);
+                return;
+            }
             StartBossPull(ctx);
             return;
         }
@@ -888,9 +949,49 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         ctx.attemptElapsedMs += diff;
         _recoveryElapsed += diff;
         ResolveBoss(ctx);
-        if (!ctx.boss || ctx.boss->IsInCombat())
+        // 只把「**队伍**把 boss 拉进来了」当作失败。裸 IsInCombat() 会把莫拉比自己的
+        // 无门禁幻影定时器（见 BossEngagedByParty 注释）误判成夹具失败——run671 seq1
+        // 一场 5/5 清完、零死亡的 attempt 就这么被记成作废。
+        bool const scriptSpawnedBoss = ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script;
+        // The instance summon can arrive during recovery (Eck: one second after the last
+        // Dweller death). Bind it immediately so an accidental party pull is never hidden by
+        // the expected initial absence of a script-spawned boss.
+        if (scriptSpawnedBoss && !ctx.boss)
+        {
+            if (Creature* appeared = FindBossNear(ctx))
+            {
+                ctx.boss = appeared;
+                ctx.bossGuid = appeared->GetGUID();
+                CombatEventBus::instance().RebindBoss(ctx.bossGuid);
+                CombatEventBus::instance().TrackUnit(ctx.bossGuid);
+                LOG_INFO("raidtest", "AttemptRunner: script boss {} appeared during recovery as {}",
+                    appeared->GetEntry(), ctx.bossGuid.ToString());
+            }
+        }
+        // Script-spawned bosses have no GUID until the instance summon arrives. Their absence
+        // during recovery is expected; a resolved boss engaged by the party is invalid in both modes.
+        bool const bossEngagedByParty = ctx.boss && BossEngagedByParty(ctx.boss, ctx.bots);
+        if (!scriptSpawnedBoss && !ctx.boss)
         {
             Abort("prerequisite_invalid: boss entered combat during recovery");
+            return;
+        }
+        if (bossEngagedByParty)
+        {
+            if (!scriptSpawnedBoss || !ctx.scenario->GetScriptBossAcceptAutoEngage())
+            {
+                Abort("prerequisite_invalid: boss entered combat during recovery");
+                return;
+            }
+            CombatEvent event;
+            event.type = CombatEventType::State;
+            event.source = ctx.bossGuid;
+            event.actorEntry = ctx.boss->GetEntry();
+            event.detail = "script_boss_auto_engage:accepted";
+            CombatEventBus::instance().Push(event);
+            RecordPhase("script_boss_auto_engage", _recoveryElapsed);
+            LOG_INFO("raidtest", "AttemptRunner: {}", event.detail);
+            ConfirmAndEnterObserving(ctx);
             return;
         }
         bool ready = true;
@@ -976,11 +1077,74 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             return;
         }
         ResolveBoss(ctx);
+        if (ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script)
+        {
+            if (!ctx.boss)
+            {
+                if (Creature* appeared = FindBossNear(ctx))
+                {
+                    ctx.boss = appeared;
+                    ctx.bossGuid = appeared->GetGUID();
+                    CombatEventBus::instance().RebindBoss(ctx.bossGuid);
+                    CombatEvent event;
+                    event.type = CombatEventType::State;
+                    event.source = ctx.bossGuid;
+                    event.actorEntry = appeared->GetEntry();
+                    event.detail = Acore::StringFormat("script_boss_appeared:guid={} entry={}",
+                        ctx.bossGuid.ToString(), appeared->GetEntry());
+                    CombatEventBus::instance().Push(event);
+                    RecordPhase("script_boss_appeared", _scriptBossWaitElapsedMs);
+                    LOG_INFO("raidtest", "AttemptRunner: {}", event.detail);
+                }
+                else
+                {
+                    _scriptBossWaitElapsedMs += diff;
+                    if (_scriptBossWaitElapsedMs >=
+                        ctx.scenario->GetScriptBossAppearTimeoutSeconds() * IN_MILLISECONDS)
+                        Abort("script_boss_failed: appearance timeout");
+                    return;
+                }
+            }
+
+            float const readyRadius = ctx.scenario->GetScriptBossReadyRadius();
+            bool const atReadyPoint = !readyRadius ||
+                ctx.boss->GetExactDist(ctx.scenario->GetEngagePoint()) <= readyRadius;
+            bool const active = !ctx.scenario->GetScriptBossRequireActive() ||
+                ctx.boss->GetReactState() != REACT_PASSIVE;
+            if (!atReadyPoint || !active)
+            {
+                _scriptBossWaitElapsedMs += diff;
+                if (_scriptBossWaitElapsedMs >=
+                    ctx.scenario->GetScriptBossAppearTimeoutSeconds() * IN_MILLISECONDS)
+                    Abort("script_boss_failed: ready timeout");
+                return;
+            }
+        }
+        if (ctx.scenario->GetEventStarterEntry())
+        {
+            Map* map = ctx.bots.front()->GetMap();
+            ctx.eventInstanceScript = map && map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
+            if (!ctx.eventInstanceScript)
+            {
+                Abort("scripted_event_failed: instance script unavailable at event start");
+                return;
+            }
+            if (!StartScriptedEventGossip(ctx))
+                return;
+            _eventPhase = 0;
+            _stage = Stage::Observing;
+            RecordPhase("scripted_event_gossip_0", ctx.attemptElapsedMs);
+            return;
+        }
         StartBossPull(ctx);
         return;
 
     case Stage::Observing:
     {
+        if (ctx.scenario->GetEventStarterEntry())
+            TickScriptedEvent(ctx);
+        if (_stage == Stage::Done)
+            return;
         ctx.attemptElapsedMs -= _preBossElapsed;
         AttemptResult const r = _observer.Tick(ctx, diff);
         ctx.attemptElapsedMs += _preBossElapsed;
@@ -1186,22 +1350,45 @@ Creature* AttemptRunner::FindBossNear(RunContext const& ctx)
 
     Creature* best = nullptr;
     float bestSq = std::numeric_limits<float>::max();
-    for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
+    if (ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script)
     {
-        (void)spawnId;
-        if (!creature || creature->GetEntry() != bossEntry)
-            continue;
-        float const sq = creature->GetExactDistSq(&near);
-        if (sq < bestSq)
+        // Runtime summons have m_spawnId=0 and are intentionally absent from the spawn-id store.
+        // The party is already in the encounter room, so a 200-yard grid query covers the whole
+        // supported script-spawned encounter while returning the actual temporary Creature object.
+        std::list<Creature*> candidates;
+        ctx.bots.front()->GetCreatureListWithEntryInGrid(candidates, bossEntry, 200.0f);
+        for (Creature* creature : candidates)
         {
-            bestSq = sq;
-            best = creature;
+            if (!creature || !creature->IsAlive() || !creature->IsInWorld())
+                continue;
+            float const sq = creature->GetExactDistSq(&near);
+            if (sq < bestSq)
+            {
+                bestSq = sq;
+                best = creature;
+            }
+        }
+    }
+    else
+    {
+        for (auto const& [spawnId, creature] : map->GetCreatureBySpawnIdStore())
+        {
+            (void)spawnId;
+            if (!creature || creature->GetEntry() != bossEntry)
+                continue;
+            float const sq = creature->GetExactDistSq(&near);
+            if (sq < bestSq)
+            {
+                bestSq = sq;
+                best = creature;
+            }
         }
     }
 
     if (!best)
-        LOG_DEBUG("raidtest", "AttemptRunner: boss entry {} not found on map {} (spawn store size {})",
-            bossEntry, map->GetId(), map->GetCreatureBySpawnIdStore().size());
+        LOG_DEBUG("raidtest", "AttemptRunner: boss entry {} not found on map {} (mode={}, spawn store size {})",
+            bossEntry, map->GetId(), ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script ? "script" : "database",
+            map->GetCreatureBySpawnIdStore().size());
 
     return best;
 }
@@ -1260,6 +1447,7 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
     // Loading the original DB spawn also avoids Respawn(true)'s deferred queue,
     // whose linked-respawn/group gates can leave a completed encounter absent.
     uint32 const bossEntry = ctx.scenario->GetBossEntry();
+    bool const scriptSpawnedBoss = ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script;
     uint32 const killGateSpawn = ctx.scenario->GetKillGateSpawn();
     std::set<uint32> const prerequisites(ctx.scenario->GetPrerequisiteSpawns().begin(),
         ctx.scenario->GetPrerequisiteSpawns().end());
@@ -1406,11 +1594,14 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
     ctx.bossGuid.Clear();
     ctx.boss = nullptr;
     snapshot.flush();
-    bool const ok = found && valid && restoredPrerequisites == prerequisites.size() && bool(snapshot);
+    // Script-spawned bosses deliberately have no database spawn to restore. Their clean-state
+    // contract is the restored prerequisite pack; the boss must appear only after that pack dies.
+    bool const bossReadyForReset = scriptSpawnedBoss || found;
+    bool const ok = bossReadyForReset && valid && restoredPrerequisites == prerequisites.size() && bool(snapshot);
     if (!ok)
         LOG_ERROR("raidtest", "AttemptRunner: ResetInstance failed for scenario boss {} on map {} - "
-            "boss_found={} spawns_clean={} prerequisites_restored={}/{} snapshot_ok={}",
-            bossEntry, map->GetId(), found, valid, restoredPrerequisites, prerequisites.size(),
+            "boss_found={} script_spawned={} spawns_clean={} prerequisites_restored={}/{} snapshot_ok={}",
+            bossEntry, map->GetId(), found, scriptSpawnedBoss, valid, restoredPrerequisites, prerequisites.size(),
             bool(snapshot));
     return ok;
 }
@@ -1934,6 +2125,100 @@ bool AttemptRunner::StartSummonTriggerPull(RunContext& ctx)
     return true;
 }
 
+bool AttemptRunner::StartScriptedEventGossip(RunContext& ctx)
+{
+    Player* tank = FindTank(ctx);
+    Creature* starter = ctx.boss;
+    if (!tank || !starter || starter->GetEntry() != ctx.scenario->GetEventStarterEntry() || !starter->AI())
+    {
+        Abort("scripted_event_failed: starter or tank unavailable");
+        return false;
+    }
+    if (!starter->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP))
+    {
+        Abort("scripted_event_failed: starter gossip unavailable");
+        return false;
+    }
+
+    starter->AI()->sGossipSelect(tank, 0, 0);
+    CombatEvent event;
+    event.type = CombatEventType::State;
+    event.source = starter->GetGUID();
+    event.target = tank->GetGUID();
+    event.actorEntry = starter->GetEntry();
+    event.detail = Acore::StringFormat("scripted_event_gossip:phase={}", _eventPhase);
+    CombatEventBus::instance().Push(event);
+    return true;
+}
+
+void AttemptRunner::UpdateScriptedEventTargetIcon(RunContext& ctx)
+{
+    if (!ctx.boss || !ctx.boss->IsAlive() || ctx.bots.empty())
+        return;
+    Group* group = ctx.bots.front() ? ctx.bots.front()->GetGroup() : nullptr;
+    if (!group)
+        return;
+
+    // A raid leader's skull is normal encounter coordination, not a forced
+    // attack: playerbot assist logic may still reject invalid/out-of-range foes.
+    Creature* target = nullptr;
+    for (uint32 entry : ctx.scenario->GetEventTrackEntries())
+    {
+        std::list<Creature*> creatures;
+        ctx.boss->GetCreatureListWithEntryInGrid(creatures, entry, 120.0f);
+        for (Creature* creature : creatures)
+            if (creature && creature->IsAlive() && creature->IsInCombat())
+            {
+                target = creature;
+                break;
+            }
+        if (target)
+            break;
+    }
+    group->SetTargetIcon(7, ObjectGuid::Empty, target ? target->GetGUID() : ObjectGuid::Empty);
+}
+
+void AttemptRunner::TickScriptedEvent(RunContext& ctx)
+{
+    UpdateScriptedEventTargetIcon(ctx);
+    // Bind the instance script once after every bot has entered the instance.
+    // A dead bot can transition to the graveyard map, so resolving from an
+    // arbitrary roster member here makes normal player deaths look like an
+    // event-script failure.
+    if (!ctx.eventInstanceScript)
+    {
+        Abort("scripted_event_failed: instance script unavailable at event start");
+        return;
+    }
+
+    if (ctx.scenario->GetEventFollowStarter() && ctx.boss && ctx.boss->IsAlive())
+    {
+        _eventGossipWaitMs += 100;
+        if (_eventGossipWaitMs >= 1000)
+        {
+            _eventGossipWaitMs = 0;
+            for (size_t i = 0; i < ctx.bots.size(); ++i)
+                if (Player* bot = ctx.bots[i]; bot && bot->IsAlive() && !bot->IsInCombat())
+                    bot->GetMotionMaster()->MoveFollow(ctx.boss, 4.0f + float(i % 2), float(i) * 1.256637f);
+        }
+    }
+
+    auto const& phases = ctx.scenario->GetEventPhases();
+    if (_eventPhase >= phases.size())
+        return;
+    ScriptedEventPhase const& phase = phases[_eventPhase];
+    if (uint32(ctx.eventInstanceScript->GetBossState(phase.stateId)) != phase.stateValue)
+        return;
+
+    ++_eventPhase;
+    if (_eventPhase < phases.size())
+    {
+        if (!StartScriptedEventGossip(ctx))
+            return;
+        RecordPhase("scripted_event_gossip", ctx.attemptElapsedMs);
+    }
+}
+
 void AttemptRunner::SampleSummonTriggerState(RunContext const& ctx, Player const* tank) const
 {
     if (!ctx.boss)
@@ -1987,7 +2272,12 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     // 超过预算才判失败（清怪本身照常进行，下面的逻辑不依赖 ctx.boss）。
     if (!ctx.boss)
     {
-        if (Creature* rebound = FindBossNear(ctx))
+        if (ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script)
+        {
+            // The expected state while clearing is absence: this boss is created only after
+            // the final prerequisite death. BossPosition owns appearance waiting and timeout.
+        }
+        else if (Creature* rebound = FindBossNear(ctx))
         {
             LOG_INFO("raidtest", "AttemptRunner: boss re-resolved during prerequisite clearing "
                 "{} -> {} (absent {}ms)", ctx.bossGuid.ToString(), rebound->GetGUID().ToString(),
@@ -2002,7 +2292,7 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             ctx.boss = rebound;
             _bossAbsentMs = 0;
         }
-        else
+        else if (ctx.scenario->GetBossSpawnMode() != BossSpawnMode::Script)
         {
             _bossAbsentMs += diff;
             if (_bossAbsentMs < kBossAbsentBudgetMs)
@@ -2053,7 +2343,9 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             break;
         }
     }
-    if (ctx.boss && (!ctx.boss->IsAlive() || ctx.boss->IsInCombat()))
+    // ⚠ 与 Recovery 同理：只把「**队伍**把 boss 拉进来了」当作失败，
+    // 不能把莫拉比自己的无门禁幻影定时器（见 BossEngagedByParty 注释）当进战。
+    if (ctx.boss && (!ctx.boss->IsAlive() || BossEngagedByParty(ctx.boss, ctx.bots)))
     {
         {
             CombatEvent state;
@@ -2065,7 +2357,7 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
                 ctx.boss->GetPositionY(), ctx.boss->GetPositionZ());
             CombatEventBus::instance().Push(state);
         }
-        if (ctx.boss->IsInCombat())
+        if (BossEngagedByParty(ctx.boss, ctx.bots))
         {
             CombatEvent state;
             state.type = CombatEventType::State;
@@ -2156,6 +2448,22 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     }
     if (!next)
     {
+        // A script-spawned boss can be created one world tick after the final prerequisite
+        // death. Hold follower auto-targeting before that callback runs; otherwise the normal
+        // masterless "attack tagged" strategy can start an unobserved boss fight during recovery.
+        if (ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script)
+        {
+            Player* tank = FindTank(ctx);
+            if (!tank || !CombatTrigger::HoldFollowerAttackTagged(ctx.bots, tank))
+            {
+                Abort("prerequisite_failed: could not hold followers before script boss appearance");
+                return;
+            }
+            _heldFollowers.clear();
+            for (Player* bot : ctx.bots)
+                if (bot && bot != tank)
+                    _heldFollowers.push_back(bot->GetGUID());
+        }
         // 前置怪全清之后、进入恢复之前，完成副本自身的进度交互（如魔枢的三个封印球体）。
         UsePrerequisiteGameObjects(ctx);
         RecordPhase("prerequisites_complete", _preparationElapsed);
@@ -2342,16 +2650,20 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             {
                 // 控制链门禁下不能没上控就走进怪堆（run394/attempt1：无视线 -> 全队走向目标 ->
                 // 一路拉到 boss 房间）。只接近到仇恨半径之外，然后重新走一遍「信号 -> 指派 ->
-                // 上控 -> 开怪」；已经在仇恨半径边缘还是没视线，就是准备点选错了，直接作废并说明。
+                // 上控 -> 开怪」；已经贴到目标身上还是拉不到，就是准备点选错了，直接作废并说明。
                 // 只对本 attempt 的**第一次**开怪做这条判定：后续轮次的目标可能被雷霆风暴打下平台
                 // （run403 attempt1：目标在 4 码外但 z 低了 6 码，视线为假），那不是准备点的问题。
-                if (!_ccFirstPullDone &&
-                    DistanceToNearestPrerequisite(ctx, *ctx.bots.front()) <= kCcApproachDistance + 1.0f)
+                //
+                // ⚠ 判据必须按 **next（本次要拉的怪）** 量，不能按「最近的前置怪」量。
+                // 按后者时：只要全队还站在西侧那组旁边（距离 0），这条永远为真、直接作废；
+                // 而实际要拉的东侧 29822 还在 25 码外上层平台（run668 的 16 轮活锁就是这么来的）。
+                if (_ccPlanActive && !_ccFirstPullDone &&
+                    ctx.bots.front()->GetDistance(next) <= kCcApproachDistance + 1.0f)
                 {
                     Abort("prerequisite_invalid: no line of sight to the pack from the preparation point (cc gate)");
                     return;
                 }
-                ApproachPrerequisiteTarget(ctx, next, kCcApproachDistance);
+                ApproachPrerequisiteTarget(ctx, next, _ccPlanActive ? kCcApproachDistance : 0.0f);
                 _ccWaitTarget.Clear();
                 return;
             }
@@ -2367,11 +2679,12 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
                     tankAI->GetAiObjectContext()->GetValue<ObjectGuid>("pull target")->Set(ObjectGuid::Empty);
             _ccWaitTarget.Clear();
         }
-        // 清怪拉怪必须全队一起上。BeginPullForAll 只把 leader 的拒绝当作失败，
+        // 清怪拉怪必须全队一起进入战斗。BeginPullForAll 只把 leader 的拒绝当作失败，
         // 跟随者留在准备点（无视线/超距）时它同样返回 true，于是框架把坦克一个人
         // 留在怪堆里：run661 里坦克单挑东侧平台，81.7 秒阵亡后再没有人能发起拉怪，
-        // 200 秒清怪超时。这里要求每个活着的 bot 都真的拿到这次拉怪目标，否则继续
-        // 按接近流程把队伍带到共同落点，下一 tick 再重试拉怪。
+        // 200 秒清怪超时。不能要求每个人的 current target 都是 next：治疗者正常参战时
+        // 会把坦克作为当前目标（run725 的 126750），却被误当作没参与而反复接近。这里
+        // 只验证每个存活成员已进入该包的正常战斗；不指定其目标、技能或仇恨。
         uint32 aliveBots = 0;
         uint32 engagedBots = 0;
         for (Player* bot : ctx.bots)
@@ -2379,15 +2692,13 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             if (!bot || !bot->IsAlive() || bot->GetMap() != next->GetMap())
                 continue;
             ++aliveBots;
-            PlayerbotAI* botAI = GET_PLAYERBOT_AI(bot);
-            Unit* current = botAI ? botAI->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() : nullptr;
-            if (current == next || bot->GetVictim() == next)
+            if (bot->IsInCombat())
                 ++engagedBots;
         }
         if (aliveBots > 1 && engagedBots < aliveBots)
         {
-            LOG_WARN("raidtest", "AttemptRunner: prerequisite pull engaged only {}/{} bot(s) on {} - "
-                "approaching as a party before retrying", engagedBots, aliveBots, next->GetGUID().ToString());
+            LOG_WARN("raidtest", "AttemptRunner: prerequisite pull engaged only {}/{} bot(s) - "
+                "approaching as a party before retrying", engagedBots, aliveBots);
             _pullRejectedAt = _preparationElapsed ? _preparationElapsed : 1;
             ApproachPrerequisiteTarget(ctx, next);
             return;
@@ -2397,6 +2708,9 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     }
 }
 
+// ⚠ 2026-09-18 起**已不再被控制链使用**：它量的是「距最近的前置怪」，而控制链需要的是
+// 「距本次要拉的那只怪」。前者在全队站在西侧那组旁边时恒为 0，会让接近停止判据与
+// 「准备点选错」判据全部失真（run668 的 16 轮活锁）。保留供其它只读诊断使用。
 float AttemptRunner::DistanceToNearestPrerequisite(RunContext& ctx, Position const& from) const
 {
     Map* map = ctx.bots.empty() || !ctx.bots.front() ? nullptr : ctx.bots.front()->GetMap();
@@ -2457,6 +2771,8 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
     {
         _ccWaitTarget = next->GetGUID();
         _ccWaitElapsedMs = 0;
+        _ccEngagedGraceMs = 0;
+        ++_ccWaitCycles;
         tankAI->GetAiObjectContext()->GetValue<ObjectGuid>("pull target")->Set(next->GetGUID());
 
         CombatEvent state;
@@ -2471,6 +2787,7 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
         return false;
     }
     _ccWaitElapsedMs += diff;
+    _ccWaitTotalMs += diff;
 
     // 只读地看队伍图标：三角(3)/月亮(4)/方块(5)/十字(6) 是控制图标，骷髅(7) 是击杀目标。
     // 三角是牧师束缚亡灵——亡灵副本（艾卓-尼鲁布…）里唯一能落地的控制，漏了它门禁就永远等不到。
@@ -2533,11 +2850,28 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
         looseTarget = pendingCcTarget;
     // 只剩 boss 时 looseTarget 为空，下面会沿用 next（就是那个 boss，且门禁本来就不对 boss 生效）。
 
+    // 有一个控制已落地、另一个在读条时，普通拉怪/战斗动作会抢占剩余读条（run676 seq5：
+    // 51514 在 16.917s 开始、剩 599ms 被外部动作取消；门禁在 13.062s 因 pack_engaged
+    // 已放行）。场景可给这个**已开始成功**的控制链一个很短宽限；0 保持历史的立即开怪。
+    bool const finishingCc = engaged && ccLanded > 0 && ccLanded < ccIcons;
+    if (finishingCc)
+        _ccEngagedGraceMs += diff;
+    else
+        _ccEngagedGraceMs = 0;
+    uint32 const engagedGraceMs = ctx.scenario->GetPrerequisiteCcEngagedGraceSeconds() * IN_MILLISECONDS;
+
     char const* reason = nullptr;
     if (ccIcons && ccLanded == ccIcons)
         reason = "cc_ready";                // 控制全部落地：坦克开怪必须紧接着，否则控制空转
-    else if (engaged)
-        reason = "pack_engaged";            // 有没被控住的怪进了战斗（被发现/抗性/打断）：立刻开
+    else if (engaged && (!finishingCc || _ccEngagedGraceMs >= engagedGraceMs))
+        reason = "pack_engaged";            // 无控制在收尾、或宽限耗尽才开
+    // 已经为控制链等过太久（多轮 no_plan/timeout 累计）：不能再等。
+    // 实测 run668：一只对全队都无视线、够不着的 29822 让门禁在 25 秒窗口里
+    // 反复重进（16 轮 no_plan），把 260 秒清怪预算全烧完，队伍从未开怪。
+    // 门禁只是「尽量先上控」的优化，绝不能让一次清怪因为等控制而彻底卡死：
+    // 到顶就放行，退回普通拉怪（战斗决策仍然完全归 bot）。
+    else if (_ccWaitCycles > kCcMaxWaitCycles || _ccWaitTotalMs >= kCcMaxWaitTotalMs)
+        reason = "budget_exhausted";
     else if (_ccWaitElapsedMs >= kCcNoPlanMs && !ccIcons)
         reason = "no_plan";                 // 坦克没打标记（怪不成组/没有控制职业）：没东西可等
     else if (_ccWaitElapsedMs >= ctx.scenario->GetPrerequisiteCcWaitSeconds() * 1000)
@@ -2566,19 +2900,43 @@ bool AttemptRunner::CcPullGateReady(RunContext& ctx, Creature*& next, uint32 dif
                 break;
             }
 
+    // 门禁只报 icons=N 无法诊断「是哪一个控制没落地」：run672 在 17.646s 报
+    // icons=2/landed=0/pack_engaged，随后整场只见羊、没有妖术或闷棍。把图标/entry/
+    // 当前战斗/控制状态持久化，纯观察，不改变标记、移动、拉怪或 AI 决策。
+    std::ostringstream iconState;
+    for (uint8 icon : { uint8(3), uint8(4), uint8(5), uint8(6) })
+    {
+        Creature* creature = iconCreature(icon);
+        if (!creature)
+            continue;
+        if (iconState.tellp() > 0)
+            iconState << ',';
+        iconState << uint32(icon) << ':' << creature->GetEntry() << ':'
+                  << creature->GetGUID().GetCounter() << ":combat=" << creature->IsInCombat()
+                  << ":cc=" << HasIncapacitatingAura(creature);
+    }
+
     CombatEvent state;
     state.type = CombatEventType::State;
     state.source = tank->GetGUID();
     state.target = next->GetGUID();
     state.actorEntry = next->GetEntry();
     state.value = _ccWaitElapsedMs;
-    state.detail = Acore::StringFormat("cc_pull_gate:reason={} icons={} landed={} engaged={} wait_ms={} target={}",
-        reason, ccIcons, ccLanded, engaged, _ccWaitElapsedMs, next->GetGUID().ToString());
+    state.detail = Acore::StringFormat("cc_pull_gate:reason={} icons={} landed={} engaged={} wait_ms={} grace_ms={}/{} target={} icon_state=[{}]",
+        reason, ccIcons, ccLanded, engaged, _ccWaitElapsedMs, _ccEngagedGraceMs, engagedGraceMs,
+        next->GetGUID().ToString(), iconState.str());
     CombatEventBus::instance().Push(state);
     LOG_INFO("raidtest", "AttemptRunner: {} elapsed={}ms", state.detail, _preparationElapsed);
 
     // _ccWaitTarget 留到开怪指令真正发出去（见 TickPrerequisites）再清：拉怪被拒转入接近重试时，
     // 下一 tick 不能把这组当成新的一组重新进入等待（run393/attempt2 每 tick 重进一次，日志刷屏）。
+    //
+    // 同时把「本组真的有过控制计划」告诉调用方：只有那时接近才需要停在仇恨半径外。
+    // 没有控制计划（怪不成组/没有控制职业/预算耗尽）时再限制接近距离就是纯伤害：
+    // 莫拉比东侧两只 29822/29819 在上层平台（z=129.3，走廊 124.4），**任何走廊点对它们
+    // 都是 los=false**（实测：正下方 8.2 码仍 false，4.8 码的台缘挡住）；基线能杀掉它们
+    // 是因为不受限的接近让全队走到北侧坡道、拿到视线。所以没计划时必须放行完整接近。
+    _ccPlanActive = (ccIcons > 0);
     return true;
 }
 
@@ -2712,8 +3070,15 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
         G3D::Vector3 destination = member.destination;
         if (stopDistance > 0.0f)
         {
-            // 沿各自的地面路线往前走，走到「下一个路点距最近的存活前置怪 <= stopDistance」就停在
+            // 沿各自的地面路线往前走，走到「下一个路点距**本次要拉的怪** <= stopDistance」就停在
             // 当前路点：接近视线，但不进仇恨半径。
+            //
+            // ⚠ 这里必须按 target 量，不能按「最近的前置怪」量（原实现是后者）。
+            // 莫拉比前置列表里西侧三只在 124 层、东侧两只在上层 129：全队站在西侧那组旁边时，
+            // 「最近的前置怪」永远是脚下这两三只（距离 0），于是停止判据立即成立、每一步都被
+            // 判为“已经到了”，全队只能一毫米一毫米地向东蹭。实测 run668：leader 在 25.0–25.3 码
+            // 上停了 16 轮，对 29822（上层平台）**永远 los=false**、永远拉不到，
+            // 而它距任何一只活前置怪都已 ≤24，所以那道“准备点选错了就作废”的判据也永远不触发。
             PathGenerator path(member.bot);
             path.CalculatePath(target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), false);
             Movement::PointsArray const& points = path.GetPath();
@@ -2721,7 +3086,7 @@ void AttemptRunner::ApproachPrerequisiteTarget(RunContext& ctx, Creature* target
                 member.bot->GetPositionZ());
             for (size_t i = 1; i < points.size(); ++i)
             {
-                if (DistanceToNearestPrerequisite(ctx, Position(points[i].x, points[i].y, points[i].z)) <= stopDistance)
+                if (target->GetDistance(Position(points[i].x, points[i].y, points[i].z)) <= stopDistance)
                     break;
                 destination = points[i];
             }
