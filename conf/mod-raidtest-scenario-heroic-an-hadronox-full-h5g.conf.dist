@@ -1,0 +1,28 @@
+# heroic-an-hadronox-full-h5g：哈多诺克斯完整遭遇（2026-09-24）
+#
+# 开场按原生机制：坦克接战坑顶平台第 1 包粉碎者（boss 在 Reset() 召出的 28922，spawnId=0）
+# → DATA_HADRONOX(1)=IN_PROGRESS → 召 2/3 号包 → 她 0/45/70 秒分三段爬上平台参战。
+# EngageTrigger=summon 选 boss 自己召出的粉碎者；EngageConfirmBossState=1:1 以实例状态确认遭遇开始，
+# 状态保持期间 observer 不把她爬坡时不在战斗当作卡住。准备点在平台 (530,580)，距第 1 包 32.9 码、
+# vmap 两遍法确认视线，距她的最终落点 (530.4,560) 约 20 码。
+[Scenario]
+MapId = 601
+BossEntry = 28921
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-an
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageTrigger = summon
+SummonTriggerEntry = 28922
+SummonTriggerRadius = 80
+EngageConfirmBossState = 1:1
+PreparationX = 530.0
+PreparationY = 580.0
+PreparationZ = 733.92
+PreparationO = 4.71
+EngageX = 530.0
+EngageY = 580.0
+EngageZ = 733.92
+EngageO = 4.71
+TimeoutSeconds = 540

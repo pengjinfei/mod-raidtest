@@ -837,9 +837,22 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     // wipe——全灭事实被吞）。改为「!anyDead（无人死亡）」——一旦有人阵亡即视为战斗已
     // 实质发生，boss 脱战不再判 aborted，把终态让给 wipe（全员死亡）/ timeout。
     bool const bossInCombat = ctx.boss && ctx.boss->IsInCombat();
+    // EngageConfirmBossState：实例状态仍是「遭遇进行中」时，boss 暂未参战属于脚本走位（哈多诺克斯爬坡），
+    // 不当作卡住或复位；遭遇真的复位时状态会退回，下面两条规则随之恢复生效。
+    bool encounterStateActive = false;
+    if (ctx.scenario && ctx.scenario->HasEngageConfirmBossState() && !ctx.bots.empty() && ctx.bots.front())
+    {
+        Map* stateMap = ctx.bots.front()->GetMap();
+        InstanceScript* script = stateMap && stateMap->ToInstanceMap() ?
+            stateMap->ToInstanceMap()->GetInstanceScript() : nullptr;
+        encounterStateActive = script &&
+            uint32(script->GetBossState(ctx.scenario->GetEngageConfirmBossStateId())) ==
+                ctx.scenario->GetEngageConfirmBossStateValue();
+    }
     // 双 boss：gate 未死期间 encounter 仍进行（BossEntry 可能已死变幽灵），卡壳判定
     // 挂起，终态交给 Kill（gate 死）/ Wipe / Timeout。
-    if ((!ctx.scenario || !ctx.scenario->GetEventStarterEntry()) && bossKnown && !bossInCombat && !anyDead && !gatePending)
+    if ((!ctx.scenario || !ctx.scenario->GetEventStarterEntry()) && bossKnown && !bossInCombat && !anyDead && !gatePending &&
+        !encounterStateActive)
     {
         if (++_abortSamples >= kStuckAbortTicks)
         {
@@ -861,7 +874,8 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     {
         return bot && bot->IsAlive() && bot->IsInCombat();
     });
-    if ((!ctx.scenario || !ctx.scenario->GetEventStarterEntry()) && anyDead && bossReset && raidOutOfCombat && !gatePending)
+    if ((!ctx.scenario || !ctx.scenario->GetEventStarterEntry()) && anyDead && bossReset && raidOutOfCombat && !gatePending &&
+        !encounterStateActive)
     {
         if (++_encounterResetSamples >= kStuckAbortTicks)
         {

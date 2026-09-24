@@ -87,6 +87,15 @@ public:
     // EngageTrigger=summon 时需要的召唤物 entry。只匹配当前场景 boss 直接召出的临时单位,
     // 不会把同 entry 的世界刷怪纳入目标。
     uint32 GetSummonTriggerEntry() const { return _summonTriggerEntry; }
+    // 召唤物检索半径（以 boss 为圆心，默认 30 码）。哈多诺克斯的粉碎者包在坑顶平台，距坑底的她约 57 码。
+    float GetSummonTriggerRadius() const { return _summonTriggerRadius; }
+    // EngageTrigger=summon 的另一种开战判据：实例状态 <id> 达到 <value> 即视为遭遇已开始（0 = 关闭，
+    // 沿用「boss 进战斗且坦克拿到仇恨」）。用于 boss 在召唤物接战后要先走位、稍后才参战的遭遇
+    // （哈多诺克斯：粉碎者接战 → DATA_HADRONOX=IN_PROGRESS → 她分三段爬上平台）。状态保持期间
+    // observer 不把「boss 不在战斗」当作卡住或复位。
+    bool HasEngageConfirmBossState() const { return _hasEngageConfirmBossState; }
+    uint32 GetEngageConfirmBossStateId() const { return _engageConfirmBossStateId; }
+    uint32 GetEngageConfirmBossStateValue() const { return _engageConfirmBossStateValue; }
     // Scripted instance event: interact with this gossip creature using the tank,
     // then finish when the declared instance boss-state reaches DONE.
     uint32 GetEventStarterEntry() const { return _eventStarterEntry; }
@@ -167,6 +176,10 @@ public:
 protected:
     std::vector<uint32> _prerequisiteSpawns;
     uint32 _summonTriggerEntry{0};
+    float _summonTriggerRadius{30.0f};
+    bool _hasEngageConfirmBossState{false};
+    uint32 _engageConfirmBossStateId{0};
+    uint32 _engageConfirmBossStateValue{0};
     uint32 _eventStarterEntry{0};
     uint32 _eventCompletionBossState{0};
     std::vector<ScriptedEventPhase> _eventPhases;

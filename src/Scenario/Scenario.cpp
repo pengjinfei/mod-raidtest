@@ -419,6 +419,29 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 failed = true;
             }
         }
+        else if (key == "SummonTriggerRadius")
+        {
+            if (!ParseFloat(value, _summonTriggerRadius) || _summonTriggerRadius <= 0.0f || _summonTriggerRadius > 200.0f)
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid SummonTriggerRadius '{}' at line {} in '{}'",
+                    value, lineNumber, filePath);
+                failed = true;
+            }
+        }
+        else if (key == "EngageConfirmBossState")
+        {
+            size_t const colon = value.find(':');
+            if (colon == std::string::npos ||
+                !ParseUint32(value.substr(0, colon), _engageConfirmBossStateId) ||
+                !ParseUint32(value.substr(colon + 1), _engageConfirmBossStateValue))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EngageConfirmBossState '{}' at line {} in '{}' "
+                    "(expected <id>:<value>)", value, lineNumber, filePath);
+                failed = true;
+            }
+            else
+                _hasEngageConfirmBossState = true;
+        }
         else if (key == "SummonTriggerEntry")
         {
             if (!ParseUint32(value, _summonTriggerEntry) || !_summonTriggerEntry)
@@ -705,6 +728,11 @@ bool Scenario::LoadFromFile(std::string const& filePath)
     if (_engageTrigger == EncounterTrigger::Summon && !_summonTriggerEntry)
     {
         LOG_ERROR("raidtest", "Scenario: EngageTrigger=summon requires SummonTriggerEntry");
+        failed = true;
+    }
+    if (_engageTrigger != EncounterTrigger::Summon && _hasEngageConfirmBossState)
+    {
+        LOG_ERROR("raidtest", "Scenario: EngageConfirmBossState requires EngageTrigger=summon");
         failed = true;
     }
     if (_engageTrigger != EncounterTrigger::Summon && _summonTriggerEntry)

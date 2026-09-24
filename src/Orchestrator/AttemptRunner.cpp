@@ -133,6 +133,8 @@ namespace
     // 可以少于 40ms，坦克尚未走到 Mojo 身边，原生 JustEngagedWith 根本来不及触发。
     // 这里只等待真实 AttackAction 的原生触发，不创建 boss 的战斗/威胁引用。
     constexpr uint32 kSummonTriggerConfirmMs = 6000;
+    // EngageConfirmBossState：坦克接触召唤物后等实例状态的预算（需走到召唤物跟前）。
+    constexpr uint32 kEngageConfirmBossStateMs = 20000;
     constexpr uint32 kSummonTriggerSampleMs = 250;
     // 巡逻 boss 的开怪重试预算：德雷德整条 waypoint 路径走一圈约 30 秒，20 秒足够等到
     // 一个既有视线又在施法距离内的位置。超预算才把「开不了怪」判成 abort。
@@ -886,6 +888,34 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                     _summonTriggerSampleElapsedMs = 0;
                     SampleSummonTriggerState(ctx, tank);
                 }
+            }
+
+            if (summonTrigger && ctx.scenario->HasEngageConfirmBossState())
+            {
+                // 遭遇以实例状态开始（boss 稍后才走过来参战）：不等 boss 进战斗、不要求坦克拿 boss 仇恨，
+                // 状态一到即放开跟随者自行接战并进入观察。
+                Map* map = tank->GetMap();
+                InstanceScript* script = map && map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
+                uint32 const stateId = ctx.scenario->GetEngageConfirmBossStateId();
+                uint32 const wanted = ctx.scenario->GetEngageConfirmBossStateValue();
+                if (script && uint32(script->GetBossState(stateId)) == wanted)
+                {
+                    CombatEvent event;
+                    event.type = CombatEventType::State;
+                    event.source = _summonTriggerGuid;
+                    event.target = ctx.bossGuid;
+                    event.detail = Acore::StringFormat("engage_confirm_boss_state:id={} value={} elapsed_ms={}",
+                        stateId, wanted, _summonTriggerElapsedMs);
+                    CombatEventBus::instance().Push(event);
+                    LOG_INFO("raidtest", "AttemptRunner: {}", event.detail);
+                    RecordPhase("engage_confirm_boss_state", 0);
+                    ConfirmAndEnterObserving(ctx);
+                    return;
+                }
+                if (_summonTriggerElapsedMs < kEngageConfirmBossStateMs)
+                    return;
+                Abort("pull failed (encounter state not reached after summon trigger)");
+                return;
             }
 
             if (!CombatTrigger::ConfirmBossInCombat(ctx.boss))
@@ -2073,7 +2103,7 @@ bool AttemptRunner::StartSummonTriggerPull(RunContext& ctx)
     }
 
     std::list<Creature*> candidates;
-    ctx.boss->GetCreatureListWithEntryInGrid(candidates, entry, 30.0f);
+    ctx.boss->GetCreatureListWithEntryInGrid(candidates, entry, ctx.scenario->GetSummonTriggerRadius());
     Creature* trigger = nullptr;
     for (Creature* candidate : candidates)
         if (candidate && candidate->IsAlive() && candidate->GetSummonerGUID() == ctx.boss->GetGUID() &&
