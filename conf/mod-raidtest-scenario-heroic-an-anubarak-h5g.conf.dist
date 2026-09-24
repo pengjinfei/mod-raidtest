@@ -1,0 +1,59 @@
+# ilvl 200 档复跑（2026-09-24）：由 mod-raidtest-scenario-heroic-an-anubarak-n5.conf 复制，仅 RosterFile 换为 heroic5gear-n5talents-v1（天赋/雕纹/补给与 normal5 相同）。
+# 艾卓-尼鲁布（map 601）英雄：阿努巴拉克(29120)，完整遭遇战。
+# 2026-09-12 新建。装备档 normal5-v1（ilvl 上限 187），难度英雄，BotCheats 为空。
+#
+# 场景范围 = 真实遭遇战，未改小：他没有前置小怪。核心把他的战斗区间限死在
+#   CircleBoundary((550.6,253.6), 32)，走廊里的两只 Anub'ar Prime Guard
+#   (132274/132275, y≈341) 在 92 码外、不在区间内，和魔枢各场景一样属于路怪，不纳入。
+#   战斗中的小怪全是他自己 75%/50%/25% 下潜时召的（守卫 29216 / 毒疗者 29217 /
+#   刺客 / 掷矛者），英雄难度守卫和毒疗者各翻倍；这些本来就在场景里。
+#
+# ⚠️ 坐标是第二版。第一版准备点 (551,280) / 开怪点 (551,260) **都在三扇房间门的北侧**，
+#   而 boss 在南侧（y=248.3）。三扇门 (192396/192397/192398, gameobject_template.type=0 实体门,
+#   Data0=1 初始开启) 在 y≈252.2–256.2，属 DOOR_TYPE_ROOM，开怪 5 秒后关闭。
+#   结果（run430/run443 实测）：坦克与盗贼进到门内打 boss，治疗/法师/萨满留在门外，
+#   门一关就没有视线 —— 治疗的 PartyMemberToHeal 里那条 IsWithinLOSInMap 把坦克过滤掉，
+#   动作退化成对自己施放（日志：target is immuned to spell / target name 全是牧师本人），
+#   于是**治疗满血满蓝空转 90 秒、坦克从满血掉到 0 都没被治疗过一次**。
+#   教训：`raidtest los` 是静态 vmap 探针，**看不到战斗中才关上的门**。
+#   boss 带 DOOR_TYPE_ROOM 门时，准备点与开怪点必须都在 boss 那一侧。
+#
+# ⚠️ 用 `raidtest los` 时必须把**实测地面高度**当 z1 传进去。它是从 z1+2 量视线的，
+#   传一个"向下找地面"的高起点（比如 z1=240 而地面在 223）等于在离地 18 码处量，
+#   墙沿、坑沿全都越过去了，会得到假的 los=true。第二版坐标 (551,224) 就是这么选错的：
+#   地面 221.65 处实测 los=false，5/5 场 pull_rejected（日志 los=false distance=12.88）。
+#
+# 准备点 (527, 248, 224.35)：距 boss 24.0 码 > 22 码（82 级 boss 仇恨半径），
+#   **以 224.35 为 z1 实测 los=true**，在门线（y≈252–256）以南。
+#   距战斗区间圆心 (550.6,253.6) 24.3 码 < 32。
+#   内圈地面 y 240–251 约为 x 527–575，向南收窄；x≤523 没有地面，别再往西。
+#   门内侧距 boss 最远就是 24 码（东西两翼 y=248/251），没有更远的合法点。
+# 开怪点 (543, 248, 223.44)：距 boss 16.0 码，地面高度实测 los=true，同在门线以南。
+#
+# TimeoutSeconds = 480：他有三次下潜，每次最长 60 秒（守卫/毒疗者全死可提前上来），
+#   首轮基线给足，避免把正常时长误记成超时。
+# ⚠️ 已知易碎点：boss_anubarak.cpp 的 SummonedCreatureEvade 会直接 EnterEvadeMode——
+#   任何一只召唤怪 evade 就整场重置。基线里若出现"打到一半 boss 满血"要往这里查。
+[Scenario]
+MapId = 601
+BossEntry = 29120
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-an
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 543.0
+EngageY = 248.0
+EngageZ = 223.44
+EngageO = 4.71
+TimeoutSeconds = 480
+EngageTrigger = pull
+# 准备点：2026-09-13 曾试挪到南侧 (543,230,224.1)，run 468/1 牧师从东南沿 (562,230) 掉出、法师站到南沿外——那里离南沿只有 7 码。
+# 回到 (527,248)：离 boss 出生点 24 码（仇恨半径外），虽在西沿导航网格尽头，但 27 场里只被击飞掉落 6 人次。
+PreparationX = 527.0
+PreparationY = 248.0
+PreparationZ = 224.35
+PreparationO = 4.71
+# 隔离形态（2026-09-13）：开场移除走廊尽头的两只 Anub'ar Prime Guard（29128，guid 132274/132275，(558,341)/(542,341) z 241）。
+# run 457–465 里 boss 潜地时坦克没有目标就去追它们，全队跟进北面坡道被打死（464/2、465/1 等），这是 boss 机制之外的干扰。
+FixtureDespawnSpawns = 132274,132275

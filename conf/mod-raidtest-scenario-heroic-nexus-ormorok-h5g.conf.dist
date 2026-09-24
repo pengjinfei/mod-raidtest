@@ -1,0 +1,56 @@
+# ilvl 200 档复跑（2026-09-24）：由 mod-raidtest-scenario-heroic-nexus-ormorok-n5.conf 复制，仅 RosterFile 换为 heroic5gear-n5talents-v1（天赋/雕纹/补给与 normal5 相同）。
+# 魔枢（The Nexus，map 576）英雄：奥莫洛克(26794) + 平台前 4 只水晶守卫，完整链路。
+# 2026-09-10。装备档位 normal5-v1（ilvl 上限 187），boss 难度英雄，BotCheats 为空。
+#
+# 这个 boss 的难点在**开怪时机**，不在坐标（三轮实测）：
+#   守卫组是 4 只的 creature_formation（leader 126445，成员 126444/126605/126606，
+#   groupAI = 514 = IDLE_IN_FORMATION | LEADER_ASSISTS_MEMBER），沿平台到花园的斜坡巡逻
+#   （DB 生成点 x∈[247.9,253.4]，运行时实测游走到 x≈305），冷启动瞬间总在生成点附近、
+#   **距 boss 仅 17.1 码**。
+#   - run336：拉怪点距守卫 8 码 -> 同时开 boss + 4 精英，25.7 秒全灭、boss 仅掉到 92%。
+#   - run343：拉怪点改到距守卫 31.9 码只打 boss，5/5 场守卫仍全部参战
+#     （Keeper 288,315 + Tender 160,307 > boss 本人 150,258）。
+#   - run355：清怪点放到花园侧、距 boss 41.5 码，守卫在 (254.45,-238.90) 挨到第一下伤害
+#     （rel_ms 3086）后 **rel_ms 3145** 就记录到 boss 参战。即触发距离是「小怪到 boss」，
+#     不是「队伍到 boss」，挪队伍位置无解。
+#   => 用 PrerequisiteMinBossDistance 把开怪时机显式化：守卫距 boss 不足 28 码时不开怪，
+#      等巡逻走远（真人也是这么做的）。上限仍由 PrerequisiteTimeoutSeconds 兜住。
+#
+# 清怪点 (287.0,-260.0,-12.0)：位移导航探针（起点取实测巡逻点 (289.72,-234.36,-9.30)）
+#   验证为 on-mesh 且与巡逻区连通。三条约束同时满足：
+#   距 boss 41.2 码（>22 码仇恨半径）；距巡逻路线最近 24.1 码（>20 码守卫仇恨半径，
+#   路线实测点 y∈[-241.3,-233.7]、x∈[254,305]）；距所有 Crystalline Frayer ≥25.3 码。
+#   前三个候选点都因为「等待期间被拖进战斗」失败，且失败方式不同，一并记下别重走：
+#   - (303.55,-240.54,-14.09)：距柔叶怪 13.7/14.4 码，run361 1 击杀 1 abort。
+#   - (298.30,-238.03,-12.29)：距柔叶怪 19.2/19.7 码，run362 0/5。
+#     柔叶怪把队伍拖进战斗后，**bot 的战斗引擎会自己去点 28 码外的巡逻守卫**，
+#     门禁被 next->IsInCombat() 跳过，守卫在 boss 边上挨打 -> boss 协助。
+#   - (289.72,-234.36,-9.30)：柔叶怪够远，但它**在巡逻路线上**——run363 三场都是
+#     4.92 秒 Crystalline Keeper 主动打过来（此时它距 boss 仅约 9 码），5.2 秒 boss 协助。
+#   结论：清怪点必须同时离 boss、离巡逻路线、离其它小怪都足够远，让队伍在门禁期间保持脱战。
+#   门禁打开后若超出射程，由 ApproachPrerequisiteTarget 接近；从该点走向巡逻区不经过 boss。
+# 门禁 24 码：已实测「守卫距 boss 17.1 码时挨打，90 毫秒内 boss 协助」；
+#   CreatureFamilyAssistanceRadius 配置为 10 码，按包围半径估算有效半径约 17–18 码，
+#   故 24 码留出余量。巡逻走到 x≈287 时距 boss 约 24 码，此时距清怪点约 18 码，射程内。
+# 拉怪点 (275.0,-215.0,-9.00)：boss 东北 14.5 码，已由导航探针验证在网格上且与 boss 区连通。
+[Scenario]
+MapId = 576
+BossEntry = 26794
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 275.0
+EngageY = -215.0
+EngageZ = -9.00
+EngageO = 3.79
+TimeoutSeconds = 420
+EngageTrigger = pull
+PrerequisiteSpawns = 126445,126444,126606,126605
+PreparationX = 287.0
+PreparationY = -260.0
+PreparationZ = -12.0
+PreparationO = 3.14
+PrerequisiteTimeoutSeconds = 300
+PrerequisiteMinBossDistance = 24.0

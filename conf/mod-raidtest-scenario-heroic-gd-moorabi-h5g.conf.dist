@@ -1,0 +1,94 @@
+# ilvl 200 档复跑（2026-09-24）：由 mod-raidtest-scenario-heroic-gd-moorabi-n5.conf 复制，仅 RosterFile 换为 heroic5gear-n5talents-v1（天赋/雕纹/补给与 normal5 相同）。
+# 古达克（map 604）英雄：第二个 boss 莫拉比 Moorabi(29305)。
+# 2026-09-16 新建。装备档 normal5-v1，难度英雄，BotCheats 为空。
+#
+# 口径 = **完整遭遇战**：boss 房北面走廊那一组守卫列为前置清怪，无夹具移除。
+#
+# ── 房间地形（raidtest los 实测）──────────────────────────────────────────
+# boss 平台 x 1760–1790、y 800–825，地面 z=129.22；南面 y≤795 掉到 96（深坑）。
+#   平台北面 y 825–830 是下坡，y 830–845 是地面 z≈123.2–124.5 的走廊。
+# 平台太小：任何落在平台上的点距 boss ≤16 码，进不了 >22 码这一关
+#   （英雄 Moorabi 82 级 → 22 码）。走廊里 >22 码的点对 boss **los=false**
+#   （实测 (1772,838,123.6)→boss los=false，下坡的坎挡住）。
+#   → 与斯拉德兰同一原因，必须走「前置清怪 → 传送到开怪点」这条路。
+#
+# 准备点 (1772, 875, 124.44)：首组前置怪北侧，距 Earthshaker 约 26 码、距 boss 约 65 码。
+#   run635 证明北侧能避免莫拉比 proximity aggro；y=858 仍在首怪仇恨圈，run636 在控制
+#   图标落地前 0.376 秒就自然进战。此点在约 30 码控制施法范围内但在小怪 21 码仇恨圈外。
+# 开怪点 (1772.5, 818, 129.22)：平台北缘，距 boss 8.5 码、los=true。boss 不巡逻。
+#
+# ── 前置怪（顺序 = 离准备点由近到远）──────────────────────────────────────
+#   127067 Drakkari Earthshaker (1772.8,848.7) 10.7 码
+#   127113 Drakkari Inciter     (1777.8,850.6) 13.9      ← 编队队长（groupAI=3）
+#   127068 Drakkari Earthshaker (1772.7,852.8) 14.8
+#   127062 Drakkari Fire Weaver (1797.7,847.0) 27.2
+#   127051 Drakkari Lancer      (1797.6,856.0) 31.3
+# 为什么要带上东侧的 127062/127051：127062 距编队队长 127113 只有 20.2 码
+#   < 英雄小怪 21 码仇恨半径，打队长必然把它拉进来；127051 又在 127062 的 9 码内。
+#   列进前置表是承认这条连锁，不是扩大范围。
+# 西侧那一组（127047/127059/127065，编队队长 127059）离最近的交战点 26.8 码，
+#   不在连锁里，保持存活、不列前置。
+#
+# 机制备忘（不影响本 conf，供判读用）：
+#   Transformation(55098) 3 秒读条，每 10 秒一次，**打断才是这个 boss 的判别量**；
+#   变形后 Quake/Numbing Roar/Determined Gore 全面变强。
+#   Mojo Frenzy(55163) 按血量降低施法时间，英雄难度是平方关系（血越少读条越快）。
+#   上游 mod-playerbots 的 GD 策略**对莫拉比一条触发器都没有**（GDStrategy.cpp 里是空注释）。
+#
+# TimeoutSeconds = 480 / PrerequisiteTimeoutSeconds = 260（控制链 2026-09-18 起；原 200）。
+[Scenario]
+MapId = 604
+BossEntry = 29305
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1772.5
+EngageY = 818.0
+EngageZ = 129.22
+EngageO = 4.71
+# ⚠ 准备点 y 875 → 880（2026-09-18 接控制链时调）：875 距最近的 127068 只有 **22.2 码**，
+#   落在英雄 80 级怪 ~23 码（20 + 双方 combat reach）的仇恨半径内 → **这组怪自己先动**。
+#   实测 run670：门禁在 9.7 秒拿到 `pack_engaged icons=2 landed=0`，羊/妖术/闷棍
+#   一个都没放出来（整场控制法术施放 **0 次**），因为 `TrashCcCastTarget` 会判
+#   「目标已进战斗 / 已是坦克的 victim」而返回空 —— 门禁变成纯等待。
+#   880 处三只西侧怪 27.2/30.0/31.4 码，全部 los=true（`raidtest los` 实测），
+#   既在仇恨圈外、又在前两只的 30 码控制射程内。控制先落地、整组才进战斗，
+#   这才是控制链设计的前提（docs/testing/TRASH-CC-PULL-DESIGN.md）。
+PreparationX = 1772.0
+PreparationY = 880.0
+PreparationZ = 124.44
+PreparationO = 4.71
+PrerequisiteSpawns = 127067,127113,127068,127062,127051
+# 超时预算 200 → 260s（2026-09-18 第三轮接控制链时调）：
+#   控制链本身会拉长清怪（魔枢测床 33s → 69–81s，约 2.1–2.5 倍），而且开怪前要等最多 25s。
+#   当前清怪中位 59.9s、最长 74.6s；×2.5 推算 126–150s，**尾部到 186s 已经逼近 200s**。
+#   ⚠ 这只改「多久判作废」的观察预算，**不改游戏规则**（不涉装备/难度/cheat/怪属性），
+#   目的只是避免把「控制链慢一点」误读成「控制链失败」。
+PrerequisiteTimeoutSeconds = 260
+TimeoutSeconds = 480
+EngageTrigger = pull
+
+# 清怪控制链（2026-09-18 晚第三轮，docs/testing/TRASH-CC-PULL-DESIGN.md）：
+# 为什么接它：把前置窗口内承伤按来源拆开后，单一大头（29829 Earthshaker 打坦克 494,710，
+# 占坦克承伤 57%）**不是杠杆**——它的最大生命是其余四只的 1.6 倍（105,894 vs 65,165），
+# 打得多首先是因为活得久；按 kill/fail 分组逐来源做 Mann-Whitney U **没有一项显著**
+# （29829 p=0.53、反伤 p=0.66、Lancer 普攻 p=0.06），连队伍总承伤都不可区分（p=0.85）。
+# 三轮换靶子都错在「从承伤排行里挑最大项」，而控制链改的是**同时接敌数量与焦点**。
+#
+# 本副本的包几何（`raidtest los` 实测，准备点 (1772,880,124.44)）：
+#   以最近的 127067 Earthshaker 为拉怪目标时，pack = **西侧三只**（127067/127113/127068，
+#   彼此 4–6 码），三只对准备点全部 los=true、27.2/30.0/31.4 码。
+#   该点在约 23 码仇恨圈外，且前两只仍在 30 码控制射程内；875 点距最近怪仅
+#   22.2 码，怪会在控制落地前自动进战。
+#   东侧两只（127062 FireWeaver 38.0 码、127051 Lancer 31.9 码）**既超出 15 码 pack 半径、
+#   也超出 30 码控制射程，且 los=false**——控制链管不到它们，仍靠坦克抓 + 正常清。
+# ⚠ 因此控制链只能覆盖 5 只里的 3 只（留 1 只给坦克 → 实际同时接敌 1 只），
+#   预期收益是「同时接敌数量」而不是「总承伤降多少」。
+# 古达克前置没有治疗型小怪（29874 Inciter 近战、29822 FireWeaver 唯一有法力），
+# 所以 bot 侧不登记 healer entry，按默认「有法力 > 其它」排。
+PrerequisiteCcWaitSeconds = 25
+# 已落一控但包已意外进战时，给第二个远程控制完成读条的短宽限。
+# run676 seq5 的妖术在剩 599ms 时被战斗动作取消；5s 只用于让已开始的控制收尾。
+PrerequisiteCcEngagedGraceSeconds = 5

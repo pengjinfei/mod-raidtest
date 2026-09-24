@@ -1,0 +1,46 @@
+# ilvl 200 档复跑（2026-09-24）：由 mod-raidtest-scenario-heroic-nexus-telestra-n5.conf 复制，仅 RosterFile 换为 heroic5gear-n5talents-v1（天赋/雕纹/补给与 normal5 相同）。
+# 魔枢（The Nexus，map 576）英雄：大魔导师泰蕾斯特拉(26731) + 房前 4 只守卫，完整链路。
+# 2026-09-10 新建。装备档位 normal5-v1（ilvl 上限 187），boss 难度英雄，BotCheats 为空。
+#
+# 守卫组必须清（run341 实测反证「留活绕开」不可行）：
+#   守卫组（Steward 126470 + Mage Hunter Initiate 126465/126464 + Ascendant 126456）
+#   距 boss 仅 22.1–26.4 码。把拉怪点放在 boss 西侧 7.7 码试图绕开它们，5/5 场守卫全部参战
+#   （7.9/9.0/12.8 秒陆续加入，合计承伤 20–30k 每只）——近战站 boss 背面加上
+#   「telestra firebomb → firebomb spread」散开动作，必然进入守卫的 20 码仇恨半径
+#   （守卫等级 80，Creature::GetAggroRange = 20 码）。故本场景按完整链路先清怪。
+#
+# 清怪点为什么在北侧 (519,100)：
+#   实测远程 bot 站桩距离约「离目标 26 码」（run338 采样：目标 (517.0,90.3)，法师 (541.9,80.9)）。
+#   走廊东侧 29–35 码就是下一组小怪（x∈[548,555]、y∈[60,72] 与 y∈[109,122]），
+#   把清怪点放在守卫组东侧（run338 的 528,89）会让远程站到 (541.9,80.9)，
+#   距 (555.1,68.5) 的 Steward 仅 18 码 -> 多拉一组，5/5 场报废。
+#   北侧点距 boss 32.0 码（>22 码英雄 boss 仇恨半径）、距最近守卫 7.1 码（<20，拉得动），
+#   而远程往北退到 y≈126 时距 (552.8,121.7)/(555,112) 仍有 34–38 码。
+#   该点已由 heroic-nexus-probe-h 零位移导航探针验证在可走多边形上。
+# 拉怪点 (487.0,89.1,-16.04)：boss 正西 7.7 码，已由 heroic-nexus-probe-a 验证在网格上。
+[Scenario]
+MapId = 576
+BossEntry = 26731
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 487.0
+EngageY = 89.1
+EngageZ = -16.04
+EngageO = 0.0
+TimeoutSeconds = 300
+EngageTrigger = pull
+PrerequisiteSpawns = 126470,126465,126456,126464
+PreparationX = 509.0
+PreparationY = 65.0
+PreparationZ = -16.04
+PreparationO = 4.71
+PrerequisiteTimeoutSeconds = 180
+
+# 清怪控制链（2026-09-11，docs/testing/TRASH-CC-PULL-DESIGN.md）：准备点从 (519,110) 改到守卫西南 (509,62)
+# ——(519,110) 距最近守卫 17 码在仇恨半径内，北侧走廊无视线，西北侧会让施法怪朝 boss 后撤。
+# (509,62) 南边 4–5 码就是深坑（run414 萨满后撤掉下去，z -16 → -50），改到 (509,65)：守卫 23.1/23.2/26.5/30.5 码、
+# 距泰蕾斯特拉 28.0 码（未验证会不会拉到她；早期 26.9 码会、32 码不会），四只守卫都有视线。
+PrerequisiteCcWaitSeconds = 25
