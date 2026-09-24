@@ -1,0 +1,24 @@
+# heroic-hos-sjonnir-iso-n5：英雄岩石大厅 Sjonnir 隔离 boss 战（2026-09-24，用户选定隔离形态）
+#
+# 正常规则的 Tribunal→Sjonnir 同实例续链框架表达不了（见 Sjonnir README），故用
+# FixtureBossStates 预置 BOSS_TRIBUNAL_OF_AGES(2)=DONE 与 BRANN_DOOR(5)=DONE，结论降级为「隔离」。
+# 准备/开怪点在门内房间中线 (1262,667)，距 boss 33 码（40 码会超出治疗 leash 38.5，坦克拒绝接近）、vmap 两遍法确认有视线、地面 z=189.61。
+[Scenario]
+MapId = 599
+BossEntry = 27978
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-normal5-v1.conf"
+GearProfile = none
+FixtureBossStates = 2:3,5:3
+PreparationX = 1262.0
+PreparationY = 667.0
+PreparationZ = 189.61
+PreparationO = 0.0
+EngageX = 1262.0
+EngageY = 667.0
+EngageZ = 189.61
+EngageO = 0.0
+TimeoutSeconds = 480
+EngageTrigger = pull
