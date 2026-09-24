@@ -123,6 +123,11 @@ public:
     // 用于凯利丝塔萨这类「前三个 boss 的球体都用过才放出来」的进度门禁。同样是隔离形态，结论口径降级。
     std::vector<std::pair<uint32, uint32>> const& GetFixtureBossStates() const { return _fixtureBossStates; }
     bool GetFixtureBossNotify() const { return _fixtureBossNotify; }
+    // 无真人 master 的 roster bot 也启用 playerbots 标准「avoid aoe」战斗策略（0 = 保持旧行为）。
+    // mod-playerbots AiFactory 只在 HasGameClientMaster() 时默认加这条策略，raidtest 全 bot 队伍因此
+    // 从未躲过地面持续区域（哈多诺克斯酸液云占非坦克承伤 47–75%）。这是真人带队时的默认策略，
+    // 不改 bot 的决策逻辑；按场景显式开启以免悄悄改变其它场景基线。
+    bool GetMasterlessAvoidAoe() const { return _masterlessAvoidAoe; }
     // 清怪全部完成后要「使用」的 gameobject 生成点（gameobject.guid）。用于副本自身的
     // 进度门禁：魔枢的三个封印球体（188526/188527/188528）必须被使用，
     // DATA_*_ORB 才会置 DONE，凯利丝塔萨的冰冻牢笼才会解除。
@@ -194,6 +199,7 @@ protected:
     std::vector<uint32> _fixtureDespawnSpawns;
     std::vector<std::pair<uint32, uint32>> _fixtureBossStates;
     bool _fixtureBossNotify{false};
+    bool _masterlessAvoidAoe{false};
     std::vector<uint32> _prerequisiteGameObjects;
     uint32 _killGateSpawn{0};
     Position _preparationPoint{};

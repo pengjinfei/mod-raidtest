@@ -174,6 +174,23 @@ bool RosterLogin::ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots
     return true;
 }
 
+bool RosterLogin::EnsureCombatStrategy(std::vector<Player*> const& bots, std::string const& strategyName)
+{
+    uint32 ready = 0;
+    for (Player* bot : bots)
+    {
+        PlayerbotAI* botAI = bot ? GET_PLAYERBOT_AI(bot) : nullptr;
+        if (!botAI)
+            continue;
+        if (!botAI->HasStrategy(strategyName, BOT_STATE_COMBAT))
+            botAI->ChangeStrategy("+" + strategyName, BOT_STATE_COMBAT);
+        if (botAI->HasStrategy(strategyName, BOT_STATE_COMBAT))
+            ++ready;
+    }
+    LOG_INFO("raidtest", "RosterLogin: combat strategy '{}' active on {}/{} bot(s)", strategyName, ready, bots.size());
+    return ready == bots.size();
+}
+
 bool RosterLogin::EnsureCombatInstanceStrategy(std::vector<Player*> const& bots,
                                                 std::string const& strategyName)
 {

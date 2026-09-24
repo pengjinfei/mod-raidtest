@@ -61,6 +61,9 @@ public:
     // 检查 NON_COMBAT 状态的 HasStrategy）使 boss 变合法目标 -> bot 自身 DPS 循环生效。
     // 世界线程安全（登录完成后调用一次，非 tick 热路径）。全部应用成功返回 true。
     static bool ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots);
+    // 在战斗引擎上加一条标准 playerbots 策略并回读确认（须在 EnsureCombatInstanceStrategy 的
+    // SelectiveResetStrategies 之后调用，否则会被重置掉）。
+    static bool EnsureCombatStrategy(std::vector<Player*> const& bots, std::string const& strategyName);
 
     // 场景内同地图 near teleport 不会经过 playerbots 的 worldport map-attach 钩子。
     // 在真实拉怪前重建 combat engine 的默认策略，并由 playerbots 按当前 map

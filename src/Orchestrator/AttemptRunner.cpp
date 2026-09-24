@@ -2000,6 +2000,11 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
         Abort("raid_invalid: instance combat strategy inactive before pull");
         return false;
     }
+    if (ctx.scenario->GetMasterlessAvoidAoe() && !RosterLogin::EnsureCombatStrategy(ctx.bots, "avoid aoe"))
+    {
+        Abort("raid_invalid: avoid aoe strategy inactive before pull");
+        return false;
+    }
     if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::Summon)
         return StartSummonTriggerPull(ctx);
     if (!_prerequisiteGuids.empty())

@@ -492,6 +492,14 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _fixtureBossStates.emplace_back(id, state);
             }
         }
+        else if (key == "MasterlessAvoidAoe")
+        {
+            uint32 flag = 0;
+            if (!ParseUint32(value, flag) || flag > 1)
+                failed = true;
+            else
+                _masterlessAvoidAoe = flag == 1;
+        }
         else if (key == "FixtureBossNotify")
         {
             uint32 flag = 0;
