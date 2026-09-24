@@ -16,6 +16,7 @@
 #include "Log.h"
 #include "Map.h"
 #include "MotionMaster.h"
+#include "TargetedMovementGenerator.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "PathGenerator.h"
@@ -2197,9 +2198,37 @@ void AttemptRunner::TickScriptedEvent(RunContext& ctx)
         if (_eventGossipWaitMs >= 1000)
         {
             _eventGossipWaitMs = 0;
+            // Follow only escorts the starter while it walks, or brings back a bot
+            // left behind (e.g. still in combat when the walk happened). Otherwise
+            // hand movement back to the bot AI: a lingering follow generator would
+            // keep bots pinned to the starter in combat.
+            bool const starterMoving = ctx.boss->isMoving();
+            constexpr float kEscortStragglerDistance = 20.0f;
             for (size_t i = 0; i < ctx.bots.size(); ++i)
-                if (Player* bot = ctx.bots[i]; bot && bot->IsAlive() && !bot->IsInCombat())
-                    bot->GetMotionMaster()->MoveFollow(ctx.boss, 4.0f + float(i % 2), float(i) * 1.256637f);
+            {
+                Player* bot = ctx.bots[i];
+                if (!bot || !bot->IsAlive())
+                    continue;
+
+                MotionMaster* motion = bot->GetMotionMaster();
+                if (!bot->IsInCombat() &&
+                    (starterMoving || bot->GetExactDist2d(ctx.boss) > kEscortStragglerDistance))
+                {
+                    motion->MoveFollow(ctx.boss, 4.0f + float(i % 2), float(i) * 1.256637f);
+                    continue;
+                }
+
+                if (motion->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+                    continue;
+
+                auto* follow = dynamic_cast<FollowMovementGenerator<Player>*>(motion->top());
+                if (!follow || follow->GetTarget() != ctx.boss)
+                    continue;
+
+                motion->MovementExpired();
+                LOG_INFO("raidtest", "AttemptRunner: escort-follow-release bot={} combat={} elapsed_ms={}",
+                    bot->GetName(), bot->IsInCombat(), ctx.attemptElapsedMs);
+            }
         }
     }
 
