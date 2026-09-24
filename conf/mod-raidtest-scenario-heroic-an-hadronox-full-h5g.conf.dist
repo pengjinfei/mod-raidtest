@@ -25,6 +25,6 @@ EngageX = 530.0
 EngageY = 580.0
 EngageZ = 733.92
 EngageO = 4.71
-TimeoutSeconds = 540
+TimeoutSeconds = 900
 # 2026-09-24：无真人 master 也启用标准 avoid aoe（酸液云 59419 占非坦克承伤 47–75%）。
 MasterlessAvoidAoe = 1

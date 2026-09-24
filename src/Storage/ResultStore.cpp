@@ -37,9 +37,9 @@ uint32 ResultStore::InsertThenSelectId(std::string const& insertSql, std::string
     // 同步 Query 取回自增 id（与 RosterManager::GetSlotGuids 的「Execute 后排空再查」
     // 口径一致）。attempt 占位行的逐 tick 取 id 走 QueueStartAttemptRow /
     // ResolveStartAttemptRowId（世界线程不在此阻塞）。
-    CharacterDatabase.Execute(insertSql);
-    while (CharacterDatabase.QueueSize())
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // 必须同步执行：异步 Execute 后「队列排空」不等于「已提交」，紧接的 SELECT 会读到
+    // 同场景上一行（run859、run892：新 run 行建了却读回旧 id，结果写进上一场、新行永不收尾）。
+    CharacterDatabase.DirectExecute(insertSql);
 
     QueryResult result = CharacterDatabase.Query(selectSql);
     if (!result)
