@@ -56,6 +56,9 @@ private:
     // 「有人阵亡 + boss 已脱战回满血 + 残存者也脱战」的连续采样数：这一局已经结束，
     // 不必空等超时（本会话 5 次 timeout 每次白跑约 200 秒）。
     uint32 _encounterResetSamples = 0;
+    // 脚本事件（护送者即 ctx.boss、不会进战斗）版本：有人阵亡且残存者持续脱战的起点
+    // （attemptElapsedMs 口径，0 = 未处于该状态）。
+    uint32 _scriptedStallSinceMs = 0;
     uint32 _lastPositionSampleMs{0};    // 上次位置采样时刻（attemptElapsedMs 口径）
     uint32 _lastTankSampleMs{0};
     uint32 _lastIngvarSmashSampleMs{0};

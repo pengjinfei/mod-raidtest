@@ -24,6 +24,9 @@ namespace
     constexpr uint32 kSampleConfirmTicks = 3;
     // 卡壳判定窗口：boss 存在但脱离战斗且全团存活连续 N 个采样 → aborted。
     constexpr uint32 kStuckAbortTicks = 40;   // ~4-8s（名义世界 tick 100ms）
+    // 脚本事件停滞窗口：Tribunal 小怪最长 32 秒一波且全区域入战，进行中的事件不会让
+    // 残存者连续 45 秒脱战。
+    constexpr uint32 kScriptedEventStallMs = 45000;
     constexpr uint32 kIngvarEntry = 23954;
     constexpr uint32 kIngvarUndeadDisplayId = 26351;
     constexpr uint32 kIngvarSmashSpell = 42669;
@@ -45,6 +48,7 @@ void AttemptObserver::Reset()
     _timeoutSamples = 0;
     _abortSamples = 0;
     _encounterResetSamples = 0;
+    _scriptedStallSinceMs = 0;
     _lastPositionSampleMs = 0;
     _lastTankSampleMs = 0;
     _lastIngvarSmashSampleMs = 0;
@@ -870,6 +874,25 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     }
     else
         _encounterResetSamples = 0;
+
+    // 脚本事件的同类情形：护送者（ctx.boss）本身不进战斗、不掉血，上面的 bossReset 永远不成立。
+    // 事件失败后不再刷怪，而萨满复生/法师独活会让 allDead 不成立，run806/807 各空等到 900 秒。
+    // 有人阵亡、事件未完成（DONE 已在前面判 Kill）、残存者连续 45 秒脱战 → 判 Wipe 并注明来源。
+    if (ctx.scenario && ctx.scenario->GetEventStarterEntry() && anyDead && raidOutOfCombat)
+    {
+        if (!_scriptedStallSinceMs)
+            _scriptedStallSinceMs = std::max<uint32>(ctx.attemptElapsedMs, 1);
+        else if (ctx.attemptElapsedMs - _scriptedStallSinceMs >= kScriptedEventStallMs)
+        {
+            LOG_INFO("raidtest", "AttemptObserver: scripted event stalled after casualties "
+                "(survivors out of combat for {}ms) - ending attempt early",
+                ctx.attemptElapsedMs - _scriptedStallSinceMs);
+            ctx.notes = "scripted event stalled after casualties";
+            return AttemptResult::Wipe;
+        }
+    }
+    else
+        _scriptedStallSinceMs = 0;
 
     return AttemptResult::Ongoing;
 }
