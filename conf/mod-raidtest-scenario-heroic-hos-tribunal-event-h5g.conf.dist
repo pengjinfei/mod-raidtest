@@ -1,0 +1,26 @@
+[Scenario]
+MapId = 599
+BossEntry = 28070
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EventStarterEntry = 28070
+EventPhases = 4:3,2:3
+EventCompletionBossState = 2
+EventFailureEscortEntry = 28070
+EventFollowStarter = true
+EventTrackEntries = 27983,27984,27985,28265,30898
+PrerequisiteTimeoutSeconds = 300
+PrerequisiteSpawns = 126738,126739,126744,126746,126749,126750
+PreparationX = 1077.41
+PreparationY = 474.16
+PreparationZ = 207.80
+PreparationO = 2.705
+EngageX = 1077.41
+EngageY = 474.16
+EngageZ = 207.80
+EngageO = 2.705
+TimeoutSeconds = 900
+EngageTrigger = pull
