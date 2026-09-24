@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <map>
 #include <thread>
 
 namespace
@@ -60,7 +61,47 @@ public:
     void OnHeal(Unit* healer, Unit* receiver, uint32& gain) override;
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override;
     void OnUnitDeath(Unit* unit, Unit* killer) override;
+    // 只读：在同一次伤害调用链里、DealDamage→OnDamage 之前记下本次伤害来自哪个法术，
+    // OnDamage 取用后清掉；近战记 0。不修改 damage。
+    void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage, SpellInfo const* spellInfo) override;
+    void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage, SpellInfo const* spellInfo) override;
+    void ModifyMeleeDamage(Unit* target, Unit* attacker, uint32& damage) override;
 };
+
+namespace
+{
+    // (attacker, victim) -> 最近一次伤害计算的法术 id 与时刻。只在世界线程读写。
+    struct DamageSpellHint
+    {
+        uint32 spellId{0};
+        uint32 atMs{0};
+    };
+    std::map<std::pair<ObjectGuid, ObjectGuid>, DamageSpellHint> sDamageSpellHints;
+    // 同一调用链内即被取用；超过这个时间仍未取用（伤害被完全吸收等）就视为过期。
+    constexpr uint32 kDamageSpellHintMaxAgeMs = 50;
+
+    void NoteDamageSpell(Unit* attacker, Unit* target, uint32 spellId)
+    {
+        if (!attacker || !target || !CombatEventBus::instance().IsActive())
+            return;
+        // 未被取用的提示（治疗走同一周期钩子、伤害被完全吸收）不会自行消失，封顶防止无界增长。
+        if (sDamageSpellHints.size() > 4096)
+            sDamageSpellHints.clear();
+        sDamageSpellHints[{ attacker->GetGUID(), target->GetGUID() }] = { spellId, getMSTime() };
+    }
+
+    uint32 TakeDamageSpell(Unit* attacker, Unit* victim)
+    {
+        if (!attacker || !victim || sDamageSpellHints.empty())
+            return 0;
+        auto it = sDamageSpellHints.find({ attacker->GetGUID(), victim->GetGUID() });
+        if (it == sDamageSpellHints.end())
+            return 0;
+        DamageSpellHint const hint = it->second;
+        sDamageSpellHints.erase(it);
+        return getMSTimeDiff(hint.atMs, getMSTime()) <= kDamageSpellHintMaxAgeMs ? hint.spellId : 0;
+    }
+}
 
 // Tribunal Gaze is a 10-second temporary trigger created at the selected
 // player's current position. Capture creation in the core add-world hook: the
@@ -408,14 +449,16 @@ void RaidTestSpellScript::OnSpellCastCancel(Spell* spell, Unit* caster,
 
 // 伤害 + 死亡采集：UnitScript 全局钩子。
 //  - OnDamage：Unit::DealDamage 的统一漏斗（melee/spell/DOT 全覆盖），
-//    该 hook 不携带 spellId（DealDamage 的 spellProto 只在函数作用域内），
-//    spell_id 恒 0；施法归因用配对的 Spell 事件（同 source/target 邻近 rel_ms）。
+//    该 hook 不携带 spellId（DealDamage 的 spellProto 只在函数作用域内）；
+//    spell_id 由同一调用链里先触发的 ModifyPeriodicDamageAurasTick /
+//    ModifySpellDamageTaken / ModifyMeleeDamage 记下的提示补上（近战为 0）。
 //  - OnUnitDeath：任意单位死亡（含 bot 与 boss）。本 fork 的 AllCreatureScript
 //    **没有** OnCreatureDeath 钩子（AllCreatureScript.h 仅有 OnAllCreatureUpdate /
 //    OnCreatureSelectLevel 等），故死亡走 UnitScript 全局死亡钩子 —— 覆盖面更广
 //    且同样不绑定 entry（偏离 brief「AllCreatureScript 捕获生物死亡」的说明）。
 RaidTestUnitScript::RaidTestUnitScript()
-    : UnitScript("RaidTestUnitScript", true, { UNITHOOK_ON_HEAL, UNITHOOK_ON_DAMAGE, UNITHOOK_ON_UNIT_DEATH })
+    : UnitScript("RaidTestUnitScript", true, { UNITHOOK_ON_HEAL, UNITHOOK_ON_DAMAGE, UNITHOOK_ON_UNIT_DEATH,
+        UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK, UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_MODIFY_MELEE_DAMAGE })
 {
 }
 
@@ -447,12 +490,31 @@ void RaidTestUnitScript::OnHeal(Unit* healer, Unit* receiver, uint32& gain)
     bus.Push(e);
 }
 
+void RaidTestUnitScript::ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& /*damage*/,
+    SpellInfo const* spellInfo)
+{
+    NoteDamageSpell(attacker, target, spellInfo ? spellInfo->Id : 0);
+}
+
+void RaidTestUnitScript::ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& /*damage*/, SpellInfo const* spellInfo)
+{
+    NoteDamageSpell(attacker, target, spellInfo ? spellInfo->Id : 0);
+}
+
+void RaidTestUnitScript::ModifyMeleeDamage(Unit* target, Unit* attacker, uint32& /*damage*/)
+{
+    NoteDamageSpell(attacker, target, 0);
+}
+
 void RaidTestUnitScript::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
 {
     CombatEventBus& bus = CombatEventBus::instance();
 
     if (!bus.IsActive())
+    {
+        sDamageSpellHints.clear();
         return;
+    }
 
     CombatEvent e;
     e.type = CombatEventType::Damage;
@@ -467,6 +529,7 @@ void RaidTestUnitScript::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
 
     // value（伤害量）是关键；uint32 超 int32 上限时截断到 INT32_MAX 防溢出。
     e.value = int32(std::min<uint32>(damage, static_cast<uint32>(INT32_MAX)));
+    e.spellId = TakeDamageSpell(attacker, victim);
     e.detail = CreatureOriginDetail(attacker);
     if (attacker && attacker->IsCreature() && attacker->GetEntry() == kSearingGazeTriggerEntry && victim)
     {
