@@ -108,8 +108,10 @@ namespace
     // 清怪期间容忍 boss 缺席多久。带 CREATURE_FLAG_EXTRA_HARD_RESET 的 boss 被
     // DespawnOnEvade() 下线后默认 20 秒重生（Creature.h），给到 30 秒留余量。
     constexpr uint32 kBossAbsentBudgetMs = 30000;
-    // formation 脱战重置后的 Creature 重生默认可达 20 秒；给 5 秒调度余量。
-    constexpr uint32 kPrerequisiteRebindBudgetMs = 25000;
+    // 艾卓-尼鲁布守望者任一脱战会让克里克希尔 evade，实例脚本随即对三组阵型
+    // DespawnFormation(0s, 20s)：强制 20 秒后按原 spawn 重新生成。25 秒预算扣掉刷新处理延迟
+    // 不够（run837/839 零死亡却被判 spawn 消失），放宽到 60 秒。
+    constexpr uint32 kPrerequisiteRebindBudgetMs = 60000;
     // 队列排空 ≠ 提交完成：async DB worker 把消息从队首取出后、在连接上 commit
     // 完成之前 QueueSize() 已为 0；紧接的同步 SELECT（另一连接）会抢跑读空 ——
     // Task 8 验收 run 4 实机复现：占位 INSERT 已落下、read-back 却返回空，attempt
@@ -2464,8 +2466,9 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
                 Abort("prerequisite_invalid: spawn disappeared without a recorded death");
                 return;
             }
-            LOG_INFO("raidtest", "AttemptRunner: prerequisite spawn {} re-bound {} -> {} "
-                "(instance script reset the pack)", spawnId, guid.ToString(), rebound->GetGUID().ToString());
+            LOG_INFO("raidtest", "AttemptRunner: prerequisite spawn {} re-bound {} -> {} after {}ms "
+                "(instance script reset the pack)", spawnId, guid.ToString(), rebound->GetGUID().ToString(),
+                i < _prerequisiteRebindElapsedMs.size() ? _prerequisiteRebindElapsedMs[i] : 0);
             _prerequisiteGuids[i] = rebound->GetGUID();
             CombatEventBus::instance().TrackUnit(rebound->GetGUID());
             if (i < _prerequisiteRebindElapsedMs.size())
