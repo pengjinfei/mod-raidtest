@@ -863,6 +863,16 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
             uint32(script->GetBossState(ctx.scenario->GetEngageConfirmBossStateId())) ==
                 ctx.scenario->GetEngageConfirmBossStateValue();
     }
+    // 同上，按实例数据（不用 boss 状态的副本脚本）：Gortok 在四只小 boss 死前不可选中、未必在战斗。
+    if (!encounterStateActive && ctx.scenario && ctx.scenario->HasEngageConfirmInstanceData() && !ctx.bots.empty() &&
+        ctx.bots.front())
+    {
+        Map* stateMap = ctx.bots.front()->GetMap();
+        InstanceScript* script = stateMap && stateMap->ToInstanceMap() ?
+            stateMap->ToInstanceMap()->GetInstanceScript() : nullptr;
+        encounterStateActive = script && script->GetData(ctx.scenario->GetEngageConfirmInstanceDataId()) ==
+            ctx.scenario->GetEngageConfirmInstanceDataValue();
+    }
     // 双 boss：gate 未死期间 encounter 仍进行（BossEntry 可能已死变幽灵），卡壳判定
     // 挂起，终态交给 Kill（gate 死）/ Wipe / Timeout。
     if ((!ctx.scenario || !ctx.scenario->GetEventStarterEntry()) && bossKnown && !bossInCombat && !anyDead && !gatePending &&

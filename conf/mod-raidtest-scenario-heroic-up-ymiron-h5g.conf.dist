@@ -1,0 +1,28 @@
+# 英雄乌特加德之巅 / 伊米隆国王（King Ymiron，26861/30788），ilvl 200 档隔离 boss 战。勘测：docs/testing/bosses/heroic-up/SURVEY.md。
+# 门禁：伊米隆 Reset() 置 NOT_SELECTABLE，仅 GetData(DATA_SKADI)==DONE 时解除；UP 实例脚本不用 boss 状态，
+# 进度走 SetData/GetData，故用 FixtureInstanceData = 2:3（Skadi=2，DONE=3）模拟“斯卡迪已击杀”（隔离形态）。
+# 王座前三只（126104 Dusk Shaman、126112/126113 Berserker，23–29 码）作前置；北侧 Dragonflayer 一组
+# （126154/126163/126158 与巡逻 126159）及 Mindless Servant 126129 夹具移除（非机制）。船上四位国王是脚本布景，保留。
+# los 实测：开怪点 (392.8,-303) 地面 103.89、距 16.2 码；准备点 (392.5,-355) 地面 103.89、对 126104 视线通、距 45 码。
+[Scenario]
+MapId = 575
+BossEntry = 26861
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-up
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 392.8
+EngageY = -303.0
+EngageZ = 103.89
+EngageO = 1.57
+PreparationX = 392.5
+PreparationY = -355.0
+PreparationZ = 103.89
+PreparationO = 1.57
+PrerequisiteSpawns = 126104,126112,126113
+PrerequisiteTimeoutSeconds = 180
+FixtureDespawnSpawns = 126154,126163,126158,126159,126129
+FixtureInstanceData = 2:3
+TimeoutSeconds = 480
+EngageTrigger = pull

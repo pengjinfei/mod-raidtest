@@ -94,6 +94,15 @@ public:
     // （哈多诺克斯：粉碎者接战 → DATA_HADRONOX=IN_PROGRESS → 她分三段爬上平台）。状态保持期间
     // observer 不把「boss 不在战斗」当作卡住或复位。
     bool HasEngageConfirmBossState() const { return _hasEngageConfirmBossState; }
+    // 同 EngageConfirmBossState，但读 InstanceScript::GetData(<id>) == <value>（不用 boss 状态的副本脚本，
+    // 如乌特加德之巅：Gortok=1，IN_PROGRESS=1）。开战确认与观察期“遭遇进行中不判卡住”都认它。
+    bool HasEngageConfirmInstanceData() const { return _hasEngageConfirmInstanceData; }
+    uint32 GetEngageConfirmInstanceDataId() const { return _engageConfirmInstanceDataId; }
+    uint32 GetEngageConfirmInstanceDataValue() const { return _engageConfirmInstanceDataValue; }
+    // EngageTrigger=gameobject：坦克要使用的 gameobject spawn（须在交互距离内，不代为移动）。
+    uint32 GetEngageGameObjectSpawn() const { return _engageGameObjectSpawn; }
+    // EngageTrigger=areatrigger：AreaTrigger id（坦克须在开怪点、即 AT 盒内；核心自己校验）。
+    uint32 GetEngageAreaTrigger() const { return _engageAreaTrigger; }
     uint32 GetEngageConfirmBossStateId() const { return _engageConfirmBossStateId; }
     uint32 GetEngageConfirmBossStateValue() const { return _engageConfirmBossStateValue; }
     // Scripted instance event: interact with this gossip creature using the tank,
@@ -123,6 +132,10 @@ public:
     // 用于凯利丝塔萨这类「前三个 boss 的球体都用过才放出来」的进度门禁。同样是隔离形态，结论口径降级。
     std::vector<std::pair<uint32, uint32>> const& GetFixtureBossStates() const { return _fixtureBossStates; }
     bool GetFixtureBossNotify() const { return _fixtureBossNotify; }
+    // 同上，但走 InstanceScript::SetData("<id>:<value>,...")。有的副本脚本不用 SetBossNumber/boss 状态，
+    // 进度存在自己的 Encounters[] 里（乌特加德之巅：Svala=0、Gortok=1、Skadi=2、Ymiron=3，DONE=3），
+    // SetBossState 对它们是空操作。用于伊米隆「斯卡迪已完成才可选中」这类门禁。隔离形态，结论口径降级。
+    std::vector<std::pair<uint32, uint32>> const& GetFixtureInstanceData() const { return _fixtureInstanceData; }
     // 无真人 master 的 roster bot 也启用 playerbots 标准「avoid aoe」战斗策略（0 = 保持旧行为）。
     // mod-playerbots AiFactory 只在 HasGameClientMaster() 时默认加这条策略，raidtest 全 bot 队伍因此
     // 从未躲过地面持续区域（哈多诺克斯酸液云占非坦克承伤 47–75%）。这是真人带队时的默认策略，
@@ -190,6 +203,11 @@ protected:
     float _summonTriggerRadius{30.0f};
     bool _hasEngageConfirmBossState{false};
     uint32 _engageConfirmBossStateId{0};
+    bool _hasEngageConfirmInstanceData{false};
+    uint32 _engageConfirmInstanceDataId{0};
+    uint32 _engageConfirmInstanceDataValue{0};
+    uint32 _engageGameObjectSpawn{0};
+    uint32 _engageAreaTrigger{0};
     uint32 _engageConfirmBossStateValue{0};
     uint32 _eventStarterEntry{0};
     uint32 _eventCompletionBossState{0};
@@ -204,6 +222,7 @@ protected:
     bool _scriptBossAcceptAutoEngage{false};
     std::vector<uint32> _fixtureDespawnSpawns;
     std::vector<std::pair<uint32, uint32>> _fixtureBossStates;
+    std::vector<std::pair<uint32, uint32>> _fixtureInstanceData;
     bool _fixtureBossNotify{false};
     bool _masterlessAvoidAoe{false};
     std::vector<uint32> _prerequisiteGameObjects;

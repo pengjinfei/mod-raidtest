@@ -290,9 +290,13 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 _engageTrigger = EncounterTrigger::Pull;
             else if (ToLower(value) == "summon")
                 _engageTrigger = EncounterTrigger::Summon;
+            else if (ToLower(value) == "gameobject")
+                _engageTrigger = EncounterTrigger::GameObject;
+            else if (ToLower(value) == "areatrigger")
+                _engageTrigger = EncounterTrigger::AreaTrigger;
             else
             {
-                LOG_ERROR("raidtest", "Scenario: unknown EngageTrigger '{}' (expected 'pull' or 'summon') "
+                LOG_ERROR("raidtest", "Scenario: unknown EngageTrigger '{}' (expected 'pull', 'summon', 'gameobject' or 'areatrigger') "
                     "at line {} in '{}'", value, lineNumber, filePath);
                 failed = true;
             }
@@ -442,6 +446,30 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _hasEngageConfirmBossState = true;
         }
+        else if (key == "EngageConfirmInstanceData")
+        {
+            size_t const colon = value.find(':');
+            if (colon == std::string::npos ||
+                !ParseUint32(value.substr(0, colon), _engageConfirmInstanceDataId) ||
+                !ParseUint32(value.substr(colon + 1), _engageConfirmInstanceDataValue))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EngageConfirmInstanceData '{}' at line {} in '{}' "
+                    "(expected <id>:<value>)", value, lineNumber, filePath);
+                failed = true;
+            }
+            else
+                _hasEngageConfirmInstanceData = true;
+        }
+        else if (key == "EngageAreaTrigger")
+        {
+            if (!ParseUint32(value, _engageAreaTrigger) || !_engageAreaTrigger)
+                failed = true;
+        }
+        else if (key == "EngageGameObjectSpawn")
+        {
+            if (!ParseUint32(value, _engageGameObjectSpawn) || !_engageGameObjectSpawn)
+                failed = true;
+        }
         else if (key == "SummonTriggerEntry")
         {
             if (!ParseUint32(value, _summonTriggerEntry) || !_summonTriggerEntry)
@@ -490,6 +518,21 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     failed = true;
                 else
                     _fixtureBossStates.emplace_back(id, state);
+            }
+        }
+        else if (key == "FixtureInstanceData")
+        {
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                std::string const item = Acore::String::Trim(std::string(token));
+                size_t const colon = item.find(':');
+                uint32 id = 0;
+                uint32 data = 0;
+                if (colon == std::string::npos || !ParseUint32(item.substr(0, colon), id) ||
+                    !ParseUint32(item.substr(colon + 1), data))
+                    failed = true;
+                else
+                    _fixtureInstanceData.emplace_back(id, data);
             }
         }
         else if (key == "MasterlessAvoidAoe")
@@ -743,9 +786,19 @@ bool Scenario::LoadFromFile(std::string const& filePath)
         LOG_ERROR("raidtest", "Scenario: EngageTrigger=summon requires SummonTriggerEntry");
         failed = true;
     }
-    if (_engageTrigger != EncounterTrigger::Summon && _hasEngageConfirmBossState)
+    if (_engageTrigger == EncounterTrigger::AreaTrigger && !_engageAreaTrigger)
     {
-        LOG_ERROR("raidtest", "Scenario: EngageConfirmBossState requires EngageTrigger=summon");
+        LOG_ERROR("raidtest", "Scenario: EngageTrigger=areatrigger requires EngageAreaTrigger");
+        failed = true;
+    }
+    if (_engageTrigger == EncounterTrigger::GameObject && !_engageGameObjectSpawn)
+    {
+        LOG_ERROR("raidtest", "Scenario: EngageTrigger=gameobject requires EngageGameObjectSpawn");
+        failed = true;
+    }
+    if (_engageTrigger == EncounterTrigger::Pull && _hasEngageConfirmBossState)
+    {
+        LOG_ERROR("raidtest", "Scenario: EngageConfirmBossState requires EngageTrigger=summon or gameobject");
         failed = true;
     }
     if (_engageTrigger != EncounterTrigger::Summon && _summonTriggerEntry)

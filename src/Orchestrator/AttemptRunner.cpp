@@ -10,6 +10,9 @@
 #include "InstanceSaveMgr.h"
 #include "InstanceScript.h"
 #include "GameObject.h"
+#include "Opcodes.h"
+#include "WorldPacket.h"
+#include "WorldSession.h"
 #include "Group.h"
 #include "GroupMgr.h"
 #include "Playerbots.h"
@@ -778,6 +781,28 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 }
             }
 
+            // 隔离夹具（FixtureInstanceData）：同 FixtureBossStates，但走 SetData（不用 boss 状态的副本脚本）。
+            if (!ctx.scenario->GetFixtureInstanceData().empty())
+            {
+                Map* map = ctx.bots.front()->GetMap();
+                InstanceScript* script = map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
+                if (!script)
+                {
+                    Abort("scene_invalid: FixtureInstanceData needs an instance script");
+                    return;
+                }
+                for (auto const& [id, data] : ctx.scenario->GetFixtureInstanceData())
+                {
+                    script->SetData(id, data);
+                    CombatEvent ev;
+                    ev.type = CombatEventType::State;
+                    ev.detail = Acore::StringFormat("fixture_instance_data=id:{} value:{} now:{}", id, data,
+                        script->GetData(id));
+                    CombatEventBus::instance().Push(ev);
+                    LOG_INFO("raidtest", "AttemptRunner: {}", ev.detail);
+                }
+            }
+
             // 双 boss：BossEntry 之外第二个必死生成点。解析其 creature 并登记死亡跟踪，
             // 击杀判定与卡壳判定都以此为准（见 AttemptObserver）。gate 是必打目标，
             // 若已因 bots 邻近参战也接受——不因此阻断。
@@ -893,6 +918,55 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             if (!tank || !tank->IsAlive() || !ctx.boss)
             {
                 Abort("pull failed (tank or boss missing during aggro lead)");
+                return;
+            }
+
+            if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::GameObject ||
+                ctx.scenario->GetEngageTrigger() == EncounterTrigger::AreaTrigger)
+            {
+                _gameObjectTriggerElapsedMs += diff;
+                Map* map = tank->GetMap();
+                InstanceScript* script = map && map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
+                bool started = false;
+                std::string how;
+                if (script && ctx.scenario->HasEngageConfirmInstanceData() &&
+                    script->GetData(ctx.scenario->GetEngageConfirmInstanceDataId()) ==
+                        ctx.scenario->GetEngageConfirmInstanceDataValue())
+                {
+                    started = true;
+                    how = "instance_data";
+                }
+                else if (script && ctx.scenario->HasEngageConfirmBossState() &&
+                    uint32(script->GetBossState(ctx.scenario->GetEngageConfirmBossStateId())) ==
+                        ctx.scenario->GetEngageConfirmBossStateValue())
+                {
+                    started = true;
+                    how = "boss_state";
+                }
+                else if (CombatTrigger::ConfirmBossInCombat(ctx.boss))
+                {
+                    started = true;
+                    how = "boss_in_combat";
+                }
+                if (started)
+                {
+                    CombatEvent event;
+                    event.type = CombatEventType::State;
+                    event.target = ctx.bossGuid;
+                    event.detail = Acore::StringFormat("engage_confirm_gameobject:via={} elapsed_ms={}", how,
+                        _gameObjectTriggerElapsedMs);
+                    CombatEventBus::instance().Push(event);
+                    LOG_INFO("raidtest", "AttemptRunner: {}", event.detail);
+                    RecordPhase("engage_confirm_gameobject", 0);
+                    ConfirmAndEnterObserving(ctx);
+                    return;
+                }
+                // AT 开战后常先走剧情（Svala 约 72 秒才落地攻击），预算放宽到 120 秒。
+                uint32 const budget = ctx.scenario->GetEngageTrigger() == EncounterTrigger::AreaTrigger ?
+                    120000 : kEngageConfirmBossStateMs;
+                if (_gameObjectTriggerElapsedMs < budget)
+                    return;
+                Abort("pull failed (encounter not started after gameobject/areatrigger)");
                 return;
             }
 
@@ -2056,6 +2130,10 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
     }
     if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::Summon)
         return StartSummonTriggerPull(ctx);
+    if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::GameObject)
+        return StartGameObjectTriggerPull(ctx);
+    if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::AreaTrigger)
+        return StartAreaTriggerPull(ctx);
     if (!_prerequisiteGuids.empty())
     {
         for (ObjectGuid const& guid : _prerequisiteGuids)
@@ -2138,6 +2216,93 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
     _stuckTicks = 0;
     _stage = Stage::Pull;
     _pullStep = PullStep::AwaitTankAggro;
+    return true;
+}
+
+// EngageTrigger=gameobject：遭遇由玩家使用一个开关 gameobject 开始（Gortok 的 Stasis Generator：
+// GameObject::Use → OnGossipHello → DoAction(START)，boss SetInCombatWithZone 并在四只小 boss 死前不可选中）。
+// 坦克必须已在开怪点、交互距离内（场景把开怪点放在 gameobject 旁；这里不代为移动）；之后不 hold 跟随者、
+// 不要求坦克拿 boss 仇恨，只等遭遇开始的证据（实例数据/boss 状态/boss 进战）即进入观察，战斗全交给 bot。
+bool AttemptRunner::StartGameObjectTriggerPull(RunContext& ctx)
+{
+    Player* tank = FindTank(ctx);
+    if (!tank)
+    {
+        Abort("pull failed (roster has no tank)");
+        return false;
+    }
+    uint32 const spawn = ctx.scenario->GetEngageGameObjectSpawn();
+    GameObject* object = nullptr;
+    auto const bounds = tank->GetMap()->GetGameObjectBySpawnIdStore().equal_range(spawn);
+    for (auto it = bounds.first; it != bounds.second; ++it)
+        if (it->second)
+            object = it->second;
+    if (!object)
+    {
+        Abort(Acore::StringFormat("scene_invalid: engage gameobject spawn {} missing", spawn));
+        return false;
+    }
+    float const distance = tank->GetDistance(object);
+    bool const selectable = !object->HasGameObjectFlag(GO_FLAG_NOT_SELECTABLE);
+    CombatEvent event;
+    event.type = CombatEventType::State;
+    event.source = tank->GetGUID();
+    event.target = object->GetGUID();
+    event.actorEntry = object->GetEntry();
+    event.detail = Acore::StringFormat("engage_gameobject_use:spawn={} entry={} dist={:.2f} selectable={} go_state={}",
+        spawn, object->GetEntry(), distance, selectable, uint32(object->GetGoState()));
+    CombatEventBus::instance().Push(event);
+    LOG_INFO("raidtest", "AttemptRunner: {}", event.detail);
+    if (distance > 6.0f)
+    {
+        Abort(Acore::StringFormat("scene_invalid: tank {:.1f} yd from engage gameobject (max 6)", distance));
+        return false;
+    }
+    if (!selectable)
+    {
+        Abort("scene_invalid: engage gameobject not selectable");
+        return false;
+    }
+    object->Use(tank);
+    _pullTank = tank->GetGUID();
+    _gameObjectTriggerElapsedMs = 0;
+    _confirmTicks = 0;
+    _stuckTicks = 0;
+    _stage = Stage::Pull;
+    _pullStep = PullStep::AwaitTankAggro;
+    RecordPhase("engage_gameobject_use", 0);
+    return true;
+}
+
+// EngageTrigger=areatrigger：真人客户端走进 AT 盒会发 CMSG_AREATRIGGER；bot 不发，核心也不做服务端扫描。
+// 坦克已站在开怪点（场景把开怪点放在盒内），这里代它发一次同样的包，走核心 HandleAreaTriggerOpcode
+// （自己校验距离/盒子，再交给 AreaTriggerScript/SmartTrigger）。之后与 gameobject 开战同样只等遭遇开始的证据。
+bool AttemptRunner::StartAreaTriggerPull(RunContext& ctx)
+{
+    Player* tank = FindTank(ctx);
+    if (!tank || !tank->GetSession())
+    {
+        Abort("pull failed (roster has no tank)");
+        return false;
+    }
+    uint32 const id = ctx.scenario->GetEngageAreaTrigger();
+    CombatEvent event;
+    event.type = CombatEventType::State;
+    event.source = tank->GetGUID();
+    event.detail = Acore::StringFormat("engage_areatrigger:id={} pos={:.2f},{:.2f},{:.2f}", id,
+        tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ());
+    CombatEventBus::instance().Push(event);
+    LOG_INFO("raidtest", "AttemptRunner: {}", event.detail);
+    WorldPacket packet(CMSG_AREATRIGGER, 4);
+    packet << uint32(id);
+    tank->GetSession()->HandleAreaTriggerOpcode(packet);
+    _pullTank = tank->GetGUID();
+    _gameObjectTriggerElapsedMs = 0;
+    _confirmTicks = 0;
+    _stuckTicks = 0;
+    _stage = Stage::Pull;
+    _pullStep = PullStep::AwaitTankAggro;
+    RecordPhase("engage_areatrigger", 0);
     return true;
 }
 

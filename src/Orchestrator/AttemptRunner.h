@@ -88,6 +88,9 @@ private:
     bool NavigationWaypointReached(RunContext const& ctx) const;
     bool StartBossPull(RunContext& ctx);
     bool StartSummonTriggerPull(RunContext& ctx);
+    bool StartGameObjectTriggerPull(RunContext& ctx);
+    bool StartAreaTriggerPull(RunContext& ctx);
+    uint32 _gameObjectTriggerElapsedMs = 0;
     bool StartScriptedEventGossip(RunContext& ctx);
     void TickScriptedEvent(RunContext& ctx);
     void UpdateScriptedEventTargetIcon(RunContext& ctx);

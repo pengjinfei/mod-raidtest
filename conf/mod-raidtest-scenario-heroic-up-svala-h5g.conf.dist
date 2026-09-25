@@ -1,0 +1,27 @@
+# 英雄乌特加德之巅 / 斯瓦拉·悲伤之墓（Svala Sorrowgrave，29281→26668 / 英雄 30809→30810），ilvl 200 档完整遭遇（含剧情）。
+# 勘测：docs/testing/bosses/heroic-up/SURVEY.md。剧情前她 ImmuneToAll；唯一开关是 AreaTrigger 5140（SmartTrigger，
+# 盒心 (312.646,-291.173,104.702)、长 37.3 宽 13.8）→ SetData(1,1)，约 72 秒剧情后变身 26668（guid 不变）并自行攻击
+# 100 码内随机玩家。EngageTrigger=areatrigger：坦克站在盒内开怪点，框架代客户端发一次 CMSG_AREATRIGGER（核心自己校验）；
+# EngageConfirmInstanceData = 0:1（Svala IN_PROGRESS）确认开始，剧情期间观察器按实例数据不判卡住。战斗全交给 bot。
+# 楼梯巡逻编队 126083（+126087/126088 两只狼）夹具移除（非机制）。los 实测：开怪点 (312.6,-291.2) 地面 104.72。
+[Scenario]
+MapId = 575
+BossEntry = 29281
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-up
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 312.6
+EngageY = -291.2
+EngageZ = 104.72
+EngageO = 4.4
+PreparationX = 312.6
+PreparationY = -291.2
+PreparationZ = 104.72
+PreparationO = 4.4
+FixtureDespawnSpawns = 126083,126087,126088
+EngageTrigger = areatrigger
+EngageAreaTrigger = 5140
+EngageConfirmInstanceData = 0:1
+TimeoutSeconds = 540

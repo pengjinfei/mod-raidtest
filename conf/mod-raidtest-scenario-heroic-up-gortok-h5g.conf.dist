@@ -1,0 +1,27 @@
+# 英雄乌特加德之巅 / 戈托克·苍蹄（Gortok Palehoof，26687/30774），ilvl 200 档完整遭遇（含四只小 boss）。
+# 勘测：docs/testing/bosses/heroic-up/SURVEY.md。遭遇由玩家使用 Stasis Generator（GO 188593，spawn 65513，
+# (238.5,-460.8)）开始：GameObject::Use → DoAction(START) → SetData(DATA_GORTOK=1, IN_PROGRESS=1)；英雄按随机
+# 顺序解冻四只小 boss，全灭后 Gortok 醒来。EngageTrigger=gameobject：坦克站在开怪点（宝珠旁 4 码）使用宝珠，
+# 以实例数据 1:1 确认开战；战斗全部交给 bot。横穿房间巡逻的 126086 编队（+126078/126081/126082）夹具移除
+# （非机制）。宝珠旁 Beetle/Spider 为小动物，保留。los 实测：开怪点 (242.5,-460.8) 地面 105.47、距宝珠 4 码。
+[Scenario]
+MapId = 575
+BossEntry = 26687
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-up
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 242.5
+EngageY = -460.8
+EngageZ = 105.47
+EngageO = 0.0
+PreparationX = 242.5
+PreparationY = -460.8
+PreparationZ = 105.47
+PreparationO = 0.0
+FixtureDespawnSpawns = 126086,126078,126081,126082
+EngageTrigger = gameobject
+EngageGameObjectSpawn = 65513
+EngageConfirmInstanceData = 1:1
+TimeoutSeconds = 480

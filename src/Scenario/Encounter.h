@@ -11,6 +11,11 @@ enum class EncounterTrigger : uint8
 {
     Pull = 0,
     Summon = 1,
+    // 由坦克正常“使用”一个遭遇开关 gameobject 开战（乌特加德之巅 Gortok 的 Stasis Generator）。
+    GameObject = 2,
+    // 由站在 AreaTrigger 盒内的坦克走一遍核心的 CMSG_AREATRIGGER 处理（乌特加德之巅 Svala 的 AT 5140）。
+    // bot 不像真人客户端那样上报进入触发区，核心也没有服务端 AT 扫描；核心自己校验 IsInAreaTriggerRadius。
+    AreaTrigger = 3,
 };
 
 // 一场遭遇战的生效配置（一次 attempt 的静态常量，非运行状态）。
