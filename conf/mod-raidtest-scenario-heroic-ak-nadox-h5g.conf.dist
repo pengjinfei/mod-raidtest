@@ -1,0 +1,38 @@
+# 安卡赫特：古代王国（Ahn'kahet: The Old Kingdom，map 619）英雄：纳多克斯长老(29309 / 英雄 31456)。
+# 2026-09-25 在 my-mac 上新建（第二台开发机的第一个副本）。装备档 heroic5gear-n5talents-v1（ilvl 200，天赋/雕纹/补给同 normal5-v1；用户指定），难度英雄，BotCheats 为空。
+#
+# 场景范围 = 纳多克斯平台 + 蛋厅，未改小：
+#   - 纳多克斯站在一个小凹室里：从 boss 向 16 个方向打 los 射线，除西南 180°–247.5° 外 15–20 码内全被墙挡；
+#     西南开口通向蛋厅（孵化蛋 30172 / 守护者蛋 30173，NullCreatureAI + 不可选中，是 boss 召唤的锚点，不拉仇恨）。
+#   - 蛋厅里 6 只常驻虫群 30338（74 级普通，游走 2 码）与战场同一空间 -> 作为前置怪清掉。
+#   - 南侧 43–51 码的三只精英（131880/131900/131864，z≈23）对 boss 无视线，属于另一段走廊，不纳入。
+#   - 巡逻路径 1318680/1319030 距准备点 ≥47.5 码；1319310 在下层（z≈1）。
+#
+# boss 脚本约束（boss_elder_nadox.cpp EVENT_CHECK_HOME）：z < 24 或离出生点 > 110 码即上 Enrage(26662)。
+#   平台 z≈25.7，蛋厅外的走廊 z≈23 -> boss 不能被拖出平台/蛋厅。
+#
+# 准备点 (652, -917, 25.8)：距 boss 30.2 码 > 22 码（82 级英雄 boss 仇恨半径），los=true；
+#   距 6 只虫群 29.6–37.2 码 > 14 码（74 级），全部 los=true。
+#   注意：本副本这一带 raidtest los 的 vmap_floor 返回 -200000（静态 vmap 树里查不到地面），
+#   z 取同区域 spawn 高度（蛋/虫群/boss 均为 25.7–26.0），未经 vmap 实测。
+# 开怪点 (668, -909, 25.7)：boss 西南 12.4 码，处于开口轴线上，los=true。
+[Scenario]
+MapId = 619
+BossEntry = 29309
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-ok
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 668.0
+EngageY = -909.0
+EngageZ = 25.7
+EngageO = 0.29
+TimeoutSeconds = 360
+EngageTrigger = pull
+PrerequisiteSpawns = 131982,131981,131978,131983,131980,131979
+PreparationX = 652.0
+PreparationY = -917.0
+PreparationZ = 25.8
+PreparationO = 3.77
+PrerequisiteTimeoutSeconds = 200

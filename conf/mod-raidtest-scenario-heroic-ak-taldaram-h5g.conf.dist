@@ -1,0 +1,49 @@
+# 安卡赫特：古代王国（map 619）英雄：塔达拉姆王子(29308 / 英雄 31469)。
+# 2026-09-25 在 my-mac 上新建。装备档 heroic5gear-n5talents-v1（ilvl 200，天赋/雕纹/补给同 normal5-v1；用户指定），
+# 难度英雄，BotCheats 为空。
+#
+# 进度机关（instance_ahnkahet.cpp + smart_scripts）：塔达拉姆悬浮在平台上方 z=42 的囚笼里，不可攻击。
+#   两个古代蛛魔装置 193093/193094（spawn 67331/67332）的 SmartAI 挂在 On Gossip Hello 上，
+#   使用时 SetData(DATA_TELDRAM_SPHERE1/2)；两个都 DONE 后实例打开平台并 DoAction(ACTION_REMOVE_PRISON)，
+#   boss 以 8 码/秒 MoveLand 到正下方地面（z≈11.3）后才去掉 NON_ATTACKABLE/NOT_SELECTABLE。
+#   核心 GameObject::Use 在处理 DOOR 类型前先调 AI()->GossipHello，所以框架 PrerequisiteGameObjects
+#   的 object->Use(user) 走的是正常交互路径（与魔枢凯利丝塔萨的三个封印球体同一先例）；
+#   bot 不会自主使用装置，这一步由框架编排，不代替任何战斗行为。
+#
+# 场景范围 = 中央大厅 + 两侧装置高台的全部常驻/巡逻怪，未改小（v2，run100015 后修正）：
+#   布局：塔达拉姆的平台在中央大厅（z≈11），两个装置各在大厅一侧、坡道上去的圆台（z≈18，半径约 18 码）上。
+#   - 每个圆台 2 只冰霜使者(30286) + 2 只塔达拉姆之眼(30285)，73 级精英，仇恨半径 13 码。
+#   - 两队掠夺幽魂(30287，5 只一队，creature_formations groupAI=514 拉一只即全队)的巡逻线一直走上圆台：
+#     131926 队（路径 1319260）上装置 2，131920 队（路径 1319200）上装置 1。
+#   - 碎骨者(30284，74 级精英)131904（路径 1319040）/131905（路径 1319050，一直走到大厅北口 (533,-803)）。
+#   - 131931 队幽魂（路径 1319310，y -867..-829，z≈1）在纳多克斯一侧通往大厅的低处，保守纳入。
+#   run100015（v1：只把 8 只守卫当前置、准备点在装置 2 坡底）：装置 2 组 32 秒清完，走向装置 1 时
+#   在下层惊动幽魂与碎骨者，边打装置 1 组边被追打，111 秒清怪期团灭（prerequisite_failed）。
+#   正常流程里这些巡逻怪都会被清掉，故 v2 把 25 只全部纳入前置。
+#   大厅西南上层走廊（z≈22.8）的 131866/131873/131902 等不在大厅层，距准备点 3D ≥23.5 码，不纳入。
+#
+# 准备点 (565, -850, 11.0)：中央大厅，vmap 地面实测 11.01；在所有同层怪和巡逻路径中清空度最高
+#   （5 码网格逐点算：距最近同层巡逻路径 89.6 码）；距囚笼中的 boss 3D 47.9 码。
+# 开怪点 (538.5, -848, 11.3)：boss 落点东侧 10.0 码，vmap 地面实测 11.31，los=true。
+[Scenario]
+MapId = 619
+BossEntry = 29308
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-ok
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 538.5
+EngageY = -848.0
+EngageZ = 11.3
+EngageO = 3.34
+TimeoutSeconds = 420
+EngageTrigger = pull
+# 由近到远：大厅北口碎骨者 -> 装置 1 那队幽魂 -> 装置 1 守卫 -> 下层碎骨者 -> 纳多克斯侧幽魂 -> 装置 2 那队幽魂 -> 装置 2 守卫。
+PrerequisiteSpawns = 131905,131920,131921,131922,131923,131924,131907,131915,131916,131908,131904,131931,131932,131933,131934,131935,131926,131925,131927,131928,131929,131910,131918,131917,131909
+PrerequisiteGameObjects = 67331,67332
+PreparationX = 565.0
+PreparationY = -850.0
+PreparationZ = 11.0
+PreparationO = 0.0
+PrerequisiteTimeoutSeconds = 600

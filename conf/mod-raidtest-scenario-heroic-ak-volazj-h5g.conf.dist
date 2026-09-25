@@ -1,0 +1,35 @@
+# 安卡赫特：古代王国（map 619）英雄：传令官沃拉兹(29311 / 英雄 31464)。
+# 2026-09-25 在 my-mac 上新建。装备档 heroic5gear-n5talents-v1（ilvl 200，天赋/雕纹/补给同 normal5-v1；用户指定），
+# 难度英雄，BotCheats 为空。
+# boss 带 CREATURE_FLAG_EXTRA_HARD_RESET（flags_extra 0x80000000），evade 即下线；mod-raidtest 的
+#   ResolveOrRestoreSpawn 已处理（见 wow335-new-dungeon-traps 第 1 条）。
+# playerbots AKStrategy.cpp 注释："Volazj is not implemented properly in AC, insanity phase does nothing."
+#
+# 场景范围 = 沃拉兹房间 + 门前走廊的两只巡逻被遗忘者，未改小：
+#   房间只朝南（225°–315°）开口，其余方向 15 码内即被墙挡；房内无其它常驻怪。
+#   两只被遗忘者 30414（132300/132301，75 级精英，路径 1323000/1323010）在南侧走廊往返，
+#   距 boss 最近 70.6 码，不进房间；正常流程走进房间前会清掉 -> 作为前置怪。
+#
+# 准备点 (519.9, -467.8, 27.0)：boss 正南 26.0 码，vmap 地面实测 27.01，los=true；
+#   距两条巡逻路径最近点 50.2/51.9 码（75 级仇恨半径 15 码）。
+# 开怪点 (519.9, -451.8, 26.4)：boss 正南 10.0 码，地面实测 26.36，los=true。
+[Scenario]
+MapId = 619
+BossEntry = 29311
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-ok
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 519.9
+EngageY = -451.8
+EngageZ = 26.4
+EngageO = 1.57
+TimeoutSeconds = 420
+EngageTrigger = pull
+PrerequisiteSpawns = 132301,132300
+PreparationX = 519.9
+PreparationY = -467.8
+PreparationZ = 27.0
+PreparationO = 1.57
+PrerequisiteTimeoutSeconds = 200

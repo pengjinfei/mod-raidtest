@@ -1,0 +1,35 @@
+# 安卡赫特：古代王国（map 619）英雄：阿曼尼塔(30258 / 英雄 31463，仅英雄模式刷新，spawnMask=2)。
+# 2026-09-25 在 my-mac 上新建。装备档 heroic5gear-n5talents-v1（ilvl 200，天赋/雕纹/补给同 normal5-v1；用户指定），
+# 难度英雄，BotCheats 为空。playerbots wotlk-ok 策略对阿曼尼塔尚无专门处理（AKStrategy.cpp: "TODO: once I get to heroics"）。
+#
+# 场景范围 = 阿曼尼塔所在洞穴，未改小：
+#   洞里 3 只野蛮洞穴兽 30329（74 级精英，游走 5 码）距 boss 43.7–59.0 码，boss 对三只 los 均为 true -> 作为前置怪。
+#   洞外最近巡逻路径 1319470 距 boss 71 码；其余为小动物（rat/roach），不纳入。
+#
+# 本洞 raidtest los 的 vmap_floor 返回 -200000（静态 vmap 树里查不到地面），z 用 boss spawn 高度 -74.9，未经 vmap 实测。
+# 准备点 (344.7, -798.1, -72.0)：北侧进洞通道口（v2）。三只洞穴兽围着 boss 分布在东北/正北/正南，
+#   v1 准备点在 boss 正西 (314.2,-878.6)，run100016 走向东北那只时直线擦过 boss，boss 在清怪前进战斗而作废
+#   （prerequisite_invalid；框架量得准备点距 boss 实际位置仅 19.22 码，boss 实际位置与 spawn 有偏差）。
+#   v2 从北口进：先清正北 131949（距准备点 25 码，los=true），再东北 131948，两只都在 boss 北侧；
+#   最后正南 131946，经 boss 东侧绕过，预计最近 25–32 码（> 22 码），需实测。
+# 开怪点 (330.2, -878.6)：boss 正西 10.0 码，los=true。
+[Scenario]
+MapId = 619
+BossEntry = 30258
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-ok
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 330.2
+EngageY = -878.6
+EngageZ = -74.9
+EngageO = 0.0
+TimeoutSeconds = 420
+EngageTrigger = pull
+PrerequisiteSpawns = 131949,131948,131946
+PreparationX = 344.7
+PreparationY = -798.1
+PreparationZ = -72.0
+PreparationO = 4.71
+PrerequisiteTimeoutSeconds = 200
