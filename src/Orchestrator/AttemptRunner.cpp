@@ -1031,12 +1031,33 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             return;
         }
         bool ready = true;
+        bool casualtyPending = false;
         for (Player* bot : ctx.bots)
         {
-            if (!bot || !bot->IsAlive())
+            if (!bot)
             {
                 Abort("prerequisite_failed: roster casualty before boss pull");
                 return;
+            }
+            // 清怪中阵亡不等于这一局作废：真人队伍会在脱战后复活队友再开 boss。playerbots 的
+            // 牧师/萨满/圣骑士/德鲁伊都有脱战「队友死亡 → 复活」触发，死者会接受复活请求。
+            // 框架不代为复活，只把死者当作「未就绪」继续等；超时仍未复活才中止（Tribunal
+            // run1033/1035：盗贼 75 秒阵亡，旧规则在恢复阶段立即作废）。
+            if (!bot->IsAlive())
+            {
+                ready = false;
+                casualtyPending = true;
+                if (_recoveryElapsed / 15000 != (_recoveryElapsed - diff) / 15000)
+                {
+                    CombatEvent state;
+                    state.type = CombatEventType::State;
+                    state.source = bot->GetGUID();
+                    state.detail = Acore::StringFormat("recovery_wait:dead ghost={} map={}",
+                        bot->HasPlayerFlag(PLAYER_FLAGS_GHOST), bot->GetMapId());
+                    CombatEventBus::instance().Push(state);
+                    LOG_INFO("raidtest", "AttemptRunner: {} {}", bot->GetName(), state.detail);
+                }
+                continue;
             }
             // 与 playerbots 的常规 ready/medium 阈值保持一致。90% 会在 bot 自身的
             // 喝水阈值（LowMana=15）未触发时无限等待，并把可正常进入下一场战斗的
@@ -1063,7 +1084,10 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         }
         if (!ready)
         {
-            if (_recoveryElapsed >= 120000)
+            // 有人待复活时多给 60 秒：复活读条、接受、再回血回蓝都在这段里。
+            if (casualtyPending && _recoveryElapsed >= 180000)
+                Abort("prerequisite_failed: casualty not revived during recovery");
+            else if (!casualtyPending && _recoveryElapsed >= 120000)
                 Abort("prerequisite_failed: natural recovery timeout");
             return;
         }
