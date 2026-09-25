@@ -857,7 +857,9 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
         if (++_abortSamples >= kStuckAbortTicks)
         {
             LOG_WARN("raidtest", "AttemptObserver: boss lost combat state (hp={}%, {} consecutive sample(s)) - "
-                "aborted (stuck, no deaths yet)", hpPct, _abortSamples);
+                "aborted (stuck, no deaths yet) guid={} in_combat={} engaged={} evade={} full_hp={} flags=0x{:X}",
+                hpPct, _abortSamples, ctx.boss->GetGUID().ToString(), ctx.boss->IsInCombat(), ctx.boss->IsEngaged(),
+                ctx.boss->IsInEvadeMode(), ctx.boss->IsFullHealth(), ctx.boss->GetUnitFlags());
             ctx.notes = "boss lost combat state (stuck/reset)";
             return AttemptResult::Aborted;
         }
