@@ -17,6 +17,7 @@
 #include "StringFormat.h"
 #include "Unit.h"
 #include "UnitScript.h"
+#include "PlayerScript.h"
 #include "Timer.h"
 #include <algorithm>
 #include <chrono>
@@ -86,6 +87,8 @@ namespace
         uint32 atMs{0};
     };
     std::map<std::pair<ObjectGuid, ObjectGuid>, DamageSpellHint> sDamageSpellHints;
+    // 玩家最近一次经 OnUnitDeath 记下死亡的时刻，供 OnPlayerJustDied 去重。只在世界线程读写。
+    std::map<ObjectGuid, uint32> sPlayerUnitDeathAt;
     // 同一调用链内即被取用；超过这个时间仍未取用（伤害被完全吸收等）就视为过期。
     constexpr uint32 kDamageSpellHintMaxAgeMs = 50;
 
@@ -592,6 +595,9 @@ void RaidTestUnitScript::OnUnitDeath(Unit* unit, Unit* killer)
     if (killer)
         e.target = killer->GetGUID();
 
+    if (unit && unit->IsPlayer())
+        sPlayerUnitDeathAt[unit->GetGUID()] = getMSTime();
+
     // 前置清怪的角色死亡不能只记录「谁杀了谁」：run681/682 的所有作废都是
     // 29819 -> 盗贼，但仅凭死亡事件分不清是站位被 Lancer 追上、当前目标错误，
     // 还是 Retaliation 的正常反伤累积。只记录死亡瞬间的既有状态，不改变行动。
@@ -729,10 +735,40 @@ void RaidTestUnitScript::OnUnitEnterCombat(Unit* unit, Unit* victim)
     bus.Push(e);
 }
 
+// 玩家的每次死亡最终都经过 Player::KillPlayer → OnPlayerJustDied（正常击杀在下一次 Player::Update，
+// 掉出地图下界等则直接调用）。环境/坠落致死不一定经过 OnUnitDeath：闪电大厅沃尔坎下层准备点 bot
+// 落地即死却没有任何死亡事件（run1057–1060，BACKLOG 13）。这里兜底：同一玩家 2 秒内已由 OnUnitDeath
+// 记过则跳过，否则补一条死亡事件并注明来源与位置。只观察。
+class RaidTestPlayerDeathScript : public PlayerScript
+{
+public:
+    RaidTestPlayerDeathScript() : PlayerScript("RaidTestPlayerDeathScript", { PLAYERHOOK_ON_PLAYER_JUST_DIED }) { }
+
+    void OnPlayerJustDied(Player* player) override
+    {
+        CombatEventBus& bus = CombatEventBus::instance();
+        if (!bus.IsActive() || !player || !bus.IsMember(player->GetGUID()))
+            return;
+        auto it = sPlayerUnitDeathAt.find(player->GetGUID());
+        if (it != sPlayerUnitDeathAt.end() && getMSTimeDiff(it->second, getMSTime()) <= 2000)
+            return;
+
+        CombatEvent e;
+        e.type = CombatEventType::Death;
+        e.source = player->GetGUID();
+        e.detail = fmt::format("death_snapshot:via=player_just_died out_of_bounds={} unit_pos={:.2f},{:.2f},{:.2f} map={}",
+            player->HasPlayerFlag(PLAYER_FLAGS_IS_OUT_OF_BOUNDS), player->GetPositionX(), player->GetPositionY(),
+            player->GetPositionZ(), player->GetMapId());
+        bus.Push(e);
+        LOG_INFO("raidtest", "CombatEventBus: {} died without a unit-death hook ({})", player->GetName(), e.detail);
+    }
+};
+
 // 由 AddRaidTestScripts 调用一次；ScriptRegistry 接管 new 出的对象生命周期。
 void RegisterRaidTestCombatHooks()
 {
     new RaidTestSpellScript();
     new RaidTestUnitScript();
     new RaidTestCreatureScript();
+    new RaidTestPlayerDeathScript();
 }
