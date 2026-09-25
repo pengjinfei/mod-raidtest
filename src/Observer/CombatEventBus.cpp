@@ -11,6 +11,7 @@
 #include "StringFormat.h"
 #include "Unit.h"
 #include "UnitScript.h"
+#include "Timer.h"
 #include <algorithm>
 #include <chrono>
 #include <functional>
@@ -533,10 +534,10 @@ void RaidTestUnitScript::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
     e.detail = CreatureOriginDetail(attacker);
     if (attacker && attacker->IsCreature() && attacker->GetEntry() == kSearingGazeTriggerEntry && victim)
     {
-        e.detail += Acore::StringFormat(" gaze_tick:trigger_pos={:.2f},{:.2f},{:.2f} target_dist={:.2f} "
-            "target_moving={} target_pos={:.2f},{:.2f},{:.2f}",
-            attacker->GetPositionX(), attacker->GetPositionY(), attacker->GetPositionZ(), attacker->GetDistance2d(victim),
-            victim->isMoving(), victim->GetPositionX(), victim->GetPositionY(), victim->GetPositionZ());
+        e.detail += Acore::StringFormat(" gaze_tick:ms={} trigger_pos={:.2f},{:.2f},{:.2f} target_dist={:.2f} "
+            "target_moving={} target_pos={:.2f},{:.2f},{:.2f}", getMSTime(), attacker->GetPositionX(),
+            attacker->GetPositionY(), attacker->GetPositionZ(), attacker->GetDistance2d(victim), victim->isMoving(),
+            victim->GetPositionX(), victim->GetPositionY(), victim->GetPositionZ());
     }
     bus.Push(e);
 
@@ -559,8 +560,8 @@ void RaidTestCreatureScript::OnCreatureAddWorld(Creature* creature)
     e.actorEntry = entry;
     e.value = static_cast<int32>(creature->GetMapId());
     e.detail = entry == kSearingGazeTriggerEntry
-        ? Acore::StringFormat("gaze_spawn:trigger_pos={:.2f},{:.2f},{:.2f} summoner={}", creature->GetPositionX(),
-            creature->GetPositionY(), creature->GetPositionZ(), creature->GetSummonerGUID().ToString())
+        ? Acore::StringFormat("gaze_spawn:ms={} trigger_pos={:.2f},{:.2f},{:.2f} summoner={}", getMSTime(),
+            creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(), creature->GetSummonerGUID().ToString())
         : Acore::StringFormat("tribunal_add_spawn:pos={:.2f},{:.2f},{:.2f} summoner={}", creature->GetPositionX(),
             creature->GetPositionY(), creature->GetPositionZ(), creature->GetSummonerGUID().ToString());
     bus.Push(e);
