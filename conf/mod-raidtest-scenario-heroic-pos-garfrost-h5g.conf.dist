@@ -20,3 +20,4 @@ PreparationZ = 526.8
 PreparationO = 5.44
 TimeoutSeconds = 480
 EngageTrigger = pull
+MasterlessAvoidAoe = 1
