@@ -45,6 +45,7 @@ void AttemptObserver::Reset()
 {
     _killSamples = 0;
     _wipeSamples = 0;
+    _wipeGoneSamples = 0;
     _timeoutSamples = 0;
     _abortSamples = 0;
     _encounterResetSamples = 0;
@@ -831,6 +832,33 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     }
     else
         _wipeSamples = 0;
+
+    // 全灭后 bot 自动释放灵魂、在副本外的灵魂医者处复活：isDead() 不再成立，allDead 永远凑不齐；
+    // 紫罗兰监狱的 boss 脱战后整体 despawn 重生，下面的「boss 回满血」判据也看不到他。run1166
+    // 5 人 50–54 秒内全部阵亡，却空跑到 480 秒记成 timeout。本场有过死亡、且每个成员都已死亡或
+    // 不在场景地图上 → 判 Wipe 并注明来源。
+    uint32 const scenarioMap = ctx.scenario ? ctx.scenario->GetMapId() : 0;
+    bool const allDeadOrGone = scenarioMap && std::all_of(ctx.bots.begin(), ctx.bots.end(),
+        [scenarioMap](Player* bot)
+        {
+            return !bot || bot->isDead() || !bot->IsInWorld() || bot->GetMapId() != scenarioMap;
+        });
+    bool const memberDeathSeen = std::any_of(ctx.bots.begin(), ctx.bots.end(), [](Player* bot)
+    {
+        return bot && CombatEventBus::instance().DeathSeen(bot->GetGUID());
+    });
+    if (!allDead && allDeadOrGone && memberDeathSeen)
+    {
+        if (++_wipeGoneSamples >= kSampleConfirmTicks)
+        {
+            LOG_INFO("raidtest", "AttemptObserver: wipe confirmed (every member dead or no longer on map {})",
+                scenarioMap);
+            ctx.notes = "all members dead or left the instance";
+            return AttemptResult::Wipe;
+        }
+    }
+    else
+        _wipeGoneSamples = 0;
 
     if (ctx.attemptTimeoutMs && ctx.attemptElapsedMs >= ctx.attemptTimeoutMs)
     {

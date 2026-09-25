@@ -51,6 +51,7 @@ private:
 
     uint32 _killSamples = 0;
     uint32 _wipeSamples = 0;
+    uint32 _wipeGoneSamples = 0;
     uint32 _timeoutSamples = 0;
     uint32 _abortSamples = 0;
     // 「有人阵亡 + boss 已脱战回满血 + 残存者也脱战」的连续采样数：这一局已经结束，
