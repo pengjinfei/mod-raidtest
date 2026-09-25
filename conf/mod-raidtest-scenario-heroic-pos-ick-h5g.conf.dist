@@ -1,0 +1,27 @@
+# 英雄萨隆矿坑 / 伊克与克里克（Ick 36476/37627 载具 + Krick 乘客），ilvl 200 档。勘测：docs/testing/bosses/heroic-pos/SURVEY.md。
+# PoS 实例不用 boss 状态，进度在 SetData(4)；Ick 仅在进度≥1（入口剧情播完）才可攻击。框架直接传送进场，入口剧情可能不触发，
+# 故 FixtureInstanceData = 4:1（等价于进副本自动播完的剧情，无玩家交互）。Plagueborn Horror 202156（离 Ick 10 码）与
+# 202236（游走到坦克点附近）作前置由 bot 先清（死亡放 Blight Bomb）；另三只游走 Horror 201903/201981/201833 夹具移除。
+# 无 vmap 地面，z 取邻近 spawn；los 实测：准备点 (800,85) 对 202236 视线通；开怪点=策略坦克点 (816.85,102.33) 对 Ick 视线通。
+[Scenario]
+MapId = 658
+BossEntry = 36476
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-pos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 816.85
+EngageY = 102.33
+EngageZ = 509.16
+EngageO = 0.53
+PreparationX = 800.0
+PreparationY = 85.0
+PreparationZ = 510.0
+PreparationO = 0.9
+PrerequisiteSpawns = 202236,202156
+PrerequisiteTimeoutSeconds = 180
+FixtureDespawnSpawns = 201903,201981,201833
+FixtureInstanceData = 4:1
+TimeoutSeconds = 480
+EngageTrigger = pull

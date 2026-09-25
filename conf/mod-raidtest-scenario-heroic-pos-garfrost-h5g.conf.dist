@@ -1,0 +1,22 @@
+# 英雄萨隆矿坑 / 熔炉之主加弗斯特（Forgemaster Garfrost，36494/37613），ilvl 200 档完整遭遇（带 6 只 Wrathbone Siegesmith 编队）。
+# 勘测：docs/testing/bosses/heroic-pos/SURVEY.md。他在锻造平台上沿 path 2019920 巡逻；每场 ResetInstance 放回出生点
+# (712.14,-215.70)，故不设前置、准备点=开怪点 (700,-205)，传送后立即开怪。出区盒 x600–770、y-270–-137、z514–550。
+# 该区无 vmap 地面（地形高度图），z 取平台 spawn 高度；los 实测：距出生点 16.2 码、视线通。PoS 策略对他没有节点。
+[Scenario]
+MapId = 658
+BossEntry = 36494
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-pos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 700.0
+EngageY = -205.0
+EngageZ = 526.8
+EngageO = 5.44
+PreparationX = 700.0
+PreparationY = -205.0
+PreparationZ = 526.8
+PreparationO = 5.44
+TimeoutSeconds = 480
+EngageTrigger = pull

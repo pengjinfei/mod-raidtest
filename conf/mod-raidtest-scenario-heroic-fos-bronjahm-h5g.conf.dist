@@ -1,0 +1,22 @@
+# 英雄灵魂洪炉 / 布隆亚姆（Bronjahm，36497/36498），ilvl 200 档隔离 boss 战。勘测：docs/testing/bosses/heroic-fos/SURVEY.md。
+# 45 码内无怪，不设前置、准备点=开怪点；同层唯一巡逻组 201700+201757（约 72 码）夹具移除（非机制）。
+# los 实测：开怪点 (5277,2506.5) 地面 686.07、距 boss 20 码、视线通。
+[Scenario]
+MapId = 632
+BossEntry = 36497
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-fos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 5277.0
+EngageY = 2506.5
+EngageZ = 686.07
+EngageO = 0.0
+PreparationX = 5277.0
+PreparationY = 2506.5
+PreparationZ = 686.07
+PreparationO = 0.0
+FixtureDespawnSpawns = 201700,201757
+TimeoutSeconds = 480
+EngageTrigger = pull

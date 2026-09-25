@@ -1,0 +1,23 @@
+# 英雄灵魂洪炉 / 噬魂者（Devourer of Souls，36502/37677，HARD_RESET 挂在普通 entry、英雄同样生效——框架 ResolveOrRestoreSpawn
+# 兜底），ilvl 200 档隔离 boss 战。勘测：docs/testing/bosses/heroic-fos/SURVEY.md。只攻击 z>706.5 的目标，开怪点必须在平台上。
+# 80 码内无怪；唯一巡逻 201687（走到大厅入口，距约 70 码）夹具移除。不设前置、准备点=开怪点。
+# los 实测：开怪点 (5640,2507.4) 地面 708.70、距 boss 21.8 码、视线通。
+[Scenario]
+MapId = 632
+BossEntry = 36502
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-fos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 5640.0
+EngageY = 2507.4
+EngageZ = 708.70
+EngageO = 0.0
+PreparationX = 5640.0
+PreparationY = 2507.4
+PreparationZ = 708.70
+PreparationO = 0.0
+FixtureDespawnSpawns = 201687
+TimeoutSeconds = 480
+EngageTrigger = pull

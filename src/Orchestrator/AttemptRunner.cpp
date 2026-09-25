@@ -2296,6 +2296,25 @@ bool AttemptRunner::StartAreaTriggerPull(RunContext& ctx)
     WorldPacket packet(CMSG_AREATRIGGER, 4);
     packet << uint32(id);
     tank->GetSession()->HandleAreaTriggerOpcode(packet);
+    // 触发点常不在战斗位置（Svala 的 AT 在北侧高台，她的房间在台阶下方，平台之间她走不过来：run1106
+    // 打到 3% 后她回平台、全队仍站在高台，NO_PATH evade）。真人会趁剧情走下去；这里在开战前让全队
+    // 按 mmap 寻路“走”到场景开怪点（准备点≠开怪点时），不传送、开战后不再干预。
+    Position const& engage = ctx.scenario->GetEngagePoint();
+    if (tank->GetExactDist2d(engage.GetPositionX(), engage.GetPositionY()) > 5.0f)
+    {
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot || !bot->IsAlive() || !bot->IsInWorld())
+                continue;
+            bot->GetMotionMaster()->Clear();
+            bot->GetMotionMaster()->MovePoint(/*id*/ 0, engage.GetPositionX(), engage.GetPositionY(),
+                engage.GetPositionZ(), FORCED_MOVEMENT_NONE, 0.0f, engage.GetOrientation(),
+                /*generatePath*/ true, /*forceDestination*/ false);
+        }
+        LOG_INFO("raidtest", "AttemptRunner: areatrigger walk to engage point {:.2f},{:.2f},{:.2f}",
+            engage.GetPositionX(), engage.GetPositionY(), engage.GetPositionZ());
+        RecordPhase("areatrigger_walk_to_engage", 0);
+    }
     _pullTank = tank->GetGUID();
     _gameObjectTriggerElapsedMs = 0;
     _confirmTicks = 0;
