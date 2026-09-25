@@ -1,0 +1,26 @@
+# 英雄闪电大厅 / 沃尔坎（Volkhan，28587/31536），ilvl 200 档隔离 boss 战。勘测：docs/testing/bosses/heroic-hol/SURVEY.md。
+# 沃尔坎本体不走动（仅冲向铁砧），离 (1331.9,-106,56) 95 码外 evade。同层西侧三只小怪紧贴准备点；
+# 保留 Unbound Firestorm 126959 作唯一前置（走“清怪→恢复→传送开怪点”路径），其余西侧两只与绕南环巡逻的
+# Steamrager 编队 126954/126955 夹具移除（非机制单位）。los 实测：开怪点 (1320,-123) 地面 56.71、距 24.3 码；
+# 准备点 (1308,-137) 地面 52.02、距 42.6 码、距 126959 约 15 码。
+# 2026-09-25 修订：原准备点 (1308,-137,52.02) 在下层，bot 传送落地即死且无伤害/死亡事件（run1057–1059，
+# 法师死后释放灵魂回墓地 map 571），疑为熔岩/坠落环境致死。改为不设前置、准备点=上层开怪点，126959 一并夹具移除。
+[Scenario]
+MapId = 602
+BossEntry = 28587
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hol
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1320.0
+EngageY = -123.0
+EngageZ = 56.71
+EngageO = 1.03
+PreparationX = 1320.0
+PreparationY = -123.0
+PreparationZ = 56.71
+PreparationO = 1.03
+FixtureDespawnSpawns = 126947,126948,126954,126955,126959
+TimeoutSeconds = 480
+EngageTrigger = pull

@@ -1,0 +1,26 @@
+# 英雄闪电大厅 / 艾欧纳尔（Ionar，28546/31537），ilvl 200 档隔离 boss 战。勘测：docs/testing/bosses/heroic-hol/SURVEY.md。
+# 开怪点 3–11 码内有两只 Stormfury Revenant 与一只巡逻 Storming Vortex，作前置先清。
+# 50% 分裂时 playerbots HoL 策略把全队拉到 DISPERSE_POSITION (1161,-261.6,53.2)，落在一堆怪中间（5 Cyclone +
+# Vortex + Revenant）；正常通关路线上这堆怪在到达 Ionar 前已清掉，这里夹具移除以代表“已清”。该策略缺陷另记录。
+# los 实测：开怪点 (1108,-261.5) 地面 56.87、距 26 码；准备点 (1140,-261.5) 地面 54.17、距 58 码。
+[Scenario]
+MapId = 602
+BossEntry = 28546
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hol
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1108.0
+EngageY = -261.5
+EngageZ = 56.87
+EngageO = 3.14
+PreparationX = 1140.0
+PreparationY = -261.5
+PreparationZ = 54.17
+PreparationO = 3.14
+PrerequisiteSpawns = 126876,126877,126874
+PrerequisiteTimeoutSeconds = 180
+FixtureDespawnSpawns = 76278,76279,76280,76281,76282,76283,76296
+TimeoutSeconds = 480
+EngageTrigger = pull

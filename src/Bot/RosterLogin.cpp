@@ -264,6 +264,16 @@ void RosterLogin::LogoutAll(std::vector<ObjectGuid> const& guids)
         Player* bot = ObjectAccessor::FindPlayer(guid);
         if (!bot || !bot->GetSession())
             continue;
+        // 死着下线会把鬼魂状态存进角色：run1047/1048 的法师上一场阵亡后释放灵魂、以鬼魂下线，
+        // 下一场登录时 ReviveDead 虽然调用了复活，几个 tick 后又回到死亡状态（穿装备报
+        // EQUIP_ERR_YOU_ARE_DEAD），整场作废。run 间归位与开场回满血同类：下线前先复活。
+        if (bot->isDead())
+        {
+            bot->ResurrectPlayer(1.0f, false);
+            bot->SpawnCorpseBones();
+            LOG_INFO("raidtest", "RosterLogin: resurrected {} before logout (alive={} map={})",
+                bot->GetName(), bot->IsAlive(), bot->GetMapId());
+        }
         bot->GetSession()->LogoutPlayer(true);
         ++logged;
     }

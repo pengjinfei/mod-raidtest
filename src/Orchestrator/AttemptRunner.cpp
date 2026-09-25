@@ -542,6 +542,21 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
 
         RestoreRoster(ctx);
 
+        // 开场归位的最后一道核对：上面的日志过去只是打印人数。run1047 里法师上一场死后以鬼魂下线，
+        // 登录时虽被 ReviveDead 复活，却仍留在诺森德墓地（map 571、7850 码外）并再次处于死亡状态，
+        // 被带进前置阶段，恢复阶段白等 180 秒。这里逐个核对：在场景地图上但已死亡的，按开场归位再复活一次；
+        // 不在场景地图上的，场景无效，立即中止。
+        ReviveDead(ctx);
+        for (Player* bot : ctx.bots)
+        {
+            if (!bot || !bot->IsInWorld() || bot->GetMapId() != ctx.scenario->GetMapId() || !bot->IsAlive())
+            {
+                Abort(Acore::StringFormat("scene_invalid: member not alive on scenario map at attempt start ({} map={} alive={})",
+                    bot ? bot->GetName() : "?", bot ? bot->GetMapId() : 0, bot && bot->IsAlive()));
+                return;
+            }
+        }
+
         _stage = Stage::Pull;
         LOG_INFO("raidtest", "AttemptRunner: attempt {} - all {}/{} bot(s) on map {}",
             ctx.attemptSeq, ctx.bots.size(), ctx.botGuids.size(), ctx.scenario->GetMapId());
@@ -1045,6 +1060,13 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             // run1033/1035：盗贼 75 秒阵亡，旧规则在恢复阶段立即作废）。
             if (!bot->IsAlive())
             {
+                // 只等本 attempt 里真实阵亡（有死亡事件）的成员；没有死亡记录却是死的，是开场状态错误。
+                if (!CombatEventBus::instance().DeathSeen(bot->GetGUID()))
+                {
+                    Abort(Acore::StringFormat("scene_invalid: {} dead without a recorded death this attempt (map={})",
+                        bot->GetName(), bot->GetMapId()));
+                    return;
+                }
                 ready = false;
                 casualtyPending = true;
                 if (_recoveryElapsed / 15000 != (_recoveryElapsed - diff) / 15000)

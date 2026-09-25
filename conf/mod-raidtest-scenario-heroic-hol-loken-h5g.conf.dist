@@ -1,0 +1,22 @@
+# 英雄闪电大厅 / 洛肯（Loken，28923/31538），ilvl 200 档隔离 boss 战。
+# 勘测：docs/testing/bosses/heroic-hol/SURVEY.md。洛肯 45 码内无小怪，最近的 Stormforged Giant 在 88–91 码外巡逻、低约 7 码，
+# 故不设前置怪；无前置时队伍停在准备点开怪（见 LESSONS/新副本清单第 5 条），准备点即开怪点。
+# 开怪点 (1160,34) los 实测：vmap 地面 60.73、对 boss 视线通、距 26.5 码。
+[Scenario]
+MapId = 602
+BossEntry = 28923
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hol
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1160.0
+EngageY = 34.0
+EngageZ = 60.73
+EngageO = 0.0
+PreparationX = 1160.0
+PreparationY = 34.0
+PreparationZ = 60.73
+PreparationO = 0.0
+TimeoutSeconds = 480
+EngageTrigger = pull
