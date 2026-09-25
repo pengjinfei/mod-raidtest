@@ -334,38 +334,12 @@ void CombatTrigger::EndPullContext(Player* leader)
 
 std::string CombatTrigger::RuntimeStrategyName(std::string const& strategyName)
 {
-    // PlayerbotAI::ApplyInstanceStrategies looks up the map with a Context key
-    // such as "wotlk-uk" (map 574) or "wotlk-nex" (map 576). Engine::addStrategy
-    // then stores the object by getName(), which the dungeon strategy classes
-    // define as a human-readable dungeon name. Where the two differ, the pull
-    // gate's HasStrategy(key) check fails and every attempt aborts with
-    // "instance combat strategy inactive before pull" - so this table must list
-    // EVERY dungeon whose getName() is not its own key, not just the ones tested
-    // so far. Source of truth: modules/mod-playerbots/src/Ai/Dungeon/*/*Strategy.h.
-    // (Only the tbc-ac / tbc-seth / tbc-mech / tbc-ub strategies return their own
-    // key, so they are absent here on purpose.)
-    static std::map<std::string, std::string> const kRuntimeNames = {
-        {"wotlk-uk",  "utgarde keep"},           // WotlkDungeonUKStrategy
-        {"wotlk-nex", "nexus"},                  // WotlkDungeonNexStrategy
-        {"wotlk-an",  "azjol'nerub"},            // WotlkDungeonANStrategy
-        {"wotlk-ok",  "old kingdom"},            // WotlkDungeonOKStrategy
-        {"wotlk-dtk", "drak'tharon keep"},       // WotlkDungeonDTKStrategy
-        {"wotlk-vh",  "violet hold"},            // WotlkDungeonVHStrategy
-        {"wotlk-gd",  "gundrak"},                // WotlkDungeonGDStrategy
-        {"wotlk-hos", "halls of stone"},         // WotlkDungeonHoSStrategy
-        {"wotlk-hol", "halls of lightning"},     // WotlkDungeonHoLStrategy
-        {"wotlk-occ", "oculus"},                 // WotlkDungeonOccStrategy
-        {"wotlk-up",  "utgarde pinnacle"},       // WotlkDungeonUPStrategy
-        {"wotlk-cos", "culling of stratholme"},  // WotlkDungeonCoSStrategy
-        {"wotlk-toc", "trial of the champion"},  // WotlkDungeonTOCStrategy
-        {"wotlk-pos", "pit of saron"},           // WotlkDungeonPoSStrategy
-        {"wotlk-fos", "forge of souls"},         // WotlkDungeonFoSStrategy
-    };
-
-    auto const it = kRuntimeNames.find(strategyName);
-    if (it != kRuntimeNames.end())
-        return it->second;
-
+    // PlayerbotAI::ApplyInstanceStrategies looks up the map with a Context key such as
+    // "wotlk-uk"; Engine::addStrategy stores the object by getName(). Upstream
+    // mod-playerbots (merged 2026-09-25) renamed every dungeon strategy's getName() to
+    // its own key ("utgarde keep" -> "wotlk-uk", "halls of stone" -> "wotlk-hos", ...),
+    // so the runtime name now equals the key. Keep this hook as the single place to
+    // map them if a future strategy diverges again.
     return strategyName;
 }
 

@@ -12,6 +12,7 @@
 #include "Player.h"
 #include "PlayerbotFactory.h"
 #include "Playerbots.h"
+#include "PlayerbotsDatabase.h"
 #include "RaidTestConfig.h"
 #include "Random.h"
 #include "SharedDefines.h"
