@@ -920,6 +920,14 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 _stage = Stage::Prerequisites;
                 return;
             }
+            // script 模式、没有前置怪：boss 由上面的夹具召出（如净化斯坦索姆的 Infinite Corruptor，
+            // SetData(4,1) 当场召唤）。跳过清怪，直接进入恢复阶段，由它绑定出现的 boss 再走开怪点流程。
+            if (ctx.scenario->GetBossSpawnMode() == BossSpawnMode::Script)
+            {
+                RecordPhase("prerequisites_skipped", 0);
+                _stage = Stage::Recovery;
+                return;
+            }
             if (ctx.scenario->GetEventStarterEntry())
             {
                 if (!StartScriptedEventGossip(ctx))

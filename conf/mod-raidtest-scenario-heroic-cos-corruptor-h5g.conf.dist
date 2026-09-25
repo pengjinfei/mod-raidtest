@@ -1,0 +1,26 @@
+# 英雄净化斯坦索姆 / Infinite Corruptor（32273/32313，仅英雄），ilvl 200 档隔离 boss 战。勘察：docs/testing/bosses/heroic-cos/SURVEY.md §5。
+# 没有 DB spawn：副本脚本 SetData(DATA_START_WAVES=4, 1) 在 (2329.07,1276.98,132.68) 当场召唤（每个实例只召一次）。
+# 跳过 Arthas 护送与 26 分钟限时；清掉身边 55 码内 7 只游走的 Risen Zombie。开怪点=boss 正面 12 码；准备点在正面 40 码（boss 召出时 bot 在 12 码内会当场进战，run1175）。坐标待实测。
+[Scenario]
+MapId = 595
+BossEntry = 32273
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 20
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-cos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 2321.2
+EngageY = 1267.9
+EngageZ = 132.7
+EngageO = 0.86
+PreparationX = 2302.9
+PreparationY = 1246.7
+PreparationZ = 133.0
+PreparationO = 0.86
+FixtureDespawnSpawns = 1970881,1970885,1970882,1970890,1970893,1970892,1970886
+FixtureInstanceData = 4:1
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

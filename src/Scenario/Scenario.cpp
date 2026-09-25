@@ -839,9 +839,10 @@ bool Scenario::LoadFromFile(std::string const& filePath)
     }
     if (_bossSpawnMode == BossSpawnMode::Script)
     {
-        if (_engageTrigger != EncounterTrigger::Pull || _prerequisiteSpawns.empty())
+        // 前置怪可以为空：boss 由夹具（FixtureInstanceData 等）召出时，直接进入恢复阶段等他出现。
+        if (_engageTrigger != EncounterTrigger::Pull)
         {
-            LOG_ERROR("raidtest", "Scenario: BossSpawnMode=script requires EngageTrigger=pull and PrerequisiteSpawns");
+            LOG_ERROR("raidtest", "Scenario: BossSpawnMode=script requires EngageTrigger=pull");
             failed = true;
         }
     }
