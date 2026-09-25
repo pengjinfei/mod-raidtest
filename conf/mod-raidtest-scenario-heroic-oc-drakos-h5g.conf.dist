@@ -1,0 +1,21 @@
+# 英雄魔环 / Drakos the Interrogator（27654/31558），ilvl 200 档，完整遭遇（地面，90 码内无敌对怪）。勘察：docs/testing/bosses/heroic-oculus/SURVEY.md §1。
+# 准备点=开怪点=Drakos 东约 37 码（待实测）。策略名是 wotlk-occ。
+[Scenario]
+MapId = 578
+BossEntry = 27654
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-occ
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 985.0
+EngageY = 1045.0
+EngageZ = 360.0
+EngageO = 3.14
+PreparationX = 985.0
+PreparationY = 1045.0
+PreparationZ = 360.0
+PreparationO = 3.14
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

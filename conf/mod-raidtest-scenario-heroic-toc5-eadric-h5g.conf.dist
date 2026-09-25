@@ -1,0 +1,29 @@
+# 英雄冠军的试炼 / Eadric the Pure（35119），ilvl 200 档隔离 boss 战（跳过大勇士与 9 只 Argent 士兵）。勘察：docs/testing/bosses/heroic-toc5/SURVEY.md §3。
+# FixtureSummonCreature 召到副本召唤点并解除剧情状态；他投降而不死（hp-1 → NON_ATTACKABLE、改友好、evade），用 KillOnBossSurrender。
+# 11:0 ×3 把进度置 6（大勇士已完成），团灭时 InstanceCleanup 才会清掉召出的 boss。必须清掉竞技场 24 匹坐骑，
+# 否则 wotlk-toc 策略会让 bot 去拿枪骑马。准备点/开怪点在 boss 南侧（待实测）。
+[Scenario]
+MapId = 650
+BossEntry = 35119
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 20
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-toc
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 746.9
+EngageY = 623.0
+EngageZ = 411.5
+EngageO = 1.57
+PreparationX = 746.6
+PreparationY = 600.0
+PreparationZ = 411.4
+PreparationO = 1.57
+FixtureInstanceData = 11:0,11:0,11:0
+FixtureDespawnSpawns = 200014,200015,200016,200017,200018,200019,200020,200021,200022,200023,200024,200025,200026,200027,200028,200029,200030,200031,200032,200033,200034,200035,200036,200037,
+FixtureSummonCreature = 35119:746.88,635.26,411.70,4.71
+KillOnBossSurrender = 1
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

@@ -1,0 +1,25 @@
+# 英雄魔环 / Varos Cloudstrider（27447/31559），ilvl 200 档，**地面隔离（非设计形态）**：设计上玩家骑龙绕平台打，bot 无主人时不会上龙。
+# 勘察：docs/testing/bosses/heroic-oculus/SURVEY.md §2。门禁是 Centrifuge Construct 计数到 10：每次 SetData(5,·) +1，
+# 故写 10 次 5:3（删构造体不计数）；0:3 让 Drakos 记为 DONE。清掉平台 80 码内会飞的 Azure Ring Guardian。
+# 准备点=开怪点=Varos 西 30 码、Core 圈内（平台能否站人待实测）。
+[Scenario]
+MapId = 578
+BossEntry = 27447
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-occ
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1255.0
+EngageY = 1070.0
+EngageZ = 439.5
+EngageO = 0.0
+PreparationX = 1255.0
+PreparationY = 1070.0
+PreparationZ = 439.5
+PreparationO = 0.0
+FixtureInstanceData = 0:3,5:3,5:3,5:3,5:3,5:3,5:3,5:3,5:3,5:3,5:3
+FixtureDespawnSpawns = 100932,101882,101892,101893,101498,101874
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
