@@ -856,6 +856,19 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     {
         if (++_abortSamples >= kStuckAbortTicks)
         {
+            // 中途复位 ≠ 卡住：boss 在本 attempt 里挨过打，现在又 evade（或已回满血）——遭遇已经重置，
+            // 这是战斗失败。阿努巴拉克潜地期间队伍清完小怪全员脱战，boss 仇恨表清空后 evade
+            // （run999 中止瞬间 evade=true engaged=false hp=12%），ilvl 200 档 7 次都被记成 aborted、
+            // 排除在样本外。开怪没落地（从未掉血）仍判 aborted；掉过血但未 evade、未满血（如血量读 0
+            // 的死亡判定竞态，run640/665）也仍判 aborted，交给人工核对。
+            if (ctx.bossHpMin < 100 && (ctx.boss->IsInEvadeMode() || ctx.boss->IsFullHealth()))
+            {
+                LOG_WARN("raidtest", "AttemptObserver: encounter reset mid-fight without deaths (hp={}%, min={}%, "
+                    "evade={}, {} consecutive sample(s)) - wipe", hpPct, ctx.bossHpMin, ctx.boss->IsInEvadeMode(),
+                    _abortSamples);
+                ctx.notes = "encounter reset mid-fight (no deaths)";
+                return AttemptResult::Wipe;
+            }
             LOG_WARN("raidtest", "AttemptObserver: boss lost combat state (hp={}%, {} consecutive sample(s)) - "
                 "aborted (stuck, no deaths yet) guid={} in_combat={} engaged={} evade={} full_hp={} flags=0x{:X}",
                 hpPct, _abortSamples, ctx.boss->GetGUID().ToString(), ctx.boss->IsInCombat(), ctx.boss->IsEngaged(),
