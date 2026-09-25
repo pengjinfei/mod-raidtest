@@ -1,11 +1,15 @@
 #include "CombatEventBus.h"
 #include "Creature.h"
+#include "CreatureAI.h"
 #include "EventStore.h"
 #include "AllCreatureScript.h"
 #include "AllSpellScript.h"
 #include "Errors.h"
 #include "Log.h"
 #include "Map.h"
+#include "CellImpl.h"
+#include "GridNotifiers.h"
+#include "GridNotifiersImpl.h"
 #include "Player.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
@@ -654,15 +658,35 @@ void RaidTestUnitScript::OnUnitEnterEvadeMode(Unit* unit, uint8 evadeReason)
     float hx = 0.0f, hy = 0.0f, hz = 0.0f, ho = 0.0f;
     creature->GetHomePosition(hx, hy, hz, ho);
 
+    // 串联 evade 的源头会被发起者随后下线（阿努巴拉克 SummonedCreatureEvade → 复位 → summons.DespawnAll），
+    // 它自己的钩子来不及触发。发起者此刻已带 UNIT_STATE_EVADE：把 150 码内其他正在 evade 的生物一并记下。
+    std::string coEvading;
+    if (evadeReason == CreatureAI::EVADE_REASON_OTHER)
+    {
+        std::list<Unit*> nearby;
+        Acore::AnyUnitInObjectRangeCheck check(unit, 150.0f);
+        Acore::UnitListSearcher<Acore::AnyUnitInObjectRangeCheck> searcher(unit, nearby, check);
+        Cell::VisitObjects(unit, searcher, 150.0f);
+        uint32 listed = 0;
+        for (Unit* other : nearby)
+        {
+            Creature* const c = other ? other->ToCreature() : nullptr;
+            if (!c || c == unit || !c->IsInEvadeMode() || c->GetCharmerOrOwnerGUID().IsPlayer() || ++listed > 6)
+                continue;
+            coEvading += fmt::format(" co_evade=[{} {:.1f},{:.1f},{:.1f} unreachable={} combat={}]", c->GetEntry(),
+                c->GetPositionX(), c->GetPositionY(), c->GetPositionZ(), c->CanNotReachTarget(), c->IsInCombat());
+        }
+    }
+
     CombatEvent e;
     e.type = CombatEventType::State;
     e.source = unit->GetGUID();
     e.actorEntry = unit->GetEntry();
     e.value = evadeReason;
     e.detail = fmt::format("creature_evade:reason={} pos={:.2f},{:.2f},{:.2f} home_dist={:.2f} "
-        "nearest_member={:.2f} members_in_combat={}/{} {}",
+        "nearest_member={:.2f} members_in_combat={}/{} {}{}",
         uint32(evadeReason), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(),
-        unit->GetExactDist(hx, hy, hz), nearest, membersInCombat, membersOnMap, CreatureOriginDetail(unit));
+        unit->GetExactDist(hx, hy, hz), nearest, membersInCombat, membersOnMap, CreatureOriginDetail(unit), coEvading);
     bus.Push(e);
 }
 

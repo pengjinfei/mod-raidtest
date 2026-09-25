@@ -741,11 +741,25 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
             status.actorEntry = bossPos.actorEntry;
             if (Unit* victim = ctx.boss->GetVictim())
                 status.target = victim->GetGUID();
+            // 仇恨/战斗关系：阿努巴拉克潜地复位时全员脱战，需要看玩家与 boss 的战斗引用何时断开。
+            uint32 threatAll = 0, threatOnline = 0, membersWithBoss = 0;
+            for (ThreatReference const* ref : ctx.boss->GetThreatMgr().GetUnsortedThreatList())
+            {
+                ++threatAll;
+                if (ref->IsOnline())
+                    ++threatOnline;
+            }
+            for (Player* member : ctx.bots)
+                if (member && member->IsInWorld() && member->GetMap() == ctx.boss->GetMap() &&
+                    member->IsInCombatWith(ctx.boss))
+                    ++membersWithBoss;
             status.detail = Acore::StringFormat(
-                "boss_state:combat={} evade={} unreachable={} evading_attacks={} regen={} unreachable_guid={}",
+                "boss_state:combat={} evade={} unreachable={} evading_attacks={} regen={} unreachable_guid={} "
+                "engaged={} threat={}/{} members_with_boss={} threatened_by_me={} flags=0x{:X}",
                 ctx.boss->IsInCombat(), ctx.boss->IsInEvadeMode(), ctx.boss->CanNotReachTarget(),
                 ctx.boss->IsEvadingAttacks(), ctx.boss->IsNotReachableAndNeedRegen(),
-                ctx.boss->GetCannotReachTarget().GetCounter());
+                ctx.boss->GetCannotReachTarget().GetCounter(), ctx.boss->IsEngaged(), threatOnline, threatAll,
+                membersWithBoss, ctx.boss->GetThreatMgr().GetThreatenedByMeList().size(), ctx.boss->GetUnitFlags());
             CombatEventBus::instance().Push(status);
         }
     }
