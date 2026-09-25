@@ -850,6 +850,32 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 }
             }
 
+            // 隔离夹具（FixtureSummonCreature）：没有 DB spawn 的事件 boss 直接召到指定坐标，交给 script 模式去绑定。
+            for (auto const& summon : ctx.scenario->GetFixtureSummons())
+            {
+                Map* map = ctx.bots.front()->GetMap();
+                Position const pos(summon.x, summon.y, summon.z, summon.o);
+                TempSummon* unit = map->SummonCreature(summon.entry, pos);
+                if (!unit)
+                {
+                    Abort(Acore::StringFormat("scene_invalid: FixtureSummonCreature {} failed", summon.entry));
+                    return;
+                }
+                // 事件召出的 boss 模板常带剧情免疫（Epoch 26532：IMMUNE_TO_PC|IMMUNE_TO_NPC），原本由事件的最后一步
+                // 解除（culling_of_stratholme.cpp EVENT_ACTION_PHASE3+18）。夹具跳过了事件，这一步由它补上。
+                unit->SetImmuneToAll(false);
+                unit->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+                unit->SetReactState(REACT_AGGRESSIVE);
+                CombatEvent ev;
+                ev.type = CombatEventType::State;
+                ev.source = unit->GetGUID();
+                ev.actorEntry = summon.entry;
+                ev.detail = Acore::StringFormat("fixture_summon=entry:{} pos={:.2f},{:.2f},{:.2f}", summon.entry,
+                    summon.x, summon.y, summon.z);
+                CombatEventBus::instance().Push(ev);
+                LOG_INFO("raidtest", "AttemptRunner: {}", ev.detail);
+            }
+
             // 双 boss：BossEntry 之外第二个必死生成点。解析其 creature 并登记死亡跟踪，
             // 击杀判定与卡壳判定都以此为准（见 AttemptObserver）。gate 是必打目标，
             // 若已因 bots 邻近参战也接受——不因此阻断。

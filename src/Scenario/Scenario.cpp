@@ -550,6 +550,28 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _fixturePersistentData.emplace_back(index, data);
             }
         }
+        else if (key == "FixtureSummonCreature")
+        {
+            for (auto token : Acore::Tokenize(value, ';', false))
+            {
+                std::string const item = Acore::String::Trim(std::string(token));
+                size_t const colon = item.find(':');
+                FixtureSummon summon;
+                std::string const coordText = colon == std::string::npos ? std::string() : item.substr(colon + 1);
+                std::vector<std::string_view> coords;
+                if (colon != std::string::npos)
+                    coords = Acore::Tokenize(coordText, ',', false);
+                if (colon == std::string::npos || coords.size() != 4 ||
+                    !ParseUint32(item.substr(0, colon), summon.entry) ||
+                    !ParseFloat(Acore::String::Trim(std::string(coords[0])), summon.x) ||
+                    !ParseFloat(Acore::String::Trim(std::string(coords[1])), summon.y) ||
+                    !ParseFloat(Acore::String::Trim(std::string(coords[2])), summon.z) ||
+                    !ParseFloat(Acore::String::Trim(std::string(coords[3])), summon.o))
+                    failed = true;
+                else
+                    _fixtureSummons.push_back(summon);
+            }
+        }
         else if (key == "FixtureInstanceAction")
         {
             for (auto token : Acore::Tokenize(value, ',', false))
@@ -568,6 +590,14 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 failed = true;
             else
                 _masterlessAvoidAoe = flag == 1;
+        }
+        else if (key == "KillOnBossSurrender")
+        {
+            uint32 flag = 0;
+            if (!ParseUint32(value, flag) || flag > 1)
+                failed = true;
+            else
+                _killOnBossSurrender = flag == 1;
         }
         else if (key == "FixtureBossNotify")
         {

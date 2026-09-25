@@ -142,11 +142,22 @@ public:
     // 按顺序调用 InstanceScript::DoAction("<action>,...")，在持久数据之后执行。紫罗兰监狱的
     // ACTION_RELEASE_BOSS=3 开牢房放 boss（原本由 Azure Saboteur 在第 6/12 波调用）。隔离形态，结论口径降级。
     std::vector<int32> const& GetFixtureInstanceActions() const { return _fixtureInstanceActions; }
+    // 在场景地图上直接召唤单位（"<entry>:<x>,<y>,<z>,<o>;..."），在上面三种实例夹具之后执行。用于没有 DB spawn、
+    // 原本由事件链召出的 boss（净化斯坦索姆 Meathook / Salramm / Epoch）。隔离形态：跳过事件与协助 NPC，口径降级。
+    struct FixtureSummon
+    {
+        uint32 entry{0};
+        float x{0.0f}, y{0.0f}, z{0.0f}, o{0.0f};
+    };
+    std::vector<FixtureSummon> const& GetFixtureSummons() const { return _fixtureSummons; }
     // 无真人 master 的 roster bot 也启用 playerbots 标准「avoid aoe」战斗策略（0 = 保持旧行为）。
     // mod-playerbots AiFactory 只在 HasGameClientMaster() 时默认加这条策略，raidtest 全 bot 队伍因此
     // 从未躲过地面持续区域（哈多诺克斯酸液云占非坦克承伤 47–75%）。这是真人带队时的默认策略，
     // 不改 bot 的决策逻辑；按场景显式开启以免悄悄改变其它场景基线。
     bool GetMasterlessAvoidAoe() const { return _masterlessAvoidAoe; }
+    // boss 不会死、打到残血后「投降」（致命伤害被吞掉，自己变成不可攻击并脱战，如 Mal'Ganis）：
+    // 本 attempt 最低血量到过 10% 以下、且此刻带 UNIT_FLAG_NON_ATTACKABLE → 判 Kill。
+    bool GetKillOnBossSurrender() const { return _killOnBossSurrender; }
     // 清怪全部完成后要「使用」的 gameobject 生成点（gameobject.guid）。用于副本自身的
     // 进度门禁：魔枢的三个封印球体（188526/188527/188528）必须被使用，
     // DATA_*_ORB 才会置 DONE，凯利丝塔萨的冰冻牢笼才会解除。
@@ -231,8 +242,10 @@ protected:
     std::vector<std::pair<uint32, uint32>> _fixtureInstanceData;
     std::vector<std::pair<uint32, uint32>> _fixturePersistentData;
     std::vector<int32> _fixtureInstanceActions;
+    std::vector<FixtureSummon> _fixtureSummons;
     bool _fixtureBossNotify{false};
     bool _masterlessAvoidAoe{false};
+    bool _killOnBossSurrender{false};
     std::vector<uint32> _prerequisiteGameObjects;
     uint32 _killGateSpawn{0};
     Position _preparationPoint{};

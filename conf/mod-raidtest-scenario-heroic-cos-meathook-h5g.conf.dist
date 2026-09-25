@@ -1,0 +1,25 @@
+# 英雄净化斯坦索姆 / Meathook（26529），ilvl 200 档隔离 boss 战。勘察：docs/testing/bosses/heroic-cos/SURVEY.md。
+# 没有 DB spawn，原本由 Arthas 事件召出；这里用 FixtureSummonCreature 直接召到事件召唤点（跳过波次与 Arthas 协助，口径降级）。
+# 准备点=boss 正面 40 码（召出时 bot 太近会当场进战），开怪点=正面 12 码。坐标待实测。
+[Scenario]
+MapId = 595
+BossEntry = 26529
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 20
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-cos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 2342.18
+EngageY = 1190.19
+EngageZ = 130.45
+EngageO = 0.69
+PreparationX = 2320.56
+PreparationY = 1172.40
+PreparationZ = 130.95
+PreparationO = 0.69
+FixtureSummonCreature = 26529:2351.45,1197.81,130.45,3.83
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

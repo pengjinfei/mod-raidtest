@@ -1,0 +1,27 @@
+# 英雄净化斯坦索姆 / Mal'Ganis（26533/31217），ilvl 200 档隔离 boss 战。勘察：docs/testing/bosses/heroic-cos/SURVEY.md §4。
+# 没有 DB spawn，原本由 Arthas gossip 1006 召出；这里用 FixtureSummonCreature 直接召到他的位置并解除剧情免疫，
+# 跳过护送与 Arthas 协助（口径降级）。他不会死：致命伤害置 0 后变 NON_ATTACKABLE 并 evade，用 KillOnBossSurrender 判击杀。
+# 准备点=正面 40 码（Arthas 走来的方向），开怪点=正面 12 码。坐标待实测。
+[Scenario]
+MapId = 595
+BossEntry = 26533
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 20
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-cos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 2301.09
+EngageY = 1488.90
+EngageZ = 128.37
+EngageO = 1.81
+PreparationX = 2307.72
+PreparationY = 1461.69
+PreparationZ = 128.87
+PreparationO = 1.81
+FixtureSummonCreature = 26533:2298.25,1500.56,128.37,4.95
+KillOnBossSurrender = 1
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

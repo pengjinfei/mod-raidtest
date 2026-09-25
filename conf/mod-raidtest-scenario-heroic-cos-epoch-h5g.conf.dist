@@ -1,0 +1,25 @@
+# 英雄净化斯坦索姆 / Chrono-Lord Epoch（26532），ilvl 200 档隔离 boss 战。勘察：docs/testing/bosses/heroic-cos/SURVEY.md。
+# 没有 DB spawn，原本由 Arthas 事件召出；这里用 FixtureSummonCreature 直接召到事件召唤点（跳过波次与 Arthas 协助，口径降级）。
+# 准备点=boss 正面 25 码（召出时 bot 太近会当场进战），开怪点=正面 12 码。坐标待实测。
+[Scenario]
+MapId = 595
+BossEntry = 26532
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 20
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-cos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 2440.10
+EngageY = 1110.30
+EngageZ = 149.22
+EngageO = 0.22
+PreparationX = 2427.40
+PreparationY = 1107.48
+PreparationZ = 149.72
+PreparationO = 0.22
+FixtureSummonCreature = 26532:2451.81,1112.9,149.22,3.36
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

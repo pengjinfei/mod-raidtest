@@ -46,6 +46,7 @@ void AttemptObserver::Reset()
     _killSamples = 0;
     _wipeSamples = 0;
     _wipeGoneSamples = 0;
+    _surrenderSamples = 0;
     _timeoutSamples = 0;
     _abortSamples = 0;
     _encounterResetSamples = 0;
@@ -809,6 +810,21 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     }
     else
         _killSamples = 0;
+
+    // 投降型 boss（Mal'Ganis：致命伤害置 0 → 免疫、NON_ATTACKABLE、施放奖励法术后 evade），血量永远不归零。
+    if (ctx.scenario && ctx.scenario->GetKillOnBossSurrender() && ctx.boss && ctx.boss->IsAlive() &&
+        ctx.bossHpMin <= 10 && ctx.boss->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE))
+    {
+        if (++_surrenderSamples >= kSampleConfirmTicks)
+        {
+            LOG_INFO("raidtest", "AttemptObserver: kill confirmed (boss {} surrendered: hp_min={}% non_attackable)",
+                ctx.bossGuid.ToString(), ctx.bossHpMin);
+            ctx.notes = "boss surrendered";
+            return AttemptResult::Kill;
+        }
+    }
+    else
+        _surrenderSamples = 0;
 
     bool const allDead = std::all_of(ctx.bots.begin(), ctx.bots.end(), [](Player* bot)
     {
