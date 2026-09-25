@@ -5,6 +5,8 @@
 #include "AllSpellScript.h"
 #include "Errors.h"
 #include "Log.h"
+#include "Map.h"
+#include "Player.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Spell.h"
@@ -62,6 +64,8 @@ public:
     void OnHeal(Unit* healer, Unit* receiver, uint32& gain) override;
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override;
     void OnUnitDeath(Unit* unit, Unit* killer) override;
+    void OnUnitEnterEvadeMode(Unit* unit, uint8 evadeReason) override;
+    void OnUnitEnterCombat(Unit* unit, Unit* victim) override;
     // 只读：在同一次伤害调用链里、DealDamage→OnDamage 之前记下本次伤害来自哪个法术，
     // OnDamage 取用后清掉；近战记 0。不修改 damage。
     void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage, SpellInfo const* spellInfo) override;
@@ -459,7 +463,7 @@ void RaidTestSpellScript::OnSpellCastCancel(Spell* spell, Unit* caster,
 //    且同样不绑定 entry（偏离 brief「AllCreatureScript 捕获生物死亡」的说明）。
 RaidTestUnitScript::RaidTestUnitScript()
     : UnitScript("RaidTestUnitScript", true, { UNITHOOK_ON_HEAL, UNITHOOK_ON_DAMAGE, UNITHOOK_ON_UNIT_DEATH,
-        UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK, UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_MODIFY_MELEE_DAMAGE })
+        UNITHOOK_ON_UNIT_ENTER_EVADE_MODE, UNITHOOK_ON_UNIT_ENTER_COMBAT, UNITHOOK_MODIFY_PERIODIC_DAMAGE_AURAS_TICK, UNITHOOK_MODIFY_SPELL_DAMAGE_TAKEN, UNITHOOK_MODIFY_MELEE_DAMAGE })
 {
 }
 
@@ -616,6 +620,89 @@ void RaidTestUnitScript::OnUnitDeath(Unit* unit, Unit* killer)
         lifecycle.detail = "tribunal_add_death";
         bus.Push(lifecycle);
     }
+}
+
+// 克里克希尔门厅的整组重置由任一守望者/小怪 evade 串联到 boss 引起，死亡事件看不到
+// 是谁、因何先 evade。只记录与本次 roster 同一副本地图的生物 evade（阵亡 bot 回到大陆墓地时不算）：原因码（CreatureAI::EvadeReason，
+// 0=无仇恨 1=边界 2=前置未完成 3=无路径 4=其他）、位置、离出生点距离、最近成员距离与仍在战斗的成员数。
+// 串联时内层（boss）的钩子先于外层触发，原因码非 4 的那一条才是源头。
+void RaidTestUnitScript::OnUnitEnterEvadeMode(Unit* unit, uint8 evadeReason)
+{
+    CombatEventBus& bus = CombatEventBus::instance();
+    if (!bus.IsActive() || !unit || !unit->IsCreature() || !unit->IsInWorld() || !unit->GetMap()->IsDungeon())
+        return;
+
+    float nearest = -1.0f;
+    uint32 membersOnMap = 0;
+    uint32 membersInCombat = 0;
+    for (auto const& ref : unit->GetMap()->GetPlayers())
+    {
+        Player* const player = ref.GetSource();
+        if (!player || !bus.IsMember(player->GetGUID()))
+            continue;
+        ++membersOnMap;
+        if (player->IsInCombat())
+            ++membersInCombat;
+        float const d = unit->GetDistance(player);
+        if (nearest < 0.0f || d < nearest)
+            nearest = d;
+    }
+    if (!membersOnMap)
+        return;
+
+    Creature const* const creature = unit->ToCreature();
+    float hx = 0.0f, hy = 0.0f, hz = 0.0f, ho = 0.0f;
+    creature->GetHomePosition(hx, hy, hz, ho);
+
+    CombatEvent e;
+    e.type = CombatEventType::State;
+    e.source = unit->GetGUID();
+    e.actorEntry = unit->GetEntry();
+    e.value = evadeReason;
+    e.detail = fmt::format("creature_evade:reason={} pos={:.2f},{:.2f},{:.2f} home_dist={:.2f} "
+        "nearest_member={:.2f} members_in_combat={}/{} {}",
+        uint32(evadeReason), unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(),
+        unit->GetExactDist(hx, hy, hz), nearest, membersInCombat, membersOnMap, CreatureOriginDetail(unit));
+    bus.Push(e);
+}
+
+// 与 evade 配对：记录副本里（非玩家宠物）生物进入战斗的瞬间和首个交战对象（Creature::AtEngage）。
+// 克里克希尔的 boss 不会因为玩家靠近而开怪（MoveInLineOfSight 被脚本覆盖），run950 却在
+// 全员脱战时 evade、带下三组守望者；需要知道它是被谁、在什么距离拉进战斗的。只观察。
+void RaidTestUnitScript::OnUnitEnterCombat(Unit* unit, Unit* victim)
+{
+    CombatEventBus& bus = CombatEventBus::instance();
+    if (!bus.IsActive() || !unit || !unit->IsCreature() || !unit->IsInWorld() || !unit->GetMap()->IsDungeon() ||
+        unit->GetCharmerOrOwnerGUID().IsPlayer())
+        return;
+
+    float nearest = -1.0f;
+    uint32 membersOnMap = 0;
+    for (auto const& ref : unit->GetMap()->GetPlayers())
+    {
+        Player* const player = ref.GetSource();
+        if (!player || !bus.IsMember(player->GetGUID()))
+            continue;
+        ++membersOnMap;
+        float const d = unit->GetDistance(player);
+        if (nearest < 0.0f || d < nearest)
+            nearest = d;
+    }
+    if (!membersOnMap)
+        return;
+
+    CombatEvent e;
+    e.type = CombatEventType::State;
+    e.source = unit->GetGUID();
+    if (victim)
+        e.target = victim->GetGUID();
+    e.actorEntry = unit->GetEntry();
+    e.detail = fmt::format("creature_engage:victim={} victim_entry={} victim_member={} victim_dist={:.2f} "
+        "pos={:.2f},{:.2f},{:.2f} nearest_member={:.2f} {}",
+        victim ? victim->GetName() : "none", victim && victim->IsCreature() ? victim->GetEntry() : 0,
+        victim && bus.IsMember(victim->GetCharmerOrOwnerOrOwnGUID()), victim ? unit->GetDistance(victim) : -1.0f,
+        unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), nearest, CreatureOriginDetail(unit));
+    bus.Push(e);
 }
 
 // 由 AddRaidTestScripts 调用一次；ScriptRegistry 接管 new 出的对象生命周期。

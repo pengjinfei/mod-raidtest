@@ -165,6 +165,12 @@ public:
     uint32 GetPrerequisiteCcEngagedGraceSeconds() const { return _prerequisiteCcEngagedGraceSeconds; }
     // 每个 attempt 开场前的等待秒数（0 = 关闭）。用于让 bot 的长冷却在连续 attempt 之间复位。
     uint32 GetAttemptStartDelaySeconds() const { return _attemptStartDelaySeconds; }
+    // 清完一组后的再开怪等待（0 = 关闭）。有的遭遇自己会派下一组：克里克希尔在一组守望者全灭
+    // 10 秒后把另一组 SetInCombatWithZone 派过来。框架若在队伍一脱战就拉下一组，派来的那组随后
+    // 赶到，两组同时打队伍（run945/948 的全部减员都发生在这种重叠里，击杀场次都是一组一组来）。
+    // 开启后：最近一只前置怪死亡后这么多秒内不下达新的开怪；任一存活前置怪已在战斗（正被派来）
+    // 时也不开怪（最多再等 30 秒），等它到了由 bot 自己接。只决定什么时候开怪，不改 bot 的战斗决策。
+    uint32 GetPrerequisiteRepullDelaySeconds() const { return _prerequisiteRepullDelaySeconds; }
     // PrerequisiteMinBossDistance 量到哪个 boss：0 = 场景 boss；否则是该 creature entry（普通或英雄 entry 皆可）。
     uint32 GetPrerequisiteMinBossDistanceBossEntry() const { return _prerequisiteMinBossDistanceBossEntry; }
     // Optional non-combat route between the preparation point and the first
@@ -213,6 +219,7 @@ protected:
     uint32 _prerequisiteCcEngagedGraceSeconds{0};
     uint32 _attemptStartDelaySeconds{0};
     uint32 _prerequisiteMinBossDistanceBossEntry{0};
+    uint32 _prerequisiteRepullDelaySeconds{0};
     std::vector<Position> _navigationWaypoints;
     uint32 _navigationTimeoutSeconds{60};
     bool _navigationOnly{false};

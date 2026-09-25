@@ -541,6 +541,11 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 _prerequisiteMinBossDistance < 0.0f || _prerequisiteMinBossDistance > 200.0f)
                 failed = true;
         }
+        else if (key == "PrerequisiteRepullDelaySeconds")
+        {
+            if (!ParseUint32(value, _prerequisiteRepullDelaySeconds) || _prerequisiteRepullDelaySeconds > 120)
+                failed = true;
+        }
         else if (key == "PrerequisiteMinBossDistanceBossEntry")
         {
             if (!ParseUint32(value, _prerequisiteMinBossDistanceBossEntry))

@@ -268,6 +268,9 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _ccFirstPullDone = false;
     _startDelayElapsedMs = 0;
     _pullRejectedAt = 0;
+    _prerequisiteDeathsSeen = 0;
+    _lastPrerequisiteDeathAt = 0;
+    _repullHoldLoggedAt = 0;
     _prereqBossAssistPending = false;
     _prereqBossRecoveryTarget.Clear();
     _prereqBossRecoveryMs = 0;
@@ -2474,11 +2477,16 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
     }
     Map* map = ctx.bots.front()->GetMap();
     Creature* next = nullptr;
+    bool prerequisiteInCombat = false;
+    uint32 deathsSeen = 0;
     for (size_t i = 0; i < _prerequisiteGuids.size(); ++i)
     {
         ObjectGuid const& guid = _prerequisiteGuids[i];
         if (CombatEventBus::instance().DeathSeen(guid))
+        {
+            ++deathsSeen;
             continue;
+        }
         Creature* unit = map->GetCreature(guid);
         if (!unit || !unit->IsAlive())
         {
@@ -2510,8 +2518,15 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
                 _prerequisiteRebindElapsedMs[i] = 0;
             unit = rebound;
         }
+        if (unit->IsInCombat())
+            prerequisiteInCombat = true;
         if (!next)
             next = unit;
+    }
+    if (deathsSeen > _prerequisiteDeathsSeen)
+    {
+        _prerequisiteDeathsSeen = deathsSeen;
+        _lastPrerequisiteDeathAt = _preparationElapsed;
     }
     if (!next)
     {
@@ -2566,6 +2581,30 @@ void AttemptRunner::TickPrerequisites(RunContext& ctx, uint32 diff)
             return ai && ai->GetState() == BOT_STATE_COMBAT;
         }))
         _prerequisitePullSent = false;
+    // 再开怪等待（PrerequisiteRepullDelaySeconds，0 = 关闭）：遭遇自己派来的下一组还在路上时不抢拉
+    // 另一组。只压住开怪指令；派来的怪到了之后 bot 照常自己接。
+    if (!_prerequisitePullSent && ctx.scenario->GetPrerequisiteRepullDelaySeconds() > 0 && _prerequisiteDeathsSeen)
+    {
+        uint32 const delayMs = ctx.scenario->GetPrerequisiteRepullDelaySeconds() * 1000;
+        uint32 const sinceDeath = _preparationElapsed - _lastPrerequisiteDeathAt;
+        // 在战斗的怪最多再多等 30 秒：卡住不来的残留战斗标记不能把清怪拖到超时。
+        if (sinceDeath < delayMs || (prerequisiteInCombat && sinceDeath < delayMs + 30000))
+        {
+            if (!_repullHoldLoggedAt || _preparationElapsed - _repullHoldLoggedAt >= 5000)
+            {
+                _repullHoldLoggedAt = _preparationElapsed;
+                CombatEvent state;
+                state.type = CombatEventType::State;
+                state.source = next->GetGUID();
+                state.actorEntry = next->GetEntry();
+                state.detail = Acore::StringFormat("preclear_repull_hold:since_death_ms={} delay_ms={} pack_in_combat={}",
+                    sinceDeath, delayMs, prerequisiteInCombat);
+                CombatEventBus::instance().Push(state);
+                LOG_INFO("raidtest", "AttemptRunner: {} elapsed={}ms", state.detail, _preparationElapsed);
+            }
+            return;
+        }
+    }
     // 开怪时机门禁（PrerequisiteMinBossDistance，0 = 关闭）。巡逻型前置怪会在 boss 边上
     // 徘徊：奥莫洛克的守卫组冷启动时距 boss 仅 17.1 码，挨到第一下伤害后 90 毫秒 boss
     // 就协助参战（run355 实测，把清怪点挪到 41.5 码外也没用，因为触发距离是「小怪到

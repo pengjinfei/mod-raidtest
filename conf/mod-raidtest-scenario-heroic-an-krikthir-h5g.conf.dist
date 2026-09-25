@@ -59,3 +59,6 @@ PrerequisiteTimeoutSeconds = 200
 #   2. 等控制落地再对骷髅下达开怪。
 # 本副本小怪全是亡灵（type 6），变形/妖术/闷棍都落不下去，唯一有效的是牧师束缚亡灵（三角图标）。
 PrerequisiteCcWaitSeconds = 25
+# 克里克希尔在一组守望者全灭 10 秒后自己派下一组（SetInCombatWithZone）。队伍一脱战就拉下一组，
+# 派来的那组随后赶到，两组同时打队伍（run945/948）。清完一组后 20 秒内、或已有前置怪在战斗（正被派来）时不开怪。
+PrerequisiteRepullDelaySeconds = 20
