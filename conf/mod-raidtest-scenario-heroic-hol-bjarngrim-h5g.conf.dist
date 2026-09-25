@@ -1,0 +1,25 @@
+# 英雄闪电大厅 / 比亚格里姆将军（General Bjarngrim，28586/31533），ilvl 200 档隔离 boss 战。勘测：docs/testing/bosses/heroic-hol/SURVEY.md。
+# 他是 npc_escortAI，沿约 570 码路线无限巡逻（南台出生点→北台→中台→东高台，各停 10 秒）。框架每场 ResetInstance 把他
+# 放回出生点（南台），故不设前置、准备点=开怪点，传送后立即开怪，在他走远前拉住。
+# 南台 50 码内 6 只小怪（Hardened Steel ×3、Stormforged Mender、两只巡逻 Tactician）非机制单位，夹具移除；
+# 他 Reset 时召出的两只 Stormforged Lieutenant 29240 属遭遇机制，保留。
+# los 实测：开怪点 (1262,-3) 地面 33.51、距出生点 23.9 码、视线通。
+[Scenario]
+MapId = 602
+BossEntry = 28586
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hol
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1262.0
+EngageY = -3.0
+EngageZ = 33.51
+EngageO = 4.71
+PreparationX = 1262.0
+PreparationY = -3.0
+PreparationZ = 33.51
+PreparationO = 4.71
+FixtureDespawnSpawns = 126898,126885,126914,126941,126917,126923
+TimeoutSeconds = 480
+EngageTrigger = pull
