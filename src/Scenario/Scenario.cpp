@@ -704,6 +704,19 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _fixtureBossNotify = flag == 1;
         }
+        else if (key == "ObserveAuras")
+        {
+            std::set<uint32> seenAuras;
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                uint32 spell = 0;
+                if (!ParseUint32(Acore::String::Trim(std::string(token)), spell) || !spell ||
+                    !seenAuras.insert(spell).second)
+                    failed = true;
+                else
+                    _observeAuras.push_back(spell);
+            }
+        }
         else if (key == "PrerequisiteGameObjects")
         {
             std::set<uint32> seenGameObjects;
