@@ -1,0 +1,24 @@
+# 英雄紫罗兰监狱 / Zuramat the Obliterator，ilvl 200 档隔离 boss 战。勘察：docs/testing/bosses/heroic-vh/SURVEY.md。
+# 牢房 boss 靠副本脚本 DoAction(ACTION_RELEASE_BOSS=3) 放出；波数为 0 时放持久数据槽 1 记的 boss（BOSS_* = 8）。
+# 不配 FixtureBossStates（会触发 InstanceCleanup）。准备点=开怪点=boss 放出落点往房间中央 10 码（待实测）。
+[Scenario]
+MapId = 608
+BossEntry = 29314
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-vh
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1922.15
+EngageY = 844.90
+EngageZ = 47.20
+EngageO = 0.92
+PreparationX = 1922.15
+PreparationY = 844.90
+PreparationZ = 47.20
+PreparationO = 0.92
+FixturePersistentData = 1:8
+FixtureInstanceAction = 3
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

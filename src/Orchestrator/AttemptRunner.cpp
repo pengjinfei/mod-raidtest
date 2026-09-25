@@ -626,6 +626,21 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         {
         case PullStep::FindBoss:
         {
+            // 开怪暂时不可能（boss 超距/无视线）时 StartBossPull 留在本步等下一 tick 重试。开场（attempt 行、
+            // 事件总线、夹具）只做一次：重跑会重复施加夹具（紫罗兰监狱每 tick 重发放 boss 的 DoAction，
+            // boss 的走位被不断重置），且重试预算只在这里累计。
+            if (_bossPullIssued)
+            {
+                _pullRetryMs += diff;
+                ResolveBoss(ctx);
+                if (!ctx.boss)
+                {
+                    Abort("pull failed (boss missing during pull retry)");
+                    return;
+                }
+                StartBossPull(ctx);
+                return;
+            }
             Creature* boss = FindBossNear(ctx);
             if (!boss)
             {
@@ -803,6 +818,38 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 }
             }
 
+            // 隔离夹具（FixturePersistentData / FixtureInstanceAction）：写持久数据槽、再调副本脚本的
+            // DoAction。紫罗兰监狱用它指定并放出牢房 boss；每场 attempt 都要重放（boss 复位会关回牢房）。
+            if (!ctx.scenario->GetFixturePersistentData().empty() || !ctx.scenario->GetFixtureInstanceActions().empty())
+            {
+                Map* map = ctx.bots.front()->GetMap();
+                InstanceScript* script = map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
+                if (!script)
+                {
+                    Abort("scene_invalid: FixturePersistentData/FixtureInstanceAction needs an instance script");
+                    return;
+                }
+                for (auto const& [index, data] : ctx.scenario->GetFixturePersistentData())
+                {
+                    script->StorePersistentData(index, data);
+                    CombatEvent ev;
+                    ev.type = CombatEventType::State;
+                    ev.detail = Acore::StringFormat("fixture_persistent_data=index:{} value:{} now:{}", index, data,
+                        script->GetPersistentData(index));
+                    CombatEventBus::instance().Push(ev);
+                    LOG_INFO("raidtest", "AttemptRunner: {}", ev.detail);
+                }
+                for (int32 action : ctx.scenario->GetFixtureInstanceActions())
+                {
+                    script->DoAction(action);
+                    CombatEvent ev;
+                    ev.type = CombatEventType::State;
+                    ev.detail = Acore::StringFormat("fixture_instance_action={}", action);
+                    CombatEventBus::instance().Push(ev);
+                    LOG_INFO("raidtest", "AttemptRunner: {}", ev.detail);
+                }
+            }
+
             // 双 boss：BossEntry 之外第二个必死生成点。解析其 creature 并登记死亡跟踪，
             // 击杀判定与卡壳判定都以此为准（见 AttemptObserver）。gate 是必打目标，
             // 若已因 bots 邻近参战也接受——不因此阻断。
@@ -882,6 +929,7 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 RecordPhase("scripted_event_gossip_0", 0);
                 return;
             }
+            _bossPullIssued = true;
             StartBossPull(ctx);
             return;
         }

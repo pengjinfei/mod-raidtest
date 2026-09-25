@@ -1,0 +1,24 @@
+# 英雄紫罗兰监狱 / Ichoron，ilvl 200 档隔离 boss 战。勘察：docs/testing/bosses/heroic-vh/SURVEY.md。
+# 牢房 boss 靠副本脚本 DoAction(ACTION_RELEASE_BOSS=3) 放出；波数为 0 时放持久数据槽 1 记的 boss（BOSS_* = 5）。
+# 不配 FixtureBossStates（会触发 InstanceCleanup）。准备点=开怪点=boss 放出落点往房间中央 10 码（待实测）。
+[Scenario]
+MapId = 608
+BossEntry = 29313
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-vh
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1909.60
+EngageY = 785.71
+EngageZ = 35.77
+EngageO = 5.43
+PreparationX = 1909.60
+PreparationY = 785.71
+PreparationZ = 35.77
+PreparationO = 5.43
+FixturePersistentData = 1:5
+FixtureInstanceAction = 3
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

@@ -535,6 +535,32 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _fixtureInstanceData.emplace_back(id, data);
             }
         }
+        else if (key == "FixturePersistentData")
+        {
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                std::string const item = Acore::String::Trim(std::string(token));
+                size_t const colon = item.find(':');
+                uint32 index = 0;
+                uint32 data = 0;
+                if (colon == std::string::npos || !ParseUint32(item.substr(0, colon), index) ||
+                    !ParseUint32(item.substr(colon + 1), data))
+                    failed = true;
+                else
+                    _fixturePersistentData.emplace_back(index, data);
+            }
+        }
+        else if (key == "FixtureInstanceAction")
+        {
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                uint32 action = 0;
+                if (!ParseUint32(Acore::String::Trim(std::string(token)), action))
+                    failed = true;
+                else
+                    _fixtureInstanceActions.push_back(int32(action));
+            }
+        }
         else if (key == "MasterlessAvoidAoe")
         {
             uint32 flag = 0;

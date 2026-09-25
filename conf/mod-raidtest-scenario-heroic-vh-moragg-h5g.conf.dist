@@ -1,0 +1,24 @@
+# 英雄紫罗兰监狱 / Moragg，ilvl 200 档隔离 boss 战。勘察：docs/testing/bosses/heroic-vh/SURVEY.md。
+# 牢房 boss 靠副本脚本 DoAction(ACTION_RELEASE_BOSS=3) 放出；波数为 0 时放持久数据槽 1 记的 boss（BOSS_* = 3）。
+# 不配 FixtureBossStates（会触发 InstanceCleanup）。准备点=开怪点=boss 放出落点往房间中央 10 码（待实测）。
+[Scenario]
+MapId = 608
+BossEntry = 29316
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-vh
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1894.32
+EngageY = 749.38
+EngageZ = 47.67
+EngageO = 4.75
+PreparationX = 1894.32
+PreparationY = 749.38
+PreparationZ = 47.67
+PreparationO = 4.75
+FixturePersistentData = 1:3
+FixtureInstanceAction = 3
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

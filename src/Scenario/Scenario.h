@@ -136,6 +136,12 @@ public:
     // 进度存在自己的 Encounters[] 里（乌特加德之巅：Svala=0、Gortok=1、Skadi=2、Ymiron=3，DONE=3），
     // SetBossState 对它们是空操作。用于伊米隆「斯卡迪已完成才可选中」这类门禁。隔离形态，结论口径降级。
     std::vector<std::pair<uint32, uint32>> const& GetFixtureInstanceData() const { return _fixtureInstanceData; }
+    // 同上，但写 InstanceScript::StorePersistentData("<index>:<value>,...")，在 FixtureInstanceData 之后执行。
+    // 紫罗兰监狱的两个牢房 boss 存在持久数据槽 0/1（随机抽取，没有 SetData 入口），用它指定本场放哪一个。
+    std::vector<std::pair<uint32, uint32>> const& GetFixturePersistentData() const { return _fixturePersistentData; }
+    // 按顺序调用 InstanceScript::DoAction("<action>,...")，在持久数据之后执行。紫罗兰监狱的
+    // ACTION_RELEASE_BOSS=3 开牢房放 boss（原本由 Azure Saboteur 在第 6/12 波调用）。隔离形态，结论口径降级。
+    std::vector<int32> const& GetFixtureInstanceActions() const { return _fixtureInstanceActions; }
     // 无真人 master 的 roster bot 也启用 playerbots 标准「avoid aoe」战斗策略（0 = 保持旧行为）。
     // mod-playerbots AiFactory 只在 HasGameClientMaster() 时默认加这条策略，raidtest 全 bot 队伍因此
     // 从未躲过地面持续区域（哈多诺克斯酸液云占非坦克承伤 47–75%）。这是真人带队时的默认策略，
@@ -223,6 +229,8 @@ protected:
     std::vector<uint32> _fixtureDespawnSpawns;
     std::vector<std::pair<uint32, uint32>> _fixtureBossStates;
     std::vector<std::pair<uint32, uint32>> _fixtureInstanceData;
+    std::vector<std::pair<uint32, uint32>> _fixturePersistentData;
+    std::vector<int32> _fixtureInstanceActions;
     bool _fixtureBossNotify{false};
     bool _masterlessAvoidAoe{false};
     std::vector<uint32> _prerequisiteGameObjects;
