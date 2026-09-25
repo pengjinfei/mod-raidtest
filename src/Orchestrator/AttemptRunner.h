@@ -162,6 +162,7 @@ private:
     // 只回读现成状态与 bot 自己的取值上下文，不调用 CanCastSpell/CheckCast，
     // 也不触发任何 isUseful/isPossible。
     void SampleInterruptWatch(RunContext& ctx);
+    void SampleAuraWatch(RunContext& ctx);
     // 该单位是否带着「让它脱离战斗」的控制光环（变形/妖术/致盲/恐惧/闷棍）。cc_watch 采样与
     // 开怪门禁共用同一判据。
     static bool HasIncapacitatingAura(Unit* unit);
@@ -170,6 +171,7 @@ private:
     // 幂等：已经不可选中（用过或 boss 未死）的直接跳过。每个结果都写入 raidtest_events。
     void UsePrerequisiteGameObjects(RunContext& ctx);
     uint32 _interruptWatchElapsedMs{0};
+    uint32 _auraWatchElapsedMs{0};
     // 清怪期间 boss 从地图上消失了多久。带 CREATURE_FLAG_EXTRA_HARD_RESET 的 boss
     // 脱战一次就会被 DespawnOnEvade() 下线，默认 20 秒后以新对象重生，缓存的
     // bossGuid 会悬垂——这是正常复位，不该立刻判尝试失败。

@@ -134,6 +134,8 @@ public:
     // 这是编排层的一次交互，不是战斗行为；核心的 GameObject::Use 仍会拒绝
     // 带 GO_FLAG_NOT_SELECTABLE 的球体（即对应 boss 还没死时点不动），门禁没有被绕过。
     std::vector<uint32> const& GetPrerequisiteGameObjects() const { return _prerequisiteGameObjects; }
+    // 只读观察：boss 战期间每秒对每个 bot 采样这些光环（ObserveAuras = 57055,56648）。
+    std::vector<uint32> const& GetObserveAuras() const { return _observeAuras; }
     // 双 boss 等：BossEntry 死后仍需击杀的第二个必死生成点（0 = 无）。击杀判定
     // 要求它也收到真实死亡事件，卡壳判定在它死亡前挂起。
     uint32 GetKillGateSpawn() const { return _killGateSpawn; }
@@ -201,6 +203,7 @@ protected:
     bool _fixtureBossNotify{false};
     bool _masterlessAvoidAoe{false};
     std::vector<uint32> _prerequisiteGameObjects;
+    std::vector<uint32> _observeAuras;
     uint32 _killGateSpawn{0};
     Position _preparationPoint{};
     bool _hasRoleSeparatedPreparation{false};

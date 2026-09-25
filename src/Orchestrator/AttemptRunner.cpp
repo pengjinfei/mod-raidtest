@@ -1181,6 +1181,16 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         ctx.attemptElapsedMs -= _preBossElapsed;
         AttemptResult const r = _observer.Tick(ctx, diff);
         ctx.attemptElapsedMs += _preBossElapsed;
+        // 在 observer.Tick 之后采样：ctx.boss 由它每 tick 重新寻址，之前读可能悬垂。
+        if (!ctx.scenario->GetObserveAuras().empty())
+        {
+            _auraWatchElapsedMs += diff;
+            if (_auraWatchElapsedMs >= 1000)
+            {
+                _auraWatchElapsedMs = 0;
+                SampleAuraWatch(ctx);
+            }
+        }
         if (r != AttemptResult::Ongoing)
         {
             _result = r;
@@ -1724,6 +1734,41 @@ void AttemptRunner::UsePrerequisiteGameObjects(RunContext& ctx)
 
         if (selectable)
             object->Use(user);
+    }
+}
+
+void AttemptRunner::SampleAuraWatch(RunContext& ctx)
+{
+    // 只读观察（不改任何状态）：boss 战期间每秒记一次每个 bot 身上的指定光环、当前目标与离 boss 距离。
+    // 用途：量机制减益的覆盖率（如阿曼尼塔的 Mini 57055 / 解除它的 Potent Fungus 56648），
+    // 以及覆盖期间 bot 在打谁。value = 命中光环的位掩码（按 ObserveAuras 顺序，bit0 = 第一个）。
+    auto const& auras = ctx.scenario->GetObserveAuras();
+    for (Player* bot : ctx.bots)
+    {
+        if (!bot)
+            continue;
+
+        int32 mask = 0;
+        std::string list;
+        for (size_t i = 0; i < auras.size(); ++i)
+        {
+            Aura* aura = bot->GetAura(auras[i]);
+            if (aura)
+                mask |= int32(1) << i;
+            list += Acore::StringFormat("{}{}:{}:{}", i ? "," : "", auras[i], aura ? 1 : 0,
+                aura ? aura->GetDuration() : 0);
+        }
+
+        Unit* victim = bot->GetVictim();
+        CombatEvent e;
+        e.type = CombatEventType::State;
+        e.source = bot->GetGUID();
+        e.target = victim ? victim->GetGUID() : ObjectGuid::Empty;
+        e.actorEntry = victim && victim->IsCreature() ? victim->GetEntry() : 0;
+        e.value = mask;
+        e.detail = Acore::StringFormat("aura_watch:auras={} alive={} victim_entry={} dist_boss={:.1f}",
+            list, bot->IsAlive(), e.actorEntry, ctx.boss ? bot->GetDistance(ctx.boss) : -1.0f);
+        CombatEventBus::instance().Push(e);
     }
 }
 
