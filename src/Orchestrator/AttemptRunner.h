@@ -90,6 +90,7 @@ private:
     bool StartSummonTriggerPull(RunContext& ctx);
     bool StartGameObjectTriggerPull(RunContext& ctx);
     bool StartAreaTriggerPull(RunContext& ctx);
+    bool StartSelfEngage(RunContext& ctx);
     uint32 _gameObjectTriggerElapsedMs = 0;
     bool StartScriptedEventGossip(RunContext& ctx);
     void TickScriptedEvent(RunContext& ctx);

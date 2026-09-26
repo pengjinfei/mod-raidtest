@@ -1,0 +1,25 @@
+# 英雄魔环 / Ley-Guardian Eregos（27656），ilvl 200 档，龙背战（设计形态）。勘察：docs/testing/bosses/heroic-oculus/SURVEY.md §4，
+# 载具调研：docs/testing/VEHICLE-SUPPORT-STUDY.md。0:3,1:3,2:3：Drakos/Varos/Urom DONE（去掉 Eregos 的 NON_ATTACKABLE、
+# 龙拿到第 6 格技能、给龙 NPC 的前提成立）。bot 自己上龙（playerbots OC 无 master 分支）、飞过去开怪，框架用
+# EngageTrigger=self 只等遭遇开始（龙座位没有 CAN_ATTACK，AttackAction 拉不了怪）。准备点=开怪点=他下方 50 码的宝箱高台。
+# 龙的属性与 bot 装备无关，ilvl 档位对这场只影响下龙后的血量。
+[Scenario]
+MapId = 578
+BossEntry = 27656
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-occ
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1015.06
+EngageY = 1051.09
+EngageZ = 605.62
+EngageO = 0.5
+PreparationX = 1015.06
+PreparationY = 1051.09
+PreparationZ = 605.62
+PreparationO = 0.5
+FixtureInstanceData = 0:3,1:3,2:3
+EngageConfirmInstanceData = 3:1
+TimeoutSeconds = 600
+EngageTrigger = self

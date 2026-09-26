@@ -1004,7 +1004,8 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             }
 
             if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::GameObject ||
-                ctx.scenario->GetEngageTrigger() == EncounterTrigger::AreaTrigger)
+                ctx.scenario->GetEngageTrigger() == EncounterTrigger::AreaTrigger ||
+                ctx.scenario->GetEngageTrigger() == EncounterTrigger::Self)
             {
                 _gameObjectTriggerElapsedMs += diff;
                 Map* map = tank->GetMap();
@@ -1044,7 +1045,9 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                     return;
                 }
                 // AT 开战后常先走剧情（Svala 约 72 秒才落地攻击），预算放宽到 120 秒。
-                uint32 const budget = ctx.scenario->GetEngageTrigger() == EncounterTrigger::AreaTrigger ?
+                // self：bot 要先上龙、飞过去再开怪，同样给 120 秒。
+                uint32 const budget = ctx.scenario->GetEngageTrigger() == EncounterTrigger::AreaTrigger ||
+                        ctx.scenario->GetEngageTrigger() == EncounterTrigger::Self ?
                     120000 : kEngageConfirmBossStateMs;
                 if (_gameObjectTriggerElapsedMs < budget)
                     return;
@@ -2216,6 +2219,8 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
         return StartGameObjectTriggerPull(ctx);
     if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::AreaTrigger)
         return StartAreaTriggerPull(ctx);
+    if (ctx.scenario->GetEngageTrigger() == EncounterTrigger::Self)
+        return StartSelfEngage(ctx);
     if (!_prerequisiteGuids.empty())
     {
         for (ObjectGuid const& guid : _prerequisiteGuids)
@@ -2353,6 +2358,29 @@ bool AttemptRunner::StartGameObjectTriggerPull(RunContext& ctx)
     _stage = Stage::Pull;
     _pullStep = PullStep::AwaitTankAggro;
     RecordPhase("engage_gameobject_use", 0);
+    return true;
+}
+
+// EngageTrigger=self：不代任何 bot 开怪。放开跟随者，之后与 gameobject 开战一样只等遭遇开始的证据。
+bool AttemptRunner::StartSelfEngage(RunContext& ctx)
+{
+    Player* tank = FindTank(ctx);
+    if (!tank)
+    {
+        Abort("pull failed (roster has no tank)");
+        return false;
+    }
+    RestoreHeldFollowerStrategies();
+    for (Player* bot : ctx.bots)
+        if (bot && bot != tank)
+            CombatTrigger::RestoreFollowerAttackTagged(bot);
+    _pullTank = tank->GetGUID();
+    _gameObjectTriggerElapsedMs = 0;
+    _confirmTicks = 0;
+    _stuckTicks = 0;
+    _stage = Stage::Pull;
+    _pullStep = PullStep::AwaitTankAggro;
+    RecordPhase("engage_self_wait", 0);
     return true;
 }
 

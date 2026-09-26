@@ -16,6 +16,9 @@ enum class EncounterTrigger : uint8
     // 由站在 AreaTrigger 盒内的坦克走一遍核心的 CMSG_AREATRIGGER 处理（乌特加德之巅 Svala 的 AT 5140）。
     // bot 不像真人客户端那样上报进入触发区，核心也没有服务端 AT 扫描；核心自己校验 IsInAreaTriggerRadius。
     AreaTrigger = 3,
+    // 框架不代任何 bot 开怪，只放开跟随者、等遭遇开始的证据：开怪由 bot 自己的策略完成。
+    // 骑乘载具的战斗用它（魔环 Eregos：座位没有 CAN_ATTACK，AttackAction 在龙上一律失败，pull 走不通）。
+    Self = 4,
 };
 
 // 一场遭遇战的生效配置（一次 attempt 的静态常量，非运行状态）。

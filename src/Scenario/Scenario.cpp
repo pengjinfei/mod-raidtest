@@ -294,9 +294,11 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 _engageTrigger = EncounterTrigger::GameObject;
             else if (ToLower(value) == "areatrigger")
                 _engageTrigger = EncounterTrigger::AreaTrigger;
+            else if (ToLower(value) == "self")
+                _engageTrigger = EncounterTrigger::Self;
             else
             {
-                LOG_ERROR("raidtest", "Scenario: unknown EngageTrigger '{}' (expected 'pull', 'summon', 'gameobject' or 'areatrigger') "
+                LOG_ERROR("raidtest", "Scenario: unknown EngageTrigger '{}' (expected 'pull', 'summon', 'gameobject', 'areatrigger' or 'self') "
                     "at line {} in '{}'", value, lineNumber, filePath);
                 failed = true;
             }
