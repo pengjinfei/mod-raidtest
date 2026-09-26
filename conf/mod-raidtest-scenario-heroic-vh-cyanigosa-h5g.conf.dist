@@ -1,0 +1,27 @@
+# 英雄紫罗兰监狱 / 塞安妮苟萨（Cyanigosa 31134/31506），ilvl 200 档，隔离（跳过 18 波）。
+# 勘察：docs/testing/bosses/heroic-vh/SURVEY.md §7。原流程：第 18 波 Sinclari 召出她、跳到房间中央，
+# 10 秒后施 58668（只换模型，光环 56），再 2.5 秒去 NON_ATTACKABLE。这里在房间中央直接召出
+# （FixtureSummonCreature 同样去 NON_ATTACKABLE/免疫并置主动），少了换模型。她不看视野，由坦克拉。
+# los 实测：(1904,794) 地面 38.65，对召唤点视线通。
+# 击杀后实例作废（Cyanigosa DONE），每个 run 1 场。
+[Scenario]
+MapId = 608
+BossEntry = 31134
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-vh
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1904.0
+EngageY = 794.0
+EngageZ = 38.7
+EngageO = 2.4
+PreparationX = 1904.0
+PreparationY = 794.0
+PreparationZ = 38.7
+PreparationO = 2.4
+BossSpawnMode = script
+FixtureSummonCreature = 31134:1892.29,805.70,38.44,5.5
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
