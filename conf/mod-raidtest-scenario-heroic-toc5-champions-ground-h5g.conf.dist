@@ -1,0 +1,31 @@
+# 英雄冠军的试炼 / Grand Champions 地面阶段（隔离，跳过骑乘阶段）。勘察：docs/testing/bosses/heroic-toc5/SURVEY.md §1.4 方案 B。
+# 7:2 + 12×8:0 把进度推到 5（骑乘阶段结束，同时 despawn 全部 24 辆载具；需播报员在场），不产生冠军与小怪；
+# 再在两侧召固定三只（战士 35572 / 萨满 35571 / 法师 35569），它们 Reset 时按进度 5 直接进入地面战。
+# 三只都投降（不死）后进度到 6：KillOnInstanceData=4:6；进度停在 5 期间视为遭遇进行中（绑定的战士先投降也不判卡住）。
+# BossEntry 只能填一只（战士），承伤/输出统计以全场为准。准备点/开怪点待实测。
+[Scenario]
+MapId = 650
+BossEntry = 35572
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 20
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-toc
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 746.5
+EngageY = 638.0
+EngageZ = 411.6
+EngageO = 1.57
+PreparationX = 746.5
+PreparationY = 612.0
+PreparationZ = 411.3
+PreparationO = 1.57
+FixtureInstanceData = 7:2,8:0,8:0,8:0,8:0,8:0,8:0,8:0,8:0,8:0,8:0,8:0,8:0
+FixtureDespawnSpawns = 200014,200015,200016,200017,200018,200019,200020,200021,200022,200023,200024,200025,200026,200027,200028,200029,200030,200031,200032,200033,200034,200035,200036,200037,
+FixtureSummonCreature = 35572:736.70,650.02,412.40,4.71;35571:756.32,650.05,412.40,4.71;35569:746.50,650.65,411.70,4.71
+EngageConfirmInstanceData = 4:5
+KillOnInstanceData = 4:6
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

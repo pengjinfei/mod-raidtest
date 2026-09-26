@@ -811,6 +811,21 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     else
         _killSamples = 0;
 
+    // 以实例数据判完成（多只投降型 boss 都投降后，副本进度数据到位）。
+    if (ctx.scenario && ctx.scenario->HasKillOnInstanceData() && !ctx.bots.empty() && ctx.bots.front())
+    {
+        Map* dataMap = ctx.bots.front()->GetMap();
+        InstanceScript* script = dataMap && dataMap->ToInstanceMap() ? dataMap->ToInstanceMap()->GetInstanceScript() :
+            nullptr;
+        if (script && script->GetData(ctx.scenario->GetKillOnInstanceDataId()) >= ctx.scenario->GetKillOnInstanceDataValue())
+        {
+            LOG_INFO("raidtest", "AttemptObserver: kill confirmed (instance data {} >= {})",
+                ctx.scenario->GetKillOnInstanceDataId(), ctx.scenario->GetKillOnInstanceDataValue());
+            ctx.notes = "instance data completion";
+            return AttemptResult::Kill;
+        }
+    }
+
     // 投降型 boss（Mal'Ganis：致命伤害置 0 → 免疫、NON_ATTACKABLE、施放奖励法术后 evade），血量永远不归零。
     if (ctx.scenario && ctx.scenario->GetKillOnBossSurrender() && ctx.boss && ctx.boss->IsAlive() &&
         ctx.bossHpMin <= 10 && ctx.boss->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE))

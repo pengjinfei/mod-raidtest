@@ -158,6 +158,11 @@ public:
     // boss 不会死、打到残血后「投降」（致命伤害被吞掉，自己变成不可攻击并脱战，如 Mal'Ganis）：
     // 本 attempt 最低血量到过 10% 以下、且此刻带 UNIT_FLAG_NON_ATTACKABLE → 判 Kill。
     bool GetKillOnBossSurrender() const { return _killOnBossSurrender; }
+    // 以实例数据判完成（"<id>:<value>"，GetData(id) >= value 即 Kill）：多 boss、都投降不死的遭遇
+    // （冠军的试炼 Grand Champions：三只都投降后进度数据 4 到 6）。
+    bool HasKillOnInstanceData() const { return _hasKillOnInstanceData; }
+    uint32 GetKillOnInstanceDataId() const { return _killOnInstanceDataId; }
+    uint32 GetKillOnInstanceDataValue() const { return _killOnInstanceDataValue; }
     // 清怪全部完成后要「使用」的 gameobject 生成点（gameobject.guid）。用于副本自身的
     // 进度门禁：魔枢的三个封印球体（188526/188527/188528）必须被使用，
     // DATA_*_ORB 才会置 DONE，凯利丝塔萨的冰冻牢笼才会解除。
@@ -246,6 +251,9 @@ protected:
     bool _fixtureBossNotify{false};
     bool _masterlessAvoidAoe{false};
     bool _killOnBossSurrender{false};
+    bool _hasKillOnInstanceData{false};
+    uint32 _killOnInstanceDataId{0};
+    uint32 _killOnInstanceDataValue{0};
     std::vector<uint32> _prerequisiteGameObjects;
     uint32 _killGateSpawn{0};
     Position _preparationPoint{};

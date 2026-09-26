@@ -593,6 +593,16 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _masterlessAvoidAoe = flag == 1;
         }
+        else if (key == "KillOnInstanceData")
+        {
+            std::string const item = Acore::String::Trim(value);
+            size_t const colon = item.find(':');
+            if (colon == std::string::npos || !ParseUint32(item.substr(0, colon), _killOnInstanceDataId) ||
+                !ParseUint32(item.substr(colon + 1), _killOnInstanceDataValue))
+                failed = true;
+            else
+                _hasKillOnInstanceData = true;
+        }
         else if (key == "KillOnBossSurrender")
         {
             uint32 flag = 0;
