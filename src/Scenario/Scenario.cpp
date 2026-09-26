@@ -428,6 +428,15 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _eventStarterGossipAction = int32(parsed);
         }
+        else if (key == "EventStarterRequireVehicle")
+        {
+            if (!ParseBool(value, _eventStarterRequireVehicle))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EventStarterRequireVehicle '{}' at line {} in '{}'", value,
+                    lineNumber, filePath);
+                failed = true;
+            }
+        }
         else if (key == "EventStarterGossipWaitSeconds")
         {
             if (!ParseUint32(value, _eventStarterGossipWaitSeconds))
@@ -859,12 +868,16 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 nonTankPreparation[2], nonTankPreparation[3]);
         }
     }
-    if ((_eventStarterEntry == 0) != (_eventCompletionBossState == 0))
+    // A scripted event completes on a boss state or, for instances without boss states (Trial of the
+    // Champion keeps its progress in GetData), on KillOnInstanceData.
+    bool const eventCompletionByData = _eventStarterEntry && !_eventCompletionBossState && HasKillOnInstanceData();
+    if ((_eventStarterEntry == 0) != (_eventCompletionBossState == 0) && !eventCompletionByData)
     {
         LOG_ERROR("raidtest", "Scenario: EventStarterEntry and EventCompletionBossState must be configured together");
         failed = true;
     }
-    if (_eventStarterEntry && (!_dungeonScenario || _eventPhases.empty() || !_eventFailureEscortEntry))
+    if (_eventStarterEntry &&
+        (!_dungeonScenario || (_eventPhases.empty() && !eventCompletionByData) || !_eventFailureEscortEntry))
     {
         LOG_ERROR("raidtest", "Scenario: scripted event requires dungeon mode, EventPhases, EventFailureEscortEntry, "
             "and no PrerequisiteSpawns");

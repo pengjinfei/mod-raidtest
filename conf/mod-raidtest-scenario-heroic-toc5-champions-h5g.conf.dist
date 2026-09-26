@@ -1,0 +1,33 @@
+# 英雄冠军的试炼 / Grand Champions 完整遭遇（骑乘 3 波小怪 + 3 冠军骑乘 → 3 冠军地面），ilvl 200 档。
+# 勘察：docs/testing/bosses/heroic-toc5/SURVEY.md §1.1、§1.4 方案 A。无夹具：bot 自己拿枪、上马（wotlk-toc）。
+# 播报员（DB 35004，Reset 时 UpdateEntry 为 35005）只对骑在载具上的玩家给开战选项：框架等坦克自己上马后，
+# 按客户端路径选「跳过剧情」（GOSSIP_ACTION_INFO_DEF+2=1002，只省开场喊话与 escort，不省骑乘战）。
+# 完成 = 进度 GetData(4) >= 6（三只冠军都投降）。冠军 5 选 3 随机，绑定对象是播报员（不参战）。
+# 每个 run 1 次 attempt（英雄 DONE 后 PermBind）。
+[Scenario]
+MapId = 650
+BossEntry = 35005
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 30
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-toc
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+PreparationX = 746.5
+PreparationY = 612.0
+PreparationZ = 411.3
+PreparationO = 1.57
+EngageX = 746.5
+EngageY = 612.0
+EngageZ = 411.3
+EngageO = 1.57
+EventStarterEntry = 35005
+EventStarterGossipAction = 1002
+EventStarterRequireVehicle = true
+EventStarterGossipWaitSeconds = 90
+EventFailureEscortEntry = 35005
+KillOnInstanceData = 4:6
+EngageTrigger = pull
+TimeoutSeconds = 900
+MasterlessAvoidAoe = 1

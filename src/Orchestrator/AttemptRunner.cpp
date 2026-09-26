@@ -2518,7 +2518,8 @@ bool AttemptRunner::StartScriptedEventGossip(RunContext& ctx)
         Abort("scripted_event_failed: starter or tank unavailable");
         return false;
     }
-    if (!starter->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP))
+    bool const vehicleMissing = ctx.scenario->GetEventStarterRequireVehicle() && !tank->GetVehicle();
+    if (!starter->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP) || vehicleMissing)
     {
         // Scripts often put the gossip flag up only after a scene (HoR escape leader: ~21 s after the
         // confrontation starts). With a wait budget, stay in the current stage and retry next tick.
@@ -2528,7 +2529,8 @@ bool AttemptRunner::StartScriptedEventGossip(RunContext& ctx)
             _eventGossipFlagWaitStartMs = now ? now : 1;
         if (waitMs && now - _eventGossipFlagWaitStartMs < waitMs)
             return false;
-        Abort("scripted_event_failed: starter gossip unavailable");
+        Abort(vehicleMissing ? "scripted_event_failed: tank not on a vehicle" :
+                               "scripted_event_failed: starter gossip unavailable");
         return false;
     }
     _eventGossipFlagWaitStartMs = 0;
