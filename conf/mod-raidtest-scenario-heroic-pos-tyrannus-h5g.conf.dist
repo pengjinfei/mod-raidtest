@@ -1,0 +1,30 @@
+# 英雄萨隆矿坑 / 天灾领主泰兰努斯（Tyrannus 36658/36938，Rimefang 36661 的载具乘客，无 DB spawn），ilvl 200 档。
+# 勘测：docs/testing/bosses/heroic-pos/SURVEY.md §3。隔离形态：跳过隧道 gauntlet。
+# FixtureInstanceData = 0:3,1:3,4:5：Garfrost、Ick DONE，progress=5（AT 5633 的前提）。
+# 开战：坦克在 AT 5633（球心 (1006.9,179.0,628.2)，r51.5）内发 AT 包 → Gorkun 事件，约 38 秒后 Tyrannus 跳下参战。
+# BossSpawnMode=script：乘客不在 spawn-id 表里，按 entry 在网格里找。
+# 奴隶刷点旁的 Fallen Warrior/Skeleton 编队 202248/202163/202246/202165 夹具移除（会被友方奴隶拉进竞技场）。
+[Scenario]
+MapId = 658
+BossEntry = 36658
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-pos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1000.0
+EngageY = 170.0
+EngageZ = 628.5
+EngageO = 5.26
+PreparationX = 1000.0
+PreparationY = 170.0
+PreparationZ = 628.5
+PreparationO = 5.26
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 60
+FixtureDespawnSpawns = 202248,202163,202246,202165
+FixtureInstanceData = 0:3,1:3,4:5
+EngageTrigger = areatrigger
+EngageAreaTrigger = 5633
+TimeoutSeconds = 480
+MasterlessAvoidAoe = 1

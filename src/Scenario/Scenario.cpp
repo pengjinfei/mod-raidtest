@@ -882,9 +882,11 @@ bool Scenario::LoadFromFile(std::string const& filePath)
     if (_bossSpawnMode == BossSpawnMode::Script)
     {
         // 前置怪可以为空：boss 由夹具（FixtureInstanceData 等）召出时，直接进入恢复阶段等他出现。
-        if (_engageTrigger != EncounterTrigger::Pull)
+        // areatrigger：boss 是没有 DB spawn 的载具乘客（萨隆 Tyrannus 骑在 Rimefang 上），
+        // 由脚本在 AT 触发后放下来。
+        if (_engageTrigger != EncounterTrigger::Pull && _engageTrigger != EncounterTrigger::AreaTrigger)
         {
-            LOG_ERROR("raidtest", "Scenario: BossSpawnMode=script requires EngageTrigger=pull");
+            LOG_ERROR("raidtest", "Scenario: BossSpawnMode=script requires EngageTrigger=pull or areatrigger");
             failed = true;
         }
     }
