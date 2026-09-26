@@ -1,0 +1,26 @@
+# 英雄乌特加德之巅 / Skadi the Ruthless（26693/30807，HARD_RESET）+ Grauf，ilvl 200 档完整遭遇。勘察：docs/testing/bosses/heroic-up/SURVEY.md §3。
+# 开战：坦克站在 AT 4991 盒内，框架代发 CMSG_AREATRIGGER（与真人走进走廊相同），实例数据 2:1 确认。
+# 飞行阶段 Skadi 骑 Grauf、不可选中；bot 自己打 Harpooner、捡鱼叉、在 Grauf 东端悬停时用发射器（playerbots UP 策略），
+# 三发打下 Grauf 后打地面阶段。清掉 Gortok 房间东端巡逻编队 126086（离 Skadi 45–58 码）。准备点=AT 盒中心（坦克须在盒内），开怪点=东端三台发射器之间：AT 后全队走过去在那里清刷出的怪、开炮（run1316：鱼叉手独自东跑，死在途中）。待实测。
+[Scenario]
+MapId = 575
+BossEntry = 26693
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-up
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 482.0
+EngageY = -514.0
+EngageZ = 105.5
+EngageO = 0.0
+PreparationX = 330.0
+PreparationY = -508.0
+PreparationZ = 104.5
+PreparationO = 0.0
+FixtureDespawnSpawns = 126078,126081,126082,126086
+EngageTrigger = areatrigger
+EngageAreaTrigger = 4991
+EngageConfirmInstanceData = 2:1
+TimeoutSeconds = 600
+MasterlessAvoidAoe = 1
