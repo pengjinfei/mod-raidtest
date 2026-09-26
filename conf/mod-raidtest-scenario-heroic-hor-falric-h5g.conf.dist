@@ -1,0 +1,27 @@
+# 英雄映像大厅 / 法瑞克（Falric 38112/38599）：第 1–4 波灵魂（3/3/4/4）+ 第 5 波 Falric，ilvl 200 档。
+# 勘测：docs/testing/bosses/heroic-hor/SURVEY.md §1。
+# FixturePersistentData=0:1（开场剧情已看过）→ 副本原生的“团灭后重开”：全员活着站在大厅中心 40 码内，
+# 约 15–20 秒后第 1 波自己开始（正常规则，只跳过一次性剧情）。
+# 开战确认：波次计数 GetData(8) >= 1（第 2 波起仍算遭遇进行中）。
+[Scenario]
+MapId = 668
+BossEntry = 38112
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hor
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 5300.0
+EngageY = 1995.0
+EngageZ = 707.7
+EngageO = 0.8
+PreparationX = 5300.0
+PreparationY = 1995.0
+PreparationZ = 707.7
+PreparationO = 0.8
+FixturePersistentData = 0:1
+EngageTrigger = self
+EngageConfirmInstanceData = 8:1
+EngageConfirmInstanceDataAtLeast = 1
+TimeoutSeconds = 600
+MasterlessAvoidAoe = 1

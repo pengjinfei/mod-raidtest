@@ -929,8 +929,8 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
         Map* stateMap = ctx.bots.front()->GetMap();
         InstanceScript* script = stateMap && stateMap->ToInstanceMap() ?
             stateMap->ToInstanceMap()->GetInstanceScript() : nullptr;
-        encounterStateActive = script && script->GetData(ctx.scenario->GetEngageConfirmInstanceDataId()) ==
-            ctx.scenario->GetEngageConfirmInstanceDataValue();
+        encounterStateActive = script && ctx.scenario->EngageConfirmInstanceDataMet(
+            script->GetData(ctx.scenario->GetEngageConfirmInstanceDataId()));
     }
     // 双 boss：gate 未死期间 encounter 仍进行（BossEntry 可能已死变幽灵），卡壳判定
     // 挂起，终态交给 Kill（gate 死）/ Wipe / Timeout。

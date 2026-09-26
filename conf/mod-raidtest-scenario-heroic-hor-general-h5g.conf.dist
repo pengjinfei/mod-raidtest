@@ -1,0 +1,27 @@
+# 英雄映像大厅 / 冰霜誓约将军（Frostsworn General 36723/37720），ilvl 200 档，隔离（跳过 Falric/Marwyn 波次）。
+# 勘测：docs/testing/bosses/heroic-hor/SURVEY.md §3。
+# FixtureBossStates=1:3（Marwyn DONE，先于召唤执行，新召的将军不会被隐藏）；移除隐身的 DB 将军 1972019，
+# 在原位召一只（家 = 召唤点，离家 30 码 evade）。反射体由副本在开战时分配。
+[Scenario]
+MapId = 668
+BossEntry = 36723
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hor
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 5400.0
+EngageY = 2105.0
+EngageZ = 707.7
+EngageO = 0.8
+PreparationX = 5385.0
+PreparationY = 2090.0
+PreparationZ = 707.7
+PreparationO = 0.8
+BossSpawnMode = script
+FixtureBossStates = 1:3
+FixtureDespawnSpawns = 1972019
+FixtureSummonCreature = 36723:5413.92,2116.50,707.70,3.95
+EngageTrigger = pull
+TimeoutSeconds = 300
+MasterlessAvoidAoe = 1

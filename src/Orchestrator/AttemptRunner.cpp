@@ -1013,8 +1013,8 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 bool started = false;
                 std::string how;
                 if (script && ctx.scenario->HasEngageConfirmInstanceData() &&
-                    script->GetData(ctx.scenario->GetEngageConfirmInstanceDataId()) ==
-                        ctx.scenario->GetEngageConfirmInstanceDataValue())
+                    ctx.scenario->EngageConfirmInstanceDataMet(
+                        script->GetData(ctx.scenario->GetEngageConfirmInstanceDataId())))
                 {
                     started = true;
                     how = "instance_data";

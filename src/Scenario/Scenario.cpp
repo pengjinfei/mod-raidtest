@@ -462,6 +462,11 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _hasEngageConfirmInstanceData = true;
         }
+        else if (key == "EngageConfirmInstanceDataAtLeast")
+        {
+            if (!ParseBool(value, _engageConfirmInstanceDataAtLeast))
+                failed = true;
+        }
         else if (key == "EngageAreaTrigger")
         {
             if (!ParseUint32(value, _engageAreaTrigger) || !_engageAreaTrigger)

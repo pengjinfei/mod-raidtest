@@ -99,6 +99,13 @@ public:
     bool HasEngageConfirmInstanceData() const { return _hasEngageConfirmInstanceData; }
     uint32 GetEngageConfirmInstanceDataId() const { return _engageConfirmInstanceDataId; }
     uint32 GetEngageConfirmInstanceDataValue() const { return _engageConfirmInstanceDataValue; }
+    // EngageConfirmInstanceDataAtLeast=1：改为 GetData(<id>) >= <value>。用于一路递增的进度值
+    // （映像大厅波次计数 8：第 2 波起 != 1，但遭遇仍在进行）。
+    bool EngageConfirmInstanceDataMet(uint32 data) const
+    {
+        return _engageConfirmInstanceDataAtLeast ? data >= _engageConfirmInstanceDataValue :
+            data == _engageConfirmInstanceDataValue;
+    }
     // EngageTrigger=gameobject：坦克要使用的 gameobject spawn（须在交互距离内，不代为移动）。
     uint32 GetEngageGameObjectSpawn() const { return _engageGameObjectSpawn; }
     // EngageTrigger=areatrigger：AreaTrigger id（坦克须在开怪点、即 AT 盒内；核心自己校验）。
@@ -228,6 +235,7 @@ protected:
     bool _hasEngageConfirmInstanceData{false};
     uint32 _engageConfirmInstanceDataId{0};
     uint32 _engageConfirmInstanceDataValue{0};
+    bool _engageConfirmInstanceDataAtLeast{false};
     uint32 _engageGameObjectSpawn{0};
     uint32 _engageAreaTrigger{0};
     uint32 _engageConfirmBossStateValue{0};
