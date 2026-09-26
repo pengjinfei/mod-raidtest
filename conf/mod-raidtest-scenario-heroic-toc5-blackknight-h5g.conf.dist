@@ -1,0 +1,29 @@
+# 英雄冠军的试炼 / The Black Knight（35451），ilvl 200 档隔离 boss 战。勘察：docs/testing/bosses/heroic-toc5/SURVEY.md §4。
+# 1:3 把进度置 8（跳过大勇士与 Argent 挑战），6:0 = 第三次播报员 gossip：副本自己召狮鹫、落地、黑骑士杀播报员后
+# 自行 DoZoneInCombat，战斗本体按正常规则。三阶段之间他会假死（NON_ATTACKABLE），不能开 KillOnBossSurrender。
+# 清掉 24 匹坐骑。每个实例只能打死一次（播报员不回来）。准备点=竞技场南侧，开怪点=他最后走到的点（待实测）。
+[Scenario]
+MapId = 650
+BossEntry = 35451
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 90
+ScriptBossRequireActive = 1
+ScriptBossAcceptAutoEngage = 1
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-toc
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 746.81
+EngageY = 623.15
+EngageZ = 411.42
+EngageO = 1.57
+PreparationX = 746.6
+PreparationY = 600.0
+PreparationZ = 411.4
+PreparationO = 1.57
+FixtureInstanceData = 1:3,6:0
+FixtureDespawnSpawns = 200014,200015,200016,200017,200018,200019,200020,200021,200022,200023,200024,200025,200026,200027,200028,200029,200030,200031,200032,200033,200034,200035,200036,200037,
+TimeoutSeconds = 600
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

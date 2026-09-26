@@ -1,0 +1,27 @@
+# 英雄魔环 / Mage-Lord Urom（27655），ilvl 200 档隔离本体战（跳过三个外环台，那部分原设计要骑龙）。勘察：SURVEY.md §3（路 1）。
+# 0:3,1:3 把 Drakos、Varos 记为 DONE（Urom 的 NON_ATTACKABLE 门禁）；清掉外环 1 号台的 DB Urom，在内环点召一只：
+# 离内环点 <20 码即判为阶段 3，直接进本体战。每个实例一场（团灭后 home 回外环）。准备点=bot 策略的内环安全点（待实测）。
+[Scenario]
+MapId = 578
+BossEntry = 27655
+BossSpawnMode = script
+ScriptBossAppearTimeoutSeconds = 20
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-occ
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1128.0
+EngageY = 1068.0
+EngageZ = 508.4
+EngageO = 2.3
+PreparationX = 1138.88
+PreparationY = 1052.22
+PreparationZ = 508.36
+PreparationO = 2.3
+FixtureInstanceData = 0:3,1:3
+FixtureDespawnSpawns = 100220
+FixtureSummonCreature = 27655:1118.31,1080.38,508.36,4.25
+TimeoutSeconds = 480
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
