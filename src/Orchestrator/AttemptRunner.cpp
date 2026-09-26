@@ -7,6 +7,9 @@
 #include <fstream>
 #include <set>
 #include "DatabaseEnv.h"
+#include "GameTime.h"
+#include "ScriptMgr.h"
+#include "ScriptedGossip.h"
 #include "InstanceSaveMgr.h"
 #include "InstanceScript.h"
 #include "GameObject.h"
@@ -2517,11 +2520,25 @@ bool AttemptRunner::StartScriptedEventGossip(RunContext& ctx)
     }
     if (!starter->HasNpcFlag(UNIT_NPC_FLAG_GOSSIP))
     {
+        // Scripts often put the gossip flag up only after a scene (HoR escape leader: ~21 s after the
+        // confrontation starts). With a wait budget, stay in the current stage and retry next tick.
+        uint32 const waitMs = ctx.scenario->GetEventStarterGossipWaitSeconds() * IN_MILLISECONDS;
+        uint32 const now = GameTime::GetGameTimeMS().count();
+        if (!_eventGossipFlagWaitStartMs)
+            _eventGossipFlagWaitStartMs = now ? now : 1;
+        if (waitMs && now - _eventGossipFlagWaitStartMs < waitMs)
+            return false;
         Abort("scripted_event_failed: starter gossip unavailable");
         return false;
     }
+    _eventGossipFlagWaitStartMs = 0;
 
-    starter->AI()->sGossipSelect(tank, 0, 0);
+    // A client's gossip choice reaches CreatureScript::OnGossipSelect first and the AI hook only when the script
+    // does not handle it (ScriptMgr / WorldSession::HandleGossipSelectOptionOpcode). Scenarios that name an
+    // action take the same route; the others keep the AI-only call they were validated with.
+    int32 const action = ctx.scenario->GetEventStarterGossipAction();
+    if (action < 0 || !sScriptMgr->OnGossipSelect(tank, starter, GOSSIP_SENDER_MAIN, uint32(action)))
+        starter->AI()->sGossipSelect(tank, 0, 0);
     CombatEvent event;
     event.type = CombatEventType::State;
     event.source = starter->GetGUID();

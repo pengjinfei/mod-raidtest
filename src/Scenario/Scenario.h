@@ -120,6 +120,11 @@ public:
     uint32 GetEventFailureEscortEntry() const { return _eventFailureEscortEntry; }
     std::vector<uint32> const& GetEventTrackEntries() const { return _eventTrackEntries; }
     bool GetEventFollowStarter() const { return _eventFollowStarter; }
+    // Optional: gossip option action for the starter's CreatureScript::OnGossipSelect (old-style scripts such as
+    // the HoR escape leader keep their logic there, not in the AI). -1 = only the AI hook (default).
+    int32 GetEventStarterGossipAction() const { return _eventStarterGossipAction; }
+    // Optional: wait this long for the starter to show its gossip flag before giving up (0 = abort at once).
+    uint32 GetEventStarterGossipWaitSeconds() const { return _eventStarterGossipWaitSeconds; }
     // 团队副本难度（RAID_DIFFICULTY_10MAN_NORMAL=0 / 25MAN_NORMAL=1，DBCEnums.h）。
     // 场景 conf 可选键 RaidDifficulty = 10|25（缺省 10）。影响：①进本前全队
     // Player::SetRaidDifficulty → 实例按对应难度加载；②roster 实际起人数量（由
@@ -245,6 +250,8 @@ protected:
     uint32 _eventFailureEscortEntry{0};
     std::vector<uint32> _eventTrackEntries;
     bool _eventFollowStarter{false};
+    int32 _eventStarterGossipAction{-1};
+    uint32 _eventStarterGossipWaitSeconds{0};
     BossSpawnMode _bossSpawnMode{BossSpawnMode::Database};
     uint32 _scriptBossAppearTimeoutSeconds{30};
     float _scriptBossReadyRadius{0.0f};

@@ -207,6 +207,7 @@ private:
     ObjectGuid _summonTriggerGuid;
     uint32 _eventPhase{0};
     uint32 _eventGossipWaitMs{0};
+    uint32 _eventGossipFlagWaitStartMs{0};
     std::vector<ObjectGuid> _heldFollowers; // 暂停 attack tagged、等待 tank lead 的从属 bot
     AttemptObserver _observer;
     AttemptResult _result{AttemptResult::Ongoing};

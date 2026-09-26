@@ -416,6 +416,27 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 _eventTrackEntries.push_back(parsed);
             }
         }
+        else if (key == "EventStarterGossipAction")
+        {
+            uint32 parsed = 0;
+            if (!ParseUint32(value, parsed))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EventStarterGossipAction '{}' at line {} in '{}'", value,
+                    lineNumber, filePath);
+                failed = true;
+            }
+            else
+                _eventStarterGossipAction = int32(parsed);
+        }
+        else if (key == "EventStarterGossipWaitSeconds")
+        {
+            if (!ParseUint32(value, _eventStarterGossipWaitSeconds))
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid EventStarterGossipWaitSeconds '{}' at line {} in '{}'", value,
+                    lineNumber, filePath);
+                failed = true;
+            }
+        }
         else if (key == "EventFollowStarter")
         {
             if (!ParseBool(value, _eventFollowStarter))

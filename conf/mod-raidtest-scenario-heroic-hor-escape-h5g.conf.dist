@@ -1,0 +1,35 @@
+# 英雄映像大厅 / 巫妖王逃亡（领袖 Jaina 36955，联盟队伍；LK 36954 打不死），ilvl 200 档。
+# 勘测：docs/testing/bosses/heroic-hor/SURVEY.md §4。隔离形态：跳过前三战与对峙剧情，逃亡本身完整。
+# FixtureInstanceData=5:3（将军 DONE：LK 与领袖现身）、7:3（对峙剧情，约 21 秒后领袖挂 gossip）。
+# 领袖的 gossip 写在 CreatureScript::OnGossipSelect（不看 action），EventStarterGossipAction 让框架走同一路径；
+# EventStarterGossipWaitSeconds 等对峙结束。完成 = BossState(2)=DONE（LK 走完全程且四面冰墙都破）。
+# 每个 run 只跑 1 次 attempt：DONE 后英雄 PermBind，失败后召唤物与冰墙不清。
+[Scenario]
+MapId = 668
+BossEntry = 36955
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hor
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+PreparationX = 5582.0
+PreparationY = 2230.0
+PreparationZ = 733.0
+PreparationO = 3.9
+EngageX = 5582.0
+EngageY = 2230.0
+EngageZ = 733.0
+EngageO = 3.9
+BossSpawnMode = script
+FixtureInstanceData = 5:3,7:3
+EventStarterEntry = 36955
+EventStarterGossipAction = 1001
+EventStarterGossipWaitSeconds = 45
+EventPhases = 2:1
+EventCompletionBossState = 2
+EventFailureEscortEntry = 36955
+EventFollowStarter = true
+EventTrackEntries = 37069,36941,36940
+EngageTrigger = pull
+TimeoutSeconds = 600
+MasterlessAvoidAoe = 1
