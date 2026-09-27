@@ -2,6 +2,8 @@
 # 开战：坦克站在 AT 4991 盒内，框架代发 CMSG_AREATRIGGER（与真人走进走廊相同），实例数据 2:1 确认。
 # 飞行阶段 Skadi 骑 Grauf、不可选中；bot 自己打 Harpooner、捡鱼叉、在 Grauf 东端悬停时用发射器（playerbots UP 策略），
 # 三发打下 Grauf 后打地面阶段。清掉 Gortok 房间东端巡逻编队 126086（离 Skadi 45–58 码）。准备点=AT 盒中心（坦克须在盒内），开怪点=东端三台发射器之间：AT 后全队走过去在那里清刷出的怪、开炮（run1316：鱼叉手独自东跑，死在途中）。待实测。
+# 2026-09-27：开怪点 = 准备点，AT 触发后框架不再整队走到发射器之间（整队穿过走廊时坦克不拉怪，后面的人被
+# 4–5 只战士同时打死，run1401–1405/1426–1430）；推进由 bot 坦克逐只拉走廊小怪完成（wotlk-up "skadi tank pull next"）。
 [Scenario]
 MapId = 575
 BossEntry = 26693
@@ -10,9 +12,9 @@ DungeonDifficulty = heroic
 Strategy = wotlk-up
 RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
 GearProfile = none
-EngageX = 482.0
-EngageY = -514.0
-EngageZ = 105.5
+EngageX = 330.0
+EngageY = -508.0
+EngageZ = 104.5
 EngageO = 0.0
 PreparationX = 330.0
 PreparationY = -508.0
