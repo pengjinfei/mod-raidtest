@@ -68,6 +68,8 @@ public:
     RaidTestUnitScript();
     void OnHeal(Unit* healer, Unit* receiver, uint32& gain) override;
     void OnDamage(Unit* attacker, Unit* victim, uint32& damage) override;
+    // 只读：训练木桩（npc_training_dummy）在 DamageTaken 里把伤害改成 0，而 OnDamage 在它之后；这里先记下原始值。
+    uint32 DealDamage(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType damagetype) override;
     void OnUnitDeath(Unit* unit, Unit* killer) override;
     void OnUnitEnterEvadeMode(Unit* unit, uint8 evadeReason) override;
     void OnUnitEnterCombat(Unit* unit, Unit* victim) override;
@@ -87,6 +89,20 @@ namespace
         uint32 atMs{0};
     };
     std::map<std::pair<ObjectGuid, ObjectGuid>, DamageSpellHint> sDamageSpellHints;
+    // 同一次 Unit::DealDamage 调用链里打在训练木桩上的原始伤害（DealDamage 钩子 → AI DamageTaken 置 0 → OnDamage）。
+    struct DummyRawDamage
+    {
+        ObjectGuid attacker;
+        ObjectGuid victim;
+        uint32 damage{0};
+    };
+    DummyRawDamage sDummyRawDamage;
+
+    bool IsTrainingDummy(Unit const* unit)
+    {
+        Creature const* creature = unit ? unit->ToCreature() : nullptr;
+        return creature && creature->GetScriptName() == "npc_training_dummy";
+    }
     // 玩家最近一次经 OnUnitDeath 记下死亡的时刻，供 OnPlayerJustDied 去重。只在世界线程读写。
     std::map<ObjectGuid, uint32> sPlayerUnitDeathAt;
     // 同一调用链内即被取用；超过这个时间仍未取用（伤害被完全吸收等）就视为过期。
@@ -518,6 +534,13 @@ void RaidTestUnitScript::ModifyMeleeDamage(Unit* target, Unit* attacker, uint32&
     NoteDamageSpell(attacker, target, 0);
 }
 
+uint32 RaidTestUnitScript::DealDamage(Unit* attacker, Unit* victim, uint32 damage, DamageEffectType /*damagetype*/)
+{
+    if (CombatEventBus::instance().IsActive() && IsTrainingDummy(victim))
+        sDummyRawDamage = { attacker ? attacker->GetGUID() : ObjectGuid::Empty, victim->GetGUID(), damage };
+    return damage;
+}
+
 void RaidTestUnitScript::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
 {
     CombatEventBus& bus = CombatEventBus::instance();
@@ -539,8 +562,15 @@ void RaidTestUnitScript::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
     if (victim)
         e.target = victim->GetGUID();
 
-    // value（伤害量）是关键；uint32 超 int32 上限时截断到 INT32_MAX 防溢出。
-    e.value = int32(std::min<uint32>(damage, static_cast<uint32>(INT32_MAX)));
+    // value（伤害量）是关键；uint32 超 int32 上限时截断到 INT32_MAX 防溢出。训练木桩记它改零前的原始伤害。
+    uint32 recorded = damage;
+    if (victim && sDummyRawDamage.victim == victim->GetGUID() &&
+        sDummyRawDamage.attacker == (attacker ? attacker->GetGUID() : ObjectGuid::Empty))
+    {
+        recorded = sDummyRawDamage.damage;
+        sDummyRawDamage = {};
+    }
+    e.value = int32(std::min<uint32>(recorded, static_cast<uint32>(INT32_MAX)));
     e.spellId = TakeDamageSpell(attacker, victim);
     e.detail = CreatureOriginDetail(attacker);
     if (attacker && attacker->IsCreature() && attacker->GetEntry() == kSearingGazeTriggerEntry && victim)

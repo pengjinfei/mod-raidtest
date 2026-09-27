@@ -1,0 +1,25 @@
+# 输出基准：Heroic Training Dummy（31146，83 级 boss 级别，与团本 boss 同等级；npc_training_dummy 不会死、不还手）。
+# 地点借紫罗兰监狱房间中央（Cyanigosa 场景的召唤点，视线已实测），不触发任何副本事件。
+# 木桩不会死：每场按 TimeoutSeconds 固定时长收尾（结果记 timeout），只看输出。
+# 木桩在 DamageTaken 里把伤害改成 0，raidtest 在 DealDamage 钩子里记原始值（CombatEventBus）。
+# 用途：量各天赋的 DPS、技能构成与 GCD 利用率，作为循环修正的前后对照；不是遭遇战验收。
+[Scenario]
+MapId = 608
+BossEntry = 31146
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-vh
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v1.conf"
+GearProfile = none
+EngageX = 1904.0
+EngageY = 794.0
+EngageZ = 38.7
+EngageO = 2.4
+PreparationX = 1904.0
+PreparationY = 794.0
+PreparationZ = 38.7
+PreparationO = 2.4
+BossSpawnMode = script
+FixtureSummonCreature = 31146:1892.29,805.70,38.44,5.5
+TimeoutSeconds = 180
+EngageTrigger = pull
