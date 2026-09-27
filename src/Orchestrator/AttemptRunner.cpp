@@ -1108,7 +1108,9 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 return;
             }
 
-            if (ctx.boss->GetVictim() != tank)
+            // A training dummy (output benchmark) never picks a victim: being in combat is the whole pull.
+            bool const neverAttacks = ctx.boss->GetScriptName() == "npc_training_dummy";
+            if (!neverAttacks && ctx.boss->GetVictim() != tank)
             {
                 _tankAggroElapsedMs = 0;
                 _tankAggroAcquireMs += diff;
