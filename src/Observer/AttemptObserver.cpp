@@ -757,11 +757,14 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
                     ++membersWithBoss;
             status.detail = Acore::StringFormat(
                 "boss_state:combat={} evade={} unreachable={} evading_attacks={} regen={} unreachable_guid={} "
-                "engaged={} threat={}/{} members_with_boss={} threatened_by_me={} flags=0x{:X}",
+                "engaged={} threat={}/{} members_with_boss={} threatened_by_me={} flags=0x{:X} "
+                "pos={:.2f},{:.2f},{:.2f} victim={}",
                 ctx.boss->IsInCombat(), ctx.boss->IsInEvadeMode(), ctx.boss->CanNotReachTarget(),
                 ctx.boss->IsEvadingAttacks(), ctx.boss->IsNotReachableAndNeedRegen(),
                 ctx.boss->GetCannotReachTarget().GetCounter(), ctx.boss->IsEngaged(), threatOnline, threatAll,
-                membersWithBoss, ctx.boss->GetThreatMgr().GetThreatenedByMeList().size(), ctx.boss->GetUnitFlags());
+                membersWithBoss, ctx.boss->GetThreatMgr().GetThreatenedByMeList().size(), ctx.boss->GetUnitFlags(),
+                ctx.boss->GetPositionX(), ctx.boss->GetPositionY(), ctx.boss->GetPositionZ(),
+                ctx.boss->GetVictim() ? ctx.boss->GetVictim()->GetGUID().GetCounter() : 0);
             CombatEventBus::instance().Push(status);
         }
     }
