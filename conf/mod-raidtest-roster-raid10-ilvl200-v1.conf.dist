@@ -3,7 +3,7 @@
 # 5–9 新增：鲜血 DK 坦、神圣骑、毁灭术、平衡德、生存猎。装备口径同 heroic5：早期英雄 5 人本 boss 掉落 ilvl 200
 #   （选装脚本按天赋属性权重逐槽挑，只取 boss 掉落，不含冠军试炼/ICC 三本/团本套装），圣物为 15 纹章商人物品。
 #   术士、平衡德照搬火法的布甲套（法强在部分物品触发法术里，属性打分会低估），德鲁伊主手换匕首 37377。
-#   饰品照搬同职责角色；附魔/宝石照搬同职责角色（坦=防骑，治=戒律，法=火法，物理=刺杀贼）。
+#   雕纹按槽位类型排序（大、小、小、大、小、大）；饰品照搬同职责角色；附魔/宝石照搬同职责角色（坦=防骑，治=戒律，法=火法，物理=刺杀贼）。
 
 [Roster.0]
 Name = "Nfive-Tank"
@@ -238,7 +238,7 @@ Race = "human"
 Class = "deathknight"
 Role = "tank"
 TalentSpec = "dk_blood"
-Glyphs = 532,522,528,514,772,553
+Glyphs = 532,522,514,528,553,772
 RequiredSpells = 49909,49921,49924,49938,48792,55233
 RequireNoCheats = true
 MinDefenseSkill = 535
@@ -280,7 +280,7 @@ Race = "draenei"
 Class = "paladin"
 Role = "heal"
 TalentSpec = "paladin_holy"
-Glyphs = 196,452,199,454,701,455
+Glyphs = 196,452,454,199,455,701
 RequiredSpells = 48782,48785,53563,48825
 RequireNoCheats = true
 Supplies = 21177,33443,33445,33448
@@ -326,7 +326,7 @@ Race = "gnome"
 Class = "warlock"
 Role = "dps"
 TalentSpec = "warlock_destroy"
-Glyphs = 273,478,272,477,760,482
+Glyphs = 273,478,477,272,482,760
 RequiredSpells = 47838,17962,47811
 RequireNoCheats = true
 Supplies = 6265,33443,33445,33448
@@ -367,7 +367,7 @@ Race = "nightelf"
 Class = "druid"
 Role = "dps"
 TalentSpec = "druid_balance"
-Glyphs = 175,435,176,434,178,613
+Glyphs = 175,435,434,176,613,178
 RequiredSpells = 48465,48461,48463,48468
 RequireNoCheats = true
 Supplies = 44605,44614,33443,33445,33448
@@ -408,7 +408,7 @@ Race = "nightelf"
 Class = "hunter"
 Role = "dps"
 TalentSpec = "hunter_survival"
-Glyphs = 366,439,691,440,368,441
+Glyphs = 366,439,440,691,441,368
 RequiredSpells = 60053,49052,49001
 RequireNoCheats = true
 Supplies = 41165,33443

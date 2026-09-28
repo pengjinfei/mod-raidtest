@@ -443,9 +443,15 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                     followersOk = RosterLogin::TeleportToRaid(nonTankFollowers, ctx.scenario->GetMapId(),
                         ctx.scenario->GetNonTankPreparationPoint(), leader) && followersOk;
             }
-            else if (!nonTankFollowers.empty())
-                followersOk = RosterLogin::TeleportToRaid(nonTankFollowers, ctx.scenario->GetMapId(),
-                    ctx.scenario->GetPreparationPoint(), leader);
+            else
+            {
+                // One preparation point for everyone. Tank followers (an off-tank; slot 0 is the leader) were left
+                // out here, which a 5-player group with one tank never showed: the raid 10 blood DK stayed behind.
+                std::vector<Player*> followers(ctx.bots.begin() + 1, ctx.bots.end());
+                if (!followers.empty())
+                    followersOk = RosterLogin::TeleportToRaid(followers, ctx.scenario->GetMapId(),
+                        ctx.scenario->GetPreparationPoint(), leader);
+            }
             if (!followersOk)
                 LOG_WARN("raidtest", "AttemptRunner: follower teleport request rejected");
             _followersTeleportSent = true;

@@ -1,20 +1,22 @@
 # 10 人输出基准：Heroic Training Dummy（31146，83 级 boss 级别，不死不还手），方法同 bench-dummy-h5g（docs/testing/DPS-BENCHMARK.md）。
-# 紫罗兰监狱是 5 人本进不去 10 人，借纳克萨玛斯（10 人）入口传送平台：附近只有小动物，木桩召在南侧传送落点，
-# 全队站在其东约 21 码。不触发任何首领/事件。每场 180 秒按超时收尾，只看输出。
+# 紫罗兰监狱是 5 人本进不去 10 人，借纳克萨玛斯（10 人）入口传送平台：附近只有小动物。平台半径约 15 码、中央传送台
+# 与四个落点的拱门挡视线（los 探针），所以准备点在东北斜角距中心 6 码、木桩在同方向 14 码处，相距 8 码、视线通。不触发任何首领/事件。每场 180 秒按超时收尾，只看输出。
 [Scenario]
 MapId = 533
 BossEntry = 31146
 RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
 GearProfile = none
-PreparationX = 3013.5
-PreparationY = -3434.4
-PreparationZ = 294.0
-PreparationO = 3.14
-EngageX = 3013.5
-EngageY = -3434.4
-EngageZ = 294.0
-EngageO = 3.14
+PreparationX = 3009.9
+PreparationY = -3430.2
+PreparationZ = 293.9
+PreparationO = 0.79
+EngageX = 3009.9
+EngageY = -3430.2
+EngageZ = 293.9
+EngageO = 0.79
 BossSpawnMode = script
-FixtureSummonCreature = 31146:2992.5,-3434.42,293.94,0.0
+FixtureSummonCreature = 31146:3015.6,-3424.5,292.8,3.93
 TimeoutSeconds = 180
 EngageTrigger = pull

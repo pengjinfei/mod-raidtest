@@ -164,6 +164,14 @@ bool RosterLogin::ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots
             botAI->ChangeStrategy("+attack tagged", BOT_STATE_NON_COMBAT);
             ++applied;
         }
+        // A level 80 roster death knight has done the Ebon Hold starter chain; that chain ends with Death Gate
+        // (50977), without which Player::TeleportTo keeps the knight in Acherus (map 609).
+        constexpr uint32 SPELL_DEATH_GATE = 50977;
+        if (bot->getClass() == CLASS_DEATH_KNIGHT && !bot->HasSpell(SPELL_DEATH_GATE))
+        {
+            bot->learnSpell(SPELL_DEATH_GATE);
+            LOG_INFO("raidtest", "RosterLogin: death knight {} learned Death Gate (starter chain)", bot->GetName());
+        }
         // Roster characters are built offline, where PlayerbotFactory::InitPet (it needs a map) never runs, so a
         // hunter came into every run without a pet. Tame one once in world; it is saved and stays the same after.
         if (bot->getClass() == CLASS_HUNTER && !bot->GetPet() &&

@@ -965,12 +965,17 @@ bool RosterBuilder::PrepareCharacter(Player* bot, RosterSlot const& slot)
     for (uint32 id : slot.supplies)
     {
         auto const* item = sObjectMgr->GetItemTemplate(id);
-        if (!item || item->InventoryType != INVTYPE_NON_EQUIP)
+        // Ammo is a supply too (a hunter fires one per shot); it takes a full stack and is loaded, otherwise the
+        // character keeps shooting the starter quiver's Rough Arrows.
+        bool const ammo = item && item->InventoryType == INVTYPE_AMMO;
+        if (!item || (item->InventoryType != INVTYPE_NON_EQUIP && !ammo))
             return false;
-        uint32 const desired = std::min<uint32>(20, item->GetMaxStackSize());
+        uint32 const desired = ammo ? item->GetMaxStackSize() : std::min<uint32>(20, item->GetMaxStackSize());
         uint32 const count = bot->GetItemCount(id);
         if (count < desired && !bot->AddItem(id, desired - count))
             return false;
+        if (ammo)
+            bot->SetAmmo(id);
     }
     bot->SaveToDB(false, false);
     return true;
