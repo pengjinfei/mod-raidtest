@@ -1122,6 +1122,14 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 _tankAggroAcquireMs += diff;
                 if (_tankAggroAcquireMs < kTankAggroAcquireMs)
                     return;
+                // Name the unit the boss is on instead: a pet or a follower that ran ahead reads the same as a tank
+                // that never reached it.
+                Unit* victim = ctx.boss->GetVictim();
+                LOG_WARN("raidtest", "AttemptRunner: tank aggro not established: boss victim={} entry={} owner={} "
+                    "victim_dist={:.1f} tank_dist={:.1f}", victim ? victim->GetName() : "none",
+                    victim ? victim->GetEntry() : 0,
+                    victim && victim->GetOwner() ? victim->GetOwner()->GetName() : "-",
+                    victim ? victim->GetDistance(ctx.boss) : 0.0f, tank->GetDistance(ctx.boss));
                 Abort("pull failed (tank did not establish aggro)");
                 return;
             }

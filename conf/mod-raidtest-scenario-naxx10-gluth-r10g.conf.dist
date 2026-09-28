@@ -1,0 +1,35 @@
+# 纳克萨玛斯 10 人 格拉斯（15932），阵容 raid10-ilvl200-v1。房间内无小怪。
+# boss_gluth.cpp UpdateAI 每 tick 找「z ≤ 300、50 码内」的活玩家并直接 AttackStart（不看是否已进战），
+# 所以准备点必须在 50 码外：取东北 (3290,-3105,297.8)，离 boss 52.5 码、视线通（los 两轮扫描），与 playerbots 预设的
+# 远程 (3301.5,-3139.3) / 治疗 (3303.1,-3135.2) 站位同方向。61 码（run 1549–1552）不行：开怪即进战，但格拉斯要有人进
+# 50 码才选目标，主坦走过去超过框架的 8 秒拿仇恨窗口（boss victim=none、tank_dist=47.5）；52.5 码（run 1553–1555）主坦停在
+# 38.9 码、boss 进战却无仇恨表，bot 的 find target（只查对自己有仇恨的单位）找不到格拉斯。改为坦克准备点放 50 码内
+# (3289,-3112，45 码)，非坦克留 52.5 码：格拉斯开场只看得到坦克。
+# 机制：致死之伤（10 秒一次，主坦减疗叠层）、激怒（22 秒，宁神射击可驱）、残杀（10 人 110 秒，全场打到 5%）、
+# 僵尸每 10 秒 1 只（10 人），格拉斯吃一只回 5%；狂暴 6 分钟。
+[Scenario]
+MapId = 533
+BossEntry = 15932
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 3290.0
+PreparationY = -3105.0
+PreparationZ = 297.8
+PreparationO = 4.1
+EngageX = 3290.0
+EngageY = -3105.0
+EngageZ = 297.8
+EngageO = 4.1
+TankPreparationX = 3289.0
+TankPreparationY = -3112.0
+TankPreparationZ = 297.8
+TankPreparationO = 4.4
+NonTankPreparationX = 3290.0
+NonTankPreparationY = -3105.0
+NonTankPreparationZ = 297.8
+NonTankPreparationO = 4.4
+TimeoutSeconds = 420
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
