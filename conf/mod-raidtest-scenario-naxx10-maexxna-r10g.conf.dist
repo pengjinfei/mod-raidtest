@@ -1,0 +1,22 @@
+# 纳克萨玛斯 10 人 迈克斯纳（15952），阵容 raid10-ilvl200-v1。房间内无其他精英（最近的在 90 码外走廊）。
+# 准备点 = 开战点 = 西侧 (3480,-3922,296.7)，距 boss 31.4 码（< HealDistance 38.5），los 视线通；房间是碗状斜坡。
+# playerbots 迈克斯纳策略：绕侧后方（rear flank）+ 躲 AoE。机制：蛛网缠绕（把人甩到墙上结茧，要打掉茧）、
+# 蛛网喷射（全团昏迷）、坏死毒液（主坦减疗，可驱毒）、召唤小蜘蛛、30% 激怒。
+[Scenario]
+MapId = 533
+BossEntry = 15952
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 3480.0
+PreparationY = -3922.0
+PreparationZ = 296.7
+PreparationO = 0.0
+EngageX = 3480.0
+EngageY = -3922.0
+EngageZ = 296.7
+EngageO = 0.0
+TimeoutSeconds = 600
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

@@ -1,0 +1,24 @@
+# 纳克萨玛斯 10 人 黑女巫法琳娜（15953），阵容 raid10-ilvl200-v1。playerbots 没有法琳娜专用策略（动作文件为空）。
+# 房间小怪：她南侧 31–60 码有 15 邪教徒（15980）+ 17 侍僧（15981），实战开怪前清掉；这里按「已清」移除 80 码内的 32 只。
+# 准备点 = 开战点 = 南侧 (3353,-3652,259.1)，距 boss 31.9 码（< HealDistance 38.5，坦克追敌上限以治疗为锚），los 视线通。
+# 机制（boss_faerlina.cpp）：10 人 4 个崇拜者（16506）开战 1.2 秒后进战；毒箭齐射、火雨；60–80 秒起激怒，
+# 有寡妇之拥（崇拜者死亡 / 被精神控制后施放）时不激怒、推迟 30 秒。
+[Scenario]
+MapId = 533
+BossEntry = 15953
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 3353.0
+PreparationY = -3652.0
+PreparationZ = 259.1
+PreparationO = 1.57
+EngageX = 3353.0
+EngageY = -3652.0
+EngageZ = 259.1
+EngageO = 1.57
+TimeoutSeconds = 600
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
+FixtureDespawnSpawns = 127987,127988,127989,127990,127991,127992,127993,127994,127995,127996,127997,127998,127999,128000,128001,128019,128020,128021,128022,128023,128024,128025,128026,128027,128028,128029,128030,128031,128032,128033,128034,128035
