@@ -585,6 +585,41 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
             CombatEventBus::instance().Push(axeLifecycle);
         }
         _ingvarObservedAxes = std::move(activeAxes);
+        if (ctx.scenario && ctx.boss && ctx.boss->IsInWorld())
+            for (uint32 entry : ctx.scenario->GetObserveEntries())
+            {
+                std::list<Creature*> tracked;
+                ctx.boss->GetCreatureListWithEntryInGrid(tracked, entry, 200.0f);
+                for (Creature* creature : tracked)
+                {
+                    if (!creature)
+                        continue;
+                    CombatEvent observed;
+                    observed.type = CombatEventType::State;
+                    observed.source = creature->GetGUID();
+                    observed.actorEntry = entry;
+                    observed.value = static_cast<int32>(creature->GetHealthPct());
+                    Unit* victim = creature->GetVictim();
+                    uint64 t1Guid = 0, t2Guid = 0;
+                    float t1 = 0.0f, t2 = 0.0f;
+                    uint32 rank = 0;
+                    for (ThreatReference const* ref : creature->GetThreatMgr().GetSortedThreatList())
+                    {
+                        if (rank == 0) { t1Guid = ref->GetVictim()->GetGUID().GetCounter(); t1 = ref->GetThreat(); }
+                        else if (rank == 1) { t2Guid = ref->GetVictim()->GetGUID().GetCounter(); t2 = ref->GetThreat(); }
+                        else
+                            break;
+                        ++rank;
+                    }
+                    observed.detail = Acore::StringFormat("observe:entry={} pos={:.2f},{:.2f},{:.2f} home_dist={:.1f} "
+                        "victim={} alive={} combat={} t1={}:{:.0f} t2={}:{:.0f} stunned={}", entry,
+                        creature->GetPositionX(), creature->GetPositionY(), creature->GetPositionZ(),
+                        creature->GetHomePosition().GetExactDist(creature), victim ? victim->GetGUID().GetCounter() : 0,
+                        creature->IsAlive(), creature->IsInCombat(), t1Guid, t1, t2Guid, t2,
+                        creature->HasUnitState(UNIT_STATE_STUNNED));
+                    CombatEventBus::instance().Push(observed);
+                }
+            }
         for (Player* member : ctx.bots)
         {
             if (!member || !member->IsInWorld())

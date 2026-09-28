@@ -119,6 +119,8 @@ public:
     std::vector<ScriptedEventPhase> const& GetEventPhases() const { return _eventPhases; }
     uint32 GetEventFailureEscortEntry() const { return _eventFailureEscortEntry; }
     std::vector<uint32> const& GetEventTrackEntries() const { return _eventTrackEntries; }
+    // ObserveEntries = a,b,...: the observer samples these creatures (position, victim, health) every second.
+    std::vector<uint32> const& GetObserveEntries() const { return _observeEntries; }
     bool GetEventFollowStarter() const { return _eventFollowStarter; }
     // Optional: gossip option action for the starter's CreatureScript::OnGossipSelect (old-style scripts such as
     // the HoR escape leader keep their logic there, not in the AI). -1 = only the AI hook (default).
@@ -264,6 +266,7 @@ protected:
     uint32 _eventStarterEntry{0};
     uint32 _eventCompletionBossState{0};
     uint32 _pullWaitAttackableSeconds{0};
+    std::vector<uint32> _observeEntries;
     std::vector<ScriptedEventPhase> _eventPhases;
     uint32 _eventFailureEscortEntry{0};
     std::vector<uint32> _eventTrackEntries;

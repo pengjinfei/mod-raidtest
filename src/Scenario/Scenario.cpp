@@ -638,6 +638,17 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _hasKillOnInstanceData = true;
         }
+        else if (key == "ObserveEntries")
+        {
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                uint32 entry = 0;
+                if (!ParseUint32(Acore::String::Trim(std::string(token)), entry))
+                    failed = true;
+                else
+                    _observeEntries.push_back(entry);
+            }
+        }
         else if (key == "PullWaitAttackableSeconds")
         {
             if (!ParseUint32(value, _pullWaitAttackableSeconds))
