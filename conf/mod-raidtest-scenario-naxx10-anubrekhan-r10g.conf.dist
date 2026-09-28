@@ -1,0 +1,23 @@
+# 纳克萨玛斯 10 人 阿努布雷坎（15956），阵容 raid10-ilvl200-v1。房间内无小怪（最近的精英在 115 码外西侧走廊）。
+# 准备点 = 开战点 = 房间西侧 (3276,-3476,287.1)，距 boss 32.6 码，los 视线通。必须在治疗距离（HealDistance 38.5）内：
+# 坦克的追敌上限以最近的治疗为锚，开怪时治疗被框架按在准备点；38.6 码（run 1559–1561）坦克走到 27 码就停。
+# 机制：穿刺（直线）、蝗虫群（boss 移动 + 周围伤害，需风筝）；10 人模式开场 20 秒后与每次蝗虫群召一只地穴卫士；
+# 死亡单位出腐尸甲虫。
+[Scenario]
+MapId = 533
+BossEntry = 15956
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 3276.0
+PreparationY = -3476.0
+PreparationZ = 287.1
+PreparationO = 0.0
+EngageX = 3276.0
+EngageY = -3476.0
+EngageZ = 287.1
+EngageO = 0.0
+TimeoutSeconds = 600
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
