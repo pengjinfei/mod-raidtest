@@ -1,0 +1,40 @@
+# 纳克萨玛斯 10 人 塔迪乌斯（15928），阵容 raid10-ilvl200-v1。
+# 第一阶段：塔迪乌斯不可攻击，Reset 时召出斯塔拉格 (3450.45,-2931.42,312.1) 与费尔根 (3508.14,-2988.65,312.1)
+# 各站一座平台（z 312）；两只都死后塔迪乌斯下场，极性阶段。
+# playerbots 打法：每个 bot 打「离自己最近的那只」，坦克/远程去该只的预设站位（NaxxBossHelper tankPos*/rangedPos*），
+# 所以开怪前要像团长那样把团分成两半：SlotPreparation.N（raidtest 按槽位的准备点，只管入场位置）。
+#   斯塔拉格组 0 防骑（主坦）/1 戒律/2 贼/3 火法/4 元素萨 → (3424,-2920,311.7)，距斯塔拉格 28.8 码
+#   费尔根组   5 血DK/6 神圣骑/7 术士/8 鸟德/9 猎人       → (3520,-3016,311.7)，距费尔根 29.8 码
+#   两点都在平台上、对自己那只视线通（los 两轮扫描），离另一只 60 码以上。
+# 开战：EngageTrigger = summon，主坦拉斯塔拉格（15929，boss 召出）；EngageConfirmBossState = 9:1（BOSS_THADDIUS 进行中）。
+[Scenario]
+MapId = 533
+BossEntry = 15928
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+EngageTrigger = summon
+SummonTriggerEntry = 15929
+SummonTriggerRadius = 80
+EngageConfirmBossState = 9:1
+PreparationX = 3424.0
+PreparationY = -2920.0
+PreparationZ = 311.7
+PreparationO = 5.9
+EngageX = 3424.0
+EngageY = -2920.0
+EngageZ = 311.7
+EngageO = 5.9
+SlotPreparation.0 = 3424.0,-2920.0,311.7,5.9
+SlotPreparation.1 = 3424.0,-2920.0,311.7,5.9
+SlotPreparation.2 = 3424.0,-2920.0,311.7,5.9
+SlotPreparation.3 = 3424.0,-2920.0,311.7,5.9
+SlotPreparation.4 = 3424.0,-2920.0,311.7,5.9
+SlotPreparation.5 = 3520.0,-3016.0,311.7,2.0
+SlotPreparation.6 = 3520.0,-3016.0,311.7,2.0
+SlotPreparation.7 = 3520.0,-3016.0,311.7,2.0
+SlotPreparation.8 = 3520.0,-3016.0,311.7,2.0
+SlotPreparation.9 = 3520.0,-3016.0,311.7,2.0
+TimeoutSeconds = 720
+MasterlessAvoidAoe = 1

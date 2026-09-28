@@ -404,8 +404,9 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 : ctx.scenario->HasRoleSeparatedPreparation()
                     ? ctx.scenario->GetNonTankPreparationPoint()
                     : ctx.scenario->GetPreparationPoint();
+            Position const* leaderSlotPreparation = ctx.scenario->GetSlotPreparationPoint(0);
             bool const ok = RosterLogin::TeleportToRaid({ctx.bots.front()}, ctx.scenario->GetMapId(),
-                                                        leaderPreparation, nullptr, true);
+                leaderSlotPreparation ? *leaderSlotPreparation : leaderPreparation, nullptr, true);
             _teleportSent = true;
             _stuckTicks = 0;
             if (!ok)
@@ -426,19 +427,26 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             }
             std::vector<Player*> tankFollowers;
             std::vector<Player*> nonTankFollowers;
+            bool followersOk = true;
             for (size_t i = 1; i < ctx.bots.size(); ++i)
             {
+                // A slot with its own preparation point goes there; the rest follow the scenario-wide rules.
+                if (Position const* slotPreparation = ctx.scenario->GetSlotPreparationPoint(static_cast<uint8>(i)))
+                {
+                    followersOk = RosterLogin::TeleportToRaid({ctx.bots[i]}, ctx.scenario->GetMapId(),
+                        *slotPreparation, leader) && followersOk;
+                    continue;
+                }
                 if (i < ctx.rosterSlots.size() && ctx.rosterSlots[i].role == "tank")
                     tankFollowers.push_back(ctx.bots[i]);
                 else
                     nonTankFollowers.push_back(ctx.bots[i]);
             }
-            bool followersOk = true;
             if (ctx.scenario->HasRoleSeparatedPreparation())
             {
                 if (!tankFollowers.empty())
                     followersOk = RosterLogin::TeleportToRaid(tankFollowers, ctx.scenario->GetMapId(),
-                        ctx.scenario->GetTankPreparationPoint(), leader);
+                        ctx.scenario->GetTankPreparationPoint(), leader) && followersOk;
                 if (!nonTankFollowers.empty())
                     followersOk = RosterLogin::TeleportToRaid(nonTankFollowers, ctx.scenario->GetMapId(),
                         ctx.scenario->GetNonTankPreparationPoint(), leader) && followersOk;
@@ -447,10 +455,11 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             {
                 // One preparation point for everyone. Tank followers (an off-tank; slot 0 is the leader) were left
                 // out here, which a 5-player group with one tank never showed: the raid 10 blood DK stayed behind.
-                std::vector<Player*> followers(ctx.bots.begin() + 1, ctx.bots.end());
+                std::vector<Player*> followers = tankFollowers;
+                followers.insert(followers.end(), nonTankFollowers.begin(), nonTankFollowers.end());
                 if (!followers.empty())
                     followersOk = RosterLogin::TeleportToRaid(followers, ctx.scenario->GetMapId(),
-                        ctx.scenario->GetPreparationPoint(), leader);
+                        ctx.scenario->GetPreparationPoint(), leader) && followersOk;
             }
             if (!followersOk)
                 LOG_WARN("raidtest", "AttemptRunner: follower teleport request rejected");
@@ -1473,8 +1482,10 @@ bool AttemptRunner::ValidateRoleSeparatedPreparation(RunContext const& ctx) cons
         }
 
         bool const isTank = ctx.rosterSlots[i].role == "tank";
-        Position const& expected = isTank ? ctx.scenario->GetTankPreparationPoint()
-                                          : ctx.scenario->GetNonTankPreparationPoint();
+        Position const* slotPreparation = ctx.scenario->GetSlotPreparationPoint(static_cast<uint8>(i));
+        Position const& expected = slotPreparation ? *slotPreparation
+                                   : isTank ? ctx.scenario->GetTankPreparationPoint()
+                                            : ctx.scenario->GetNonTankPreparationPoint();
         float const distance = bot->GetDistance(expected);
         bool const inPosition = distance <= kPositionTolerance;
         valid = valid && inPosition;

@@ -194,6 +194,14 @@ public:
     bool HasRoleSeparatedPreparation() const { return _hasRoleSeparatedPreparation; }
     Position const& GetTankPreparationPoint() const { return _tankPreparationPoint; }
     Position const& GetNonTankPreparationPoint() const { return _nonTankPreparationPoint; }
+    // Optional per-slot preparation (SlotPreparation.N = x,y,z[,o]): the raid leader's split before a pull, e.g. the
+    // two Thaddius platforms. Setup only, like the role-separated points; slots without one keep the other rules.
+    Position const* GetSlotPreparationPoint(uint8 slot) const
+    {
+        auto const itr = _slotPreparationPoints.find(slot);
+        return itr == _slotPreparationPoints.end() ? nullptr : &itr->second;
+    }
+    bool HasSlotPreparation() const { return !_slotPreparationPoints.empty(); }
     // Optional room-local fixture for prerequisite packs. The normal
     // preparation point remains the safe boss platform.
     Position const& GetPrerequisitePoint() const { return _prerequisitePoint; }
@@ -279,6 +287,7 @@ protected:
     bool _hasRoleSeparatedPreparation{false};
     Position _tankPreparationPoint{};
     Position _nonTankPreparationPoint{};
+    std::map<uint8, Position> _slotPreparationPoints;
     Position _prerequisitePoint{};
     uint32 _prerequisiteTimeoutSeconds{180};
     float _prerequisiteMinBossDistance{0.0f};

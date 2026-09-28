@@ -782,6 +782,26 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                 failed = true;
             prerequisitePreparationMask |= 1u << index;
         }
+        else if (key.rfind("SlotPreparation.", 0) == 0)
+        {
+            uint32 slot = 0;
+            std::vector<float> coords;
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                float v = 0.0f;
+                if (!ParseFloat(Acore::String::Trim(std::string(token)), v))
+                    failed = true;
+                coords.push_back(v);
+            }
+            if (!ParseUint32(key.substr(16), slot) || slot > 39 || coords.size() < 3 || coords.size() > 4)
+            {
+                LOG_ERROR("raidtest", "Scenario: invalid {} = '{}' at line {} in '{}'", key, value, lineNumber, filePath);
+                failed = true;
+            }
+            else
+                _slotPreparationPoints[static_cast<uint8>(slot)] =
+                    Position(coords[0], coords[1], coords[2], coords.size() == 4 ? coords[3] : 0.0f);
+        }
         else if (key == "PartySize")
         {
             uint32 size = 0;
