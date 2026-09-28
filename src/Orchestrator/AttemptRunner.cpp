@@ -1128,7 +1128,11 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
             if (!neverAttacks && ctx.boss->GetVictim() != tank)
             {
                 _tankAggroElapsedMs = 0;
-                _tankAggroAcquireMs += diff;
+                // A pull from across the room (Razuvious' patrol loop keeps the prep point 45+ yd out) puts the boss in
+                // combat before the tank arrives; only time the tank is not closing in counts against the window.
+                bool const tankClosingIn = tank->isMoving() && tank->GetDistance(ctx.boss) > 10.0f;
+                if (!tankClosingIn)
+                    _tankAggroAcquireMs += diff;
                 if (_tankAggroAcquireMs < kTankAggroAcquireMs)
                     return;
                 // Name the unit the boss is on instead: a pet or a follower that ran ahead reads the same as a tank

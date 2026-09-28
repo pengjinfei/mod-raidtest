@@ -1,0 +1,25 @@
+# 纳克萨玛斯 10 人 教官拉苏维奥斯（16061），阵容 raid10-ilvl200-v1。
+# playerbots 拉苏维奥斯策略：坦克用服从水晶控制死亡骑士学员去坦，其余打 boss。10 人 2 个学员。
+# 拉苏维奥斯在圆厅内小圈巡逻（waypoint：2758–2784, -3086..-3113），圆厅约 x 2742–2800、y -3068..-3128，入口在西侧走廊。
+# 准备点 = 开战点 = 西入口 (2712,-3098,267.7)，离巡逻点 47 码以上、视线通。巡逻圈直径约 30 码，无法同时满足
+# 「离巡逻线 ≥20 码」与「始终在治疗距离 38.5 内」；靠 playerbots 追敌上限对「目标还没人拉」的豁免开怪。
+# 西南走廊 8 件邪恶兵器（邪恶之杖/斧/剑）按「已清」移除。
+[Scenario]
+MapId = 533
+BossEntry = 16061
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 2712.0
+PreparationY = -3098.0
+PreparationZ = 267.7
+PreparationO = 0.0
+EngageX = 2712.0
+EngageY = -3098.0
+EngageZ = 267.7
+EngageO = 0.0
+TimeoutSeconds = 720
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
+FixtureDespawnSpawns = 127796,127797,127798,127816,127817,127819,127820,127824
