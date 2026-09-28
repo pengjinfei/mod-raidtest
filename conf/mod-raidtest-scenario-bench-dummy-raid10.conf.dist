@@ -1,0 +1,20 @@
+# 10 人输出基准：Heroic Training Dummy（31146，83 级 boss 级别，不死不还手），方法同 bench-dummy-h5g（docs/testing/DPS-BENCHMARK.md）。
+# 紫罗兰监狱是 5 人本进不去 10 人，借纳克萨玛斯（10 人）入口传送平台：附近只有小动物，木桩召在南侧传送落点，
+# 全队站在其东约 21 码。不触发任何首领/事件。每场 180 秒按超时收尾，只看输出。
+[Scenario]
+MapId = 533
+BossEntry = 31146
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+GearProfile = none
+PreparationX = 3013.5
+PreparationY = -3434.4
+PreparationZ = 294.0
+PreparationO = 3.14
+EngageX = 3013.5
+EngageY = -3434.4
+EngageZ = 294.0
+EngageO = 3.14
+BossSpawnMode = script
+FixtureSummonCreature = 31146:2992.5,-3434.42,293.94,0.0
+TimeoutSeconds = 180
+EngageTrigger = pull

@@ -9,6 +9,8 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "PlayerbotAI.h"
+#include "PlayerbotFactory.h"
+#include "PetDefines.h"
 #include "PlayerbotMgr.h"
 #include "WorldSession.h"
 #include "Playerbots.h"   // GET_PLAYERBOT_AI / sRandomPlayerbotMgr
@@ -161,6 +163,16 @@ bool RosterLogin::ApplyMasterlessCombatStrategy(std::vector<Player*> const& bots
         {
             botAI->ChangeStrategy("+attack tagged", BOT_STATE_NON_COMBAT);
             ++applied;
+        }
+        // Roster characters are built offline, where PlayerbotFactory::InitPet (it needs a map) never runs, so a
+        // hunter came into every run without a pet. Tame one once in world; it is saved and stays the same after.
+        if (bot->getClass() == CLASS_HUNTER && !bot->GetPet() &&
+            !(bot->GetPetStable() && bot->GetPetStable()->CurrentPet))
+        {
+            PlayerbotFactory factory(bot, bot->GetLevel());
+            factory.InitPet();
+            LOG_INFO("raidtest", "RosterLogin: hunter {} had no pet, tamed {}", bot->GetName(),
+                bot->GetPet() ? bot->GetPet()->GetName() : std::string("none"));
         }
     }
     if (applied != bots.size())
