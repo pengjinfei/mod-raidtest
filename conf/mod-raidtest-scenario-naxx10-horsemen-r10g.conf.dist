@@ -1,0 +1,26 @@
+# 纳克萨玛斯 10 人 天启四骑士（BOSS_HORSEMAN = 12），阵容 raid10-ilvl200-v1。
+# 四人开场在台上 (2517–2529, -2948..-2959, z 245.6)，一起进战、各去一角。完成判据 KillOnBossState = 12（四人全死，
+# 实例状态 DONE）；BossEntry 取科尔塔兹（16064，playerbots 的击杀顺序第一个）只作开怪目标。
+# playerbots 四骑士策略：第一远程 + 第一治疗做「吸引者」在两点 (2502.0,-2910.9) / (2484.6,-2947.1) 轮换吸女士与泽里克，
+# 其余按 科尔塔兹 → 里文戴尔 → 女士 → 泽里克 击杀（副坦先打里文戴尔）。
+# 准备点 = 开战点 = 西侧地面 (2494,-2962,241.3)，距四人中心 30.2 码，los 视线通，两吸引点之间。100 码内只有
+# 107 码外两组死亡骑士。
+[Scenario]
+MapId = 533
+BossEntry = 16064
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+KillOnBossState = 12
+PreparationX = 2494.0
+PreparationY = -2962.0
+PreparationZ = 241.3
+PreparationO = 0.3
+EngageX = 2494.0
+EngageY = -2962.0
+EngageZ = 241.3
+EngageO = 0.3
+TimeoutSeconds = 900
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

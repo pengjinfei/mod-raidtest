@@ -176,6 +176,10 @@ public:
     // 以实例数据判完成（"<id>:<value>"，GetData(id) >= value 即 Kill）：多 boss、都投降不死的遭遇
     // （冠军的试炼 Grand Champions：三只都投降后进度数据 4 到 6）。
     bool HasKillOnInstanceData() const { return _hasKillOnInstanceData; }
+    // KillOnBossState = <boss id>: the encounter is won when that instance boss state reaches DONE (a council of
+    // several bosses, e.g. the Four Horsemen); BossEntry's own death is then not the kill.
+    bool HasKillOnBossState() const { return _hasKillOnBossState; }
+    uint32 GetKillOnBossState() const { return _killOnBossState; }
     uint32 GetKillOnInstanceDataId() const { return _killOnInstanceDataId; }
     uint32 GetKillOnInstanceDataValue() const { return _killOnInstanceDataValue; }
     // 清怪全部完成后要「使用」的 gameobject 生成点（gameobject.guid）。用于副本自身的
@@ -280,6 +284,8 @@ protected:
     bool _killOnBossSurrender{false};
     bool _hasKillOnInstanceData{false};
     uint32 _killOnInstanceDataId{0};
+    bool _hasKillOnBossState{false};
+    uint32 _killOnBossState{0};
     uint32 _killOnInstanceDataValue{0};
     std::vector<uint32> _prerequisiteGameObjects;
     uint32 _killGateSpawn{0};

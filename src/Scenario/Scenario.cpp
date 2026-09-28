@@ -638,6 +638,13 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _hasKillOnInstanceData = true;
         }
+        else if (key == "KillOnBossState")
+        {
+            if (!ParseUint32(value, _killOnBossState))
+                failed = true;
+            else
+                _hasKillOnBossState = true;
+        }
         else if (key == "KillOnBossSurrender")
         {
             uint32 flag = 0;

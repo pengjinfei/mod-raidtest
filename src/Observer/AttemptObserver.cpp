@@ -797,7 +797,8 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     // Kill；gate 存活期间不算击杀（uk 斯卡瓦德先死会变幽灵，须等达尔隆也死）。
     bool const gatePending = !ctx.killGateGuid.IsEmpty() &&
         !CombatEventBus::instance().DeathSeen(ctx.killGateGuid);
-    bool const bossDown = hpPct == 0 && bossDeathSeen && !gatePending;
+    bool const councilKill = ctx.scenario && ctx.scenario->HasKillOnBossState();
+    bool const bossDown = hpPct == 0 && bossDeathSeen && !gatePending && !councilKill;
     if (bossDown)
     {
         if (++_killSamples >= kSampleConfirmTicks)
@@ -810,6 +811,19 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
     }
     else
         _killSamples = 0;
+
+    if (councilKill && !ctx.bots.empty() && ctx.bots.front())
+    {
+        Map* stateMap = ctx.bots.front()->GetMap();
+        InstanceScript* script = stateMap && stateMap->ToInstanceMap() ? stateMap->ToInstanceMap()->GetInstanceScript() :
+            nullptr;
+        if (script && script->GetBossState(ctx.scenario->GetKillOnBossState()) == DONE)
+        {
+            LOG_INFO("raidtest", "AttemptObserver: kill confirmed (boss state {} DONE)", ctx.scenario->GetKillOnBossState());
+            ctx.notes = "boss state completion";
+            return AttemptResult::Kill;
+        }
+    }
 
     // 以实例数据判完成（多只投降型 boss 都投降后，副本进度数据到位）。
     if (ctx.scenario && ctx.scenario->HasKillOnInstanceData() && !ctx.bots.empty() && ctx.bots.front())
