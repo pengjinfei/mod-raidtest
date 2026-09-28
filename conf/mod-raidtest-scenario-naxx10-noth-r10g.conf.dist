@@ -1,0 +1,23 @@
+# 纳克萨玛斯 10 人 瘟疫者诺斯（15954），阵容 raid10-ilvl200-v1。playerbots 无诺斯专用策略。
+# 诺斯在 (2666–2677, -3484..-3520) 小范围巡逻（waypoint 1278010）。房间外南侧/东侧有蝙蝠、幼虫、石皮石像鬼（45 码外，不动）。
+# 准备点 = 开战点 = 东侧 (2700,-3500,261.3)：距巡逻点 26–36 码、距小怪 ≥45 码、los 视线通、在治疗距离内。
+# 机制（boss_noth.cpp）：10 人每 15 秒对 3 人诅咒（可解）、召瘟疫战士；110 秒后上阳台 70 秒并召瘟疫勇士/守护者；
+# 10 人不闪现。
+[Scenario]
+MapId = 533
+BossEntry = 15954
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 2700.0
+PreparationY = -3500.0
+PreparationZ = 261.3
+PreparationO = 3.14
+EngageX = 2700.0
+EngageY = -3500.0
+EngageZ = 261.3
+EngageO = 3.14
+TimeoutSeconds = 720
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

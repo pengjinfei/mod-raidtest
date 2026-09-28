@@ -1,0 +1,22 @@
+# 纳克萨玛斯 10 人 肮脏的希尔盖（15936），阵容 raid10-ilvl200-v1。
+# playerbots 希尔盖策略：远程站平台 (2794.3,-3706.7)，其余按 4 个安全点跳舞（HeiganDanceMultiplier 屏蔽跳舞外的移动）。
+# 准备点 = 开战点 = 舞池北侧 (2785,-3680,273.7)，距 boss 28.8 码，los 视线通，最近的精英小怪 57 码（北侧走廊蝙蝠、东侧幼虫）；
+# 南侧出口隧道的眼柄/蛆虫在 40 码外、z 275，不动。
+[Scenario]
+MapId = 533
+BossEntry = 15936
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 2785.0
+PreparationY = -3680.0
+PreparationZ = 273.7
+PreparationO = 4.9
+EngageX = 2785.0
+EngageY = -3680.0
+EngageZ = 273.7
+EngageO = 4.9
+TimeoutSeconds = 720
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
