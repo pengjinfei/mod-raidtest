@@ -285,6 +285,7 @@ void AttemptRunner::Begin(RunContext& ctx, uint32 seq)
     _prerequisiteApproachLoggedAt = 0;
     _stuckTicks = 0;
     _rowResolveElapsedMs = 0;
+    _attackableWaitMs = 0;
     _confirmTicks = 0;
     _tankAggroElapsedMs = 0;
     _tankAggroAcquireMs = 0;
@@ -695,6 +696,20 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                     ctx.attemptSeq, boss->GetName());
                 return;
             }
+
+            // A boss that is born before it can be fought (Sapphiron: invisible and non-attackable until 21.5 s
+            // after the raid springs his birth trap) is waited for here, before the attempt row and any event
+            // writes, instead of in the pull retry loop.
+            if (uint32 const waitSeconds = ctx.scenario->GetPullWaitAttackableSeconds())
+                if ((!boss->IsVisible() || boss->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE)) &&
+                    _attackableWaitMs < waitSeconds * 1000)
+                {
+                    if (_attackableWaitMs == 0)
+                        LOG_INFO("raidtest", "AttemptRunner: waiting up to {} s for {} to become attackable",
+                            waitSeconds, boss->GetName());
+                    _attackableWaitMs += diff;
+                    return;
+                }
 
             ctx.bossGuid = boss->GetGUID();
             ctx.boss = boss;

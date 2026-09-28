@@ -200,6 +200,7 @@ private:
     // 巡逻中的 boss 可能恰好被柱子挡住或走出施法距离，这不是"开不了怪"，是"这一刻开不了"。
     // 给一个重试预算，逐 tick 重来；超预算才判 abort。见 StartBossPull。
     uint32 _pullRetryMs{0};
+    uint32 _attackableWaitMs{0};
     bool _bossPullIssued{false};  // FindBoss 一段已走完、StartBossPull 在预算内重试：不再重跑开场与夹具
     uint32 _scriptBossWaitElapsedMs{0};
     ObjectGuid _pullTank;           // 本次两段式 pull 的真实拉怪者

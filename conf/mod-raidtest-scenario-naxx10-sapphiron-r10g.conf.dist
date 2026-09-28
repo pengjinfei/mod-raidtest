@@ -1,0 +1,25 @@
+# 纳克萨玛斯 10 人 萨菲隆（15989），阵容 raid10-ilvl200-v1。
+# boss_sapphiron.cpp InitializeAI：隐身 + NON_ATTACKABLE + 被动，脚下召出诞生陷阱（181356）；陷阱被玩家触发移除时
+# instance OnGameObjectRemove → DoAction(ACTION_SAPPHIRON_BIRTH)：起飞、落地后才可见可攻击。框架开怪阶段会重试 20 秒。
+# playerbots 萨菲隆策略：地面阶段主坦站 (3512.1,-5274.1)、中心 (3517.3,-5253.7)；空中阶段躲冰块。
+# PullWaitAttackableSeconds = 40：诞生要 21.5 秒；run 1612–1614 在开怪重试里写事件，数据库队列排不空而中止。
+# 准备点 = 开战点 = (3510,-5265)，距 boss 约 31 码，los 实测。离家 100 码脱战（IsInRoom）。
+[Scenario]
+MapId = 533
+BossEntry = 15989
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 3510.0
+PreparationY = -5265.0
+PreparationZ = 137.6
+PreparationO = 1.2
+EngageX = 3510.0
+EngageY = -5265.0
+EngageZ = 137.6
+EngageO = 1.2
+PullWaitAttackableSeconds = 40
+TimeoutSeconds = 900
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

@@ -638,6 +638,11 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _hasKillOnInstanceData = true;
         }
+        else if (key == "PullWaitAttackableSeconds")
+        {
+            if (!ParseUint32(value, _pullWaitAttackableSeconds))
+                failed = true;
+        }
         else if (key == "KillOnBossState")
         {
             if (!ParseUint32(value, _killOnBossState))

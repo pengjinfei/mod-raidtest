@@ -227,6 +227,8 @@ public:
     uint32 GetPrerequisiteCcEngagedGraceSeconds() const { return _prerequisiteCcEngagedGraceSeconds; }
     // 每个 attempt 开场前的等待秒数（0 = 关闭）。用于让 bot 的长冷却在连续 attempt 之间复位。
     uint32 GetAttemptStartDelaySeconds() const { return _attemptStartDelaySeconds; }
+    // PullWaitAttackableSeconds: before the pull, wait up to this long for an invisible / non-attackable boss.
+    uint32 GetPullWaitAttackableSeconds() const { return _pullWaitAttackableSeconds; }
     // 清完一组后的再开怪等待（0 = 关闭）。有的遭遇自己会派下一组：克里克希尔在一组守望者全灭
     // 10 秒后把另一组 SetInCombatWithZone 派过来。框架若在队伍一脱战就拉下一组，派来的那组随后
     // 赶到，两组同时打队伍（run945/948 的全部减员都发生在这种重叠里，击杀场次都是一组一组来）。
@@ -261,6 +263,7 @@ protected:
     uint32 _engageConfirmBossStateValue{0};
     uint32 _eventStarterEntry{0};
     uint32 _eventCompletionBossState{0};
+    uint32 _pullWaitAttackableSeconds{0};
     std::vector<ScriptedEventPhase> _eventPhases;
     uint32 _eventFailureEscortEntry{0};
     std::vector<uint32> _eventTrackEntries;
