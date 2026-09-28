@@ -1128,6 +1128,22 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 return;
             }
 
+            // A pulled boss whose encounter opens with an untargetable phase (Kel'Thuzad: non-attackable and passive for
+            // 228 s of adds) never takes the tank as victim; its instance state starting is the engagement.
+            if (!summonTrigger && ctx.scenario->HasEngageConfirmBossState())
+            {
+                Map* map = tank->GetMap();
+                InstanceScript* script = map && map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
+                uint32 const stateId = ctx.scenario->GetEngageConfirmBossStateId();
+                if (script && uint32(script->GetBossState(stateId)) == ctx.scenario->GetEngageConfirmBossStateValue())
+                {
+                    LOG_INFO("raidtest", "AttemptRunner: engage confirmed by boss state {} after pull", stateId);
+                    RecordPhase("engage_confirm_boss_state", 0);
+                    ConfirmAndEnterObserving(ctx);
+                    return;
+                }
+            }
+
             if (!CombatTrigger::ConfirmBossInCombat(ctx.boss))
             {
                 if (summonTrigger && _summonTriggerElapsedMs < kSummonTriggerConfirmMs)

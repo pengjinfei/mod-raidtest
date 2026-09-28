@@ -935,11 +935,6 @@ bool Scenario::LoadFromFile(std::string const& filePath)
         LOG_ERROR("raidtest", "Scenario: EngageTrigger=gameobject requires EngageGameObjectSpawn");
         failed = true;
     }
-    if (_engageTrigger == EncounterTrigger::Pull && _hasEngageConfirmBossState)
-    {
-        LOG_ERROR("raidtest", "Scenario: EngageConfirmBossState requires EngageTrigger=summon or gameobject");
-        failed = true;
-    }
     if (_engageTrigger != EncounterTrigger::Summon && _summonTriggerEntry)
     {
         LOG_ERROR("raidtest", "Scenario: SummonTriggerEntry requires EngageTrigger=summon");

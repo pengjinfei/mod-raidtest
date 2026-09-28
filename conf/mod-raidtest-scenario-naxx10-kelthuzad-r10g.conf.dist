@@ -1,0 +1,26 @@
+# 纳克萨玛斯 10 人 克尔苏加德（15990），阵容 raid10-ilvl200-v1。
+# boss_kelthuzad.cpp：MoveInLineOfSight 有玩家进 50 码即 AttackStart；JustEngagedWith 后 NON_ATTACKABLE + 被动引导，
+# 228 秒内从壁龛刷亡灵士兵/憎恶/灵魂编织者（第一阶段），之后下场（第二阶段冰霜冲击/暗影裂隙/法力爆裂），
+# 45% 召寒冰皇冠守护者；15 分钟狂暴。边界：圆 (3716,-5107) 半径 85。
+# playerbots 克尔苏加德策略：主坦 (3709.2,-5104.9)、副坦 (3746.1,-5112.7)、中心 (3716.2,-5106.6)。
+# 开战：第一阶段 boss 永远不以坦克为目标，用 EngageConfirmBossState = 14:1（BOSS_KELTHUZAD 进行中）确认。
+# 准备点 = 开战点 = 西侧 (3690,-5106,142.0)，距 boss 60 码（> 50 自动进战距离）、边界内、los 视线通。
+[Scenario]
+MapId = 533
+BossEntry = 15990
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+EngageConfirmBossState = 14:1
+PreparationX = 3690.0
+PreparationY = -5106.0
+PreparationZ = 142.0
+PreparationO = 0.0
+EngageX = 3690.0
+EngageY = -5106.0
+EngageZ = 142.0
+EngageO = 0.0
+TimeoutSeconds = 960
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
