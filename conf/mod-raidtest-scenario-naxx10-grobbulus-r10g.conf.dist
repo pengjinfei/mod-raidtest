@@ -1,0 +1,29 @@
+# 纳克萨玛斯 10 人 格罗布鲁斯（15931），阵容 raid10-ilvl200-v1。
+# 巡逻 waypoint 1277810：从自己的平台（z 311）下到缝合巨人大厅（z 292.6，最东到 3252,-3310）再上西侧下水道平台（z 320）。
+# playerbots 预设战斗中心 = 大厅 (3281.2,-3310.4)（主坦绕 35 码转圈拖毒云、中毒者远离/回中心）。
+# 准备点 = 开战点 = (3260,-3350,292.6)：框架开怪要求主坦原地对 boss 有视线（run 1543：原点 (3290,-3325) 看不到停在坡道
+# (3228.4,-3368,306) 的 boss、重试到中止）。扫「离巡逻线 ≥24 码、离坡道 ≤38 码」只有这一点对坡道视线通（36.3 码）。
+# 帕奇维克的门 181123（3318,-3254）对格罗布鲁斯是 ROOM 门，开战即关；准备点在门内大厅，不会被切开。
+# 小怪：boss_grobbulus JustEngagedWith → PullChamberAdds 让 300 码内的缝合巨人（16025，6 只）全部 AttackStart 开怪者。
+# 实战先清大厅，这里移除 6 只（代表「大厅已清」）。狂暴 10 人 12 分钟。
+# 机制（boss_grobbulus.cpp）：毒云每 15 秒落在 boss 脚下并在 60 秒内涨到 15 码；变异注射随机玩家、结束时爆炸出毒云；
+# 泥浆喷射每 20 秒打当前目标方向并召出辐射泥浆怪（全区进战）。
+[Scenario]
+MapId = 533
+BossEntry = 15931
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 3260.0
+PreparationY = -3350.0
+PreparationZ = 292.6
+PreparationO = 2.5
+EngageX = 3260.0
+EngageY = -3350.0
+EngageZ = 292.6
+EngageO = 2.5
+TimeoutSeconds = 780
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
+FixtureDespawnSpawns = 128119,128120,128121,128122,128123,128124
