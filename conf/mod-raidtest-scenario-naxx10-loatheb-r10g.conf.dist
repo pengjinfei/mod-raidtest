@@ -1,0 +1,23 @@
+# 纳克萨玛斯 10 人 洛欧塞布（16011），阵容 raid10-ilvl200-v1。房间 90 码内无其他精英。
+# playerbots 洛欧塞布策略：主坦站 mainTankPos (2877.6,-3967.0)、远程站 rangePos (2897.0,-3980.6)；boss_loatheb IsInRoom
+# 离出生点 50 码即脱战（主坦位离出生点 43.7 码）。
+# 准备点 = 开战点 = 出生点→主坦位连线上 30 码处 (2887.4,-3976.5,273.6)，los 视线通、在治疗距离内。
+# 机制：死灵光环（受治疗 -100%，每 20 秒有 3 秒窗口）、孢子（打掉给暴击增益）、必然的厄运。
+[Scenario]
+MapId = 533
+BossEntry = 16011
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+PreparationX = 2887.4
+PreparationY = -3976.5
+PreparationZ = 273.6
+PreparationO = 5.5
+EngageX = 2887.4
+EngageY = -3976.5
+EngageZ = 273.6
+EngageO = 5.5
+TimeoutSeconds = 720
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
