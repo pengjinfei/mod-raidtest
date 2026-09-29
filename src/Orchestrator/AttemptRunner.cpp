@@ -228,6 +228,7 @@ char const* AttemptRunner::StageName() const
     case Stage::Recovery:           return "recovery";
     case Stage::BossPosition:       return "boss_position";
     case Stage::Observing:          return "observing";
+    case Stage::RouteRun:           return "route_run";
     case Stage::Done:               return "done";
     }
     return "unknown";
@@ -645,6 +646,15 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         {
         case PullStep::FindBoss:
         {
+            // A dungeon run opens the attempt at the entrance; the bosses are met along the route.
+            if (ctx.scenario->IsDungeonRun() && !ctx.attemptRowQueued)
+            {
+                ResultStore::QueueStartAttemptRow(ctx.runId, ctx.attemptSeq);
+                ctx.attemptRowQueued = true;
+                _rowResolveElapsedMs = 0;
+                _pullStep = PullStep::AwaitAttemptRow;
+                return;
+            }
             // 开怪暂时不可能（boss 超距/无视线）时 StartBossPull 留在本步等下一 tick 重试。开场（attempt 行、
             // 事件总线、夹具）只做一次：重跑会重复施加夹具（紫罗兰监狱每 tick 重发放 boss 的 DoAction，
             // boss 的走位被不断重置），且重试预算只在这里累计。
@@ -927,6 +937,12 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 }
                 ctx.killGateGuid = gate->GetGUID();
                 CombatEventBus::instance().TrackUnit(gate->GetGUID());
+            }
+
+            if (ctx.scenario->IsDungeonRun())
+            {
+                StartRouteRun(ctx);
+                return;
             }
 
             if (!ctx.scenario->GetPrerequisiteSpawns().empty())
@@ -1447,6 +1463,10 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         StartBossPull(ctx);
         return;
 
+    case Stage::RouteRun:
+        TickRouteRun(ctx, diff);
+        return;
+
     case Stage::Observing:
     {
         if (ctx.scenario->GetEventStarterEntry())
@@ -1465,6 +1485,101 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
         }
         return;
     }
+    }
+}
+
+bool AttemptRunner::StartRouteRun(RunContext& ctx)
+{
+    Player* tank = FindTank(ctx);
+    PlayerbotAI* tankAI = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
+    if (!tankAI)
+    {
+        Abort("route_invalid: roster has no tank bot to lead the run");
+        return false;
+    }
+    // Followers follow the tank (masterless bots otherwise follow nobody); combat stays with their own engines.
+    for (Player* bot : ctx.bots)
+    {
+        if (!bot || bot == tank)
+            continue;
+        if (PlayerbotAI* ai = GET_PLAYERBOT_AI(bot))
+            ai->SetMaster(tank);
+        CombatTrigger::RestoreFollowerAttackTagged(bot);
+    }
+    tankAI->ChangeStrategy("+dungeon run", BOT_STATE_NON_COMBAT);
+    _pullTank = tank->GetGUID();
+    _routeProgress = 0.0f;
+    _routeStallMs = 0;
+    _routeSampleMs = 0;
+    RecordPhase("route_start", ctx.attemptElapsedMs);
+    _stage = Stage::RouteRun;
+    LOG_INFO("raidtest", "AttemptRunner: attempt {} - dungeon run led by {} from ({:.1f},{:.1f},{:.1f})",
+        ctx.attemptSeq, tank->GetName(), tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ());
+    return true;
+}
+
+void AttemptRunner::TickRouteRun(RunContext& ctx, uint32 diff)
+{
+    // A run without progress for this long, while nobody fights, is stuck (walked into a wall, waits for a member
+    // who cannot come, a pack it cannot pull...). Long enough for a full rest and a resurrection.
+    constexpr uint32 kRouteStallMs = 300000;
+    constexpr uint32 kRouteSampleMs = 5000;
+
+    AttemptResult const r = _observer.Tick(ctx, diff);
+    if (r != AttemptResult::Ongoing)
+    {
+        _result = r;
+        _stage = Stage::Done;
+        LOG_INFO("raidtest", "AttemptRunner: attempt {} dungeon run done - result={} elapsed={}ms progress={:.0f}",
+            ctx.attemptSeq, uint32(r), ctx.attemptElapsedMs, _routeProgress);
+        return;
+    }
+
+    Player* tank = ObjectAccessor::FindPlayer(_pullTank);
+    PlayerbotAI* tankAI = tank ? GET_PLAYERBOT_AI(tank) : nullptr;
+    if (!tankAI)
+        return;
+    // playerbots resets a bot's strategies on its own (group / master changes run "reset botAI"): keep the
+    // scenario's setup in place - the tank leads, the others follow the tank.
+    if (!tankAI->HasStrategy("dungeon run", BOT_STATE_NON_COMBAT))
+    {
+        tankAI->ChangeStrategy("+dungeon run", BOT_STATE_NON_COMBAT);
+        LOG_INFO("raidtest", "AttemptRunner: re-applied dungeon run strategy on {}", tank->GetName());
+    }
+    for (Player* bot : ctx.bots)
+        if (bot && bot != tank)
+            if (PlayerbotAI* ai = GET_PLAYERBOT_AI(bot))
+                if (ai->GetMaster() != tank)
+                    ai->SetMaster(tank);
+    float const progress = tankAI->GetAiObjectContext()->GetValue<float>("dungeon run progress")->Get();
+    bool const fighting = std::any_of(ctx.bots.begin(), ctx.bots.end(),
+        [](Player* bot) { return bot && bot->IsAlive() && bot->IsInCombat(); });
+    if (progress > _routeProgress + 1.0f || fighting)
+    {
+        _routeProgress = std::max(_routeProgress, progress);
+        _routeStallMs = 0;
+    }
+    else if ((_routeStallMs += diff) >= kRouteStallMs)
+    {
+        Abort(Acore::StringFormat("route stalled at {:.0f} yd (tank at {:.1f},{:.1f},{:.1f})", _routeProgress,
+            tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ()));
+        return;
+    }
+
+    if ((_routeSampleMs += diff) >= kRouteSampleMs)
+    {
+        _routeSampleMs = 0;
+        uint32 alive = 0;
+        for (Player* bot : ctx.bots)
+            if (bot && bot->IsAlive())
+                ++alive;
+        CombatEvent state;
+        state.type = CombatEventType::State;
+        state.source = tank->GetGUID();
+        state.detail = Acore::StringFormat("route_progress:along={:.0f} pos={:.1f},{:.1f},{:.1f} alive={}/{} combat={}",
+            progress, tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ(), alive, ctx.bots.size(),
+            fighting);
+        CombatEventBus::instance().Push(state);
     }
 }
 

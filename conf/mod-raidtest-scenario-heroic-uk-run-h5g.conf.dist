@@ -1,0 +1,26 @@
+# 英雄乌特加德城堡整本通关（2026-09-29，设计稿 docs/08 实施阶段 2 的第一个场景）。
+# 队伍在副本入口就位（路线第一个节点），坦克获得 playerbots「dungeon run」策略沿路线文件
+# （mod-playerbots data/dungeon-routes/574-utgarde-keep.route）推进、自己开怪；其余人跟随坦克。框架只观察：
+# 每 5 秒记路线进度，脱战 5 分钟无进度判卡住中止。完成判据：因格瓦尔（实例 boss 状态 2 = DATA_INGVAR）DONE。
+# 副本不在 attempt 之间重置，每个 run 只跑 1 个 attempt（--attempts 1）。阵容与因格瓦尔 h5g 场景相同（ilvl 200 档）。
+[Scenario]
+MapId = 574
+BossEntry = 23954
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-uk
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 2
+PreparationX = 153.8
+PreparationY = -86.5
+PreparationZ = 12.6
+PreparationO = 1.5
+EngageX = 153.8
+EngageY = -86.5
+EngageZ = 12.6
+EngageO = 1.5
+TimeoutSeconds = 3600
+EngageTrigger = pull
+MasterlessAvoidAoe = 1

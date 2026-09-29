@@ -620,6 +620,14 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _fixtureInstanceActions.push_back(int32(action));
             }
         }
+        else if (key == "DungeonRun")
+        {
+            uint32 flag = 0;
+            if (!ParseUint32(value, flag) || flag > 1)
+                failed = true;
+            else
+                _dungeonRun = flag == 1;
+        }
         else if (key == "MasterlessAvoidAoe")
         {
             uint32 flag = 0;

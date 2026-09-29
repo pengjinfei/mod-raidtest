@@ -64,7 +64,7 @@ public:
 private:
     enum class Stage : uint8
     {
-        Idle, TeleportAndPosition, Navigation, Pull, Prerequisites, Recovery, BossPosition, Observing, Done
+        Idle, TeleportAndPosition, Navigation, Pull, Prerequisites, Recovery, BossPosition, Observing, RouteRun, Done
     };
 
     // Pull 子阶段（Task 7 review Fix 2/3 的世界线程非阻塞细化）：
@@ -87,6 +87,10 @@ private:
     float DistanceToNearestPrerequisite(RunContext& ctx, Position const& from) const;
     bool NavigationWaypointReached(RunContext const& ctx) const;
     bool StartBossPull(RunContext& ctx);
+    // DungeonRun scenarios: hand the dungeon to the tank's "dungeon run" strategy (followers follow the tank) and only
+    // observe - progress samples, a stall watchdog, and the usual kill / wipe / timeout verdicts.
+    bool StartRouteRun(RunContext& ctx);
+    void TickRouteRun(RunContext& ctx, uint32 diff);
     bool StartSummonTriggerPull(RunContext& ctx);
     bool StartGameObjectTriggerPull(RunContext& ctx);
     bool StartAreaTriggerPull(RunContext& ctx);
@@ -105,6 +109,9 @@ private:
     // 按 slot 计时，等待期间绝不把它当成击杀；超时仍作为状态不一致作废。
     std::vector<uint32> _prerequisiteRebindElapsedMs;
     uint32 _preBossElapsed{0};
+    float _routeProgress{0.0f};        // best "dungeon run progress" seen on the tank
+    uint32 _routeStallMs{0};           // out of combat without progress
+    uint32 _routeSampleMs{0};
     uint32 _preparationElapsed{0};
     // 前置清怪时首次进入场景 boss 的原生仇恨半径（且有 LOS）的只读诊断标记。
     // 只记录一次，避免每个 world tick 重复写入事件总线。

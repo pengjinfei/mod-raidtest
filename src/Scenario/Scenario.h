@@ -172,6 +172,10 @@ public:
     // 从未躲过地面持续区域（哈多诺克斯酸液云占非坦克承伤 47–75%）。这是真人带队时的默认策略，
     // 不改 bot 的决策逻辑；按场景显式开启以免悄悄改变其它场景基线。
     bool GetMasterlessAvoidAoe() const { return _masterlessAvoidAoe; }
+    // DungeonRun = 1: a whole-dungeon run. The party starts at the preparation point (the entrance), the tank gets
+    // the playerbots "dungeon run" strategy and walks the map's route; the framework only observes. Pair with
+    // KillOnBossState = <last boss id>; one attempt per run (the instance is not reset).
+    bool IsDungeonRun() const { return _dungeonRun; }
     // boss 不会死、打到残血后「投降」（致命伤害被吞掉，自己变成不可攻击并脱战，如 Mal'Ganis）：
     // 本 attempt 最低血量到过 10% 以下、且此刻带 UNIT_FLAG_NON_ATTACKABLE → 判 Kill。
     bool GetKillOnBossSurrender() const { return _killOnBossSurrender; }
@@ -287,6 +291,7 @@ protected:
     std::vector<FixtureSummon> _fixtureSummons;
     bool _fixtureBossNotify{false};
     bool _masterlessAvoidAoe{false};
+    bool _dungeonRun{false};
     bool _killOnBossSurrender{false};
     bool _hasKillOnInstanceData{false};
     uint32 _killOnInstanceDataId{0};
