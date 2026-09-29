@@ -1970,11 +1970,11 @@ bool AttemptRunner::ResetInstance(RunContext& ctx)
         alive->ClearUnitState(UNIT_STATE_EVADE);
         alive->GetMotionMaster()->MoveTargetedHome();
         if (!prerequisites.empty())
-        {
             alive->NearTeleportTo(data->posX, data->posY, data->posZ, data->orientation);
-            if (alive->AI())
-                alive->AI()->Reset();
-        }
+        // RemoveAllAuras 也清掉了脚本自己挂的光环，要让 Reset 重新挂上：凯瑞斯塔萨的冰封牢笼
+        // （47854）在 Reset 里施放，被清掉后她一开场就能攻击，整本通关在大厅被她团灭（run 1814）。
+        if (alive->AI())
+            alive->AI()->Reset();
     }
 
     // ---- 第三趟：只读校验 + 落快照 ----
