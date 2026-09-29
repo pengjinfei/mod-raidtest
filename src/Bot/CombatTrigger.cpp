@@ -132,6 +132,19 @@ bool CombatTrigger::BeginAssistForAll(std::vector<Player*> const& bots, Player* 
                 continue;
             }
 
+            // 多体遭遇（天启四骑士：四人共用 boss_four_horsemen 脚本、开战后各去一角）：bot 自己的策略按击杀顺序
+            // 或吸引职责选了同一遭遇的另一个 boss，这是已开始的正常战斗，不是 assist 失败（run 1722/1723 神圣骑
+            // 选中泽里克被判中止）。只认同脚本、活着且在战斗中的目标；小怪或别的遭遇仍不放行。
+            Creature const* currentCreature = current ? current->ToCreature() : nullptr;
+            if (bot->IsInCombat() && currentCreature && currentCreature != boss && currentCreature->IsAlive() &&
+                currentCreature->IsInCombat() && currentCreature->GetScriptId() == boss->GetScriptId())
+            {
+                ++assisted;
+                LOG_INFO("raidtest", "CombatTrigger::BeginAssistForAll: bot {} is fighting encounter member {} "
+                    "(same script as {}) - releasing", bot->GetName(), currentCreature->GetName(), boss->GetName());
+                continue;
+            }
+
             LOG_WARN("raidtest", "CombatTrigger::BeginAssistForAll: bot {} could not begin assist "
                 "(combat={} ai={} current={} victim={} dist={} los={} valid={} tagged={} "
                 "bot_pos={:.2f},{:.2f},{:.2f} boss_pos={:.2f},{:.2f},{:.2f} movement={})",

@@ -1037,6 +1037,16 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
         encounterStateActive = script && ctx.scenario->EngageConfirmInstanceDataMet(
             script->GetData(ctx.scenario->GetEngageConfirmInstanceDataId()));
     }
+    // KillOnBossState（议会型遭遇，天启四骑士）：BossEntry 只是开怪目标，他先死、脱战后遭遇仍在进行，
+    // 实例状态 IN_PROGRESS 期间不判卡住（run 1724/1725 科尔塔兹已被击杀，被误判 boss lost combat 中止）。
+    if (!encounterStateActive && ctx.scenario && ctx.scenario->HasKillOnBossState() && !ctx.bots.empty() &&
+        ctx.bots.front())
+    {
+        Map* stateMap = ctx.bots.front()->GetMap();
+        InstanceScript* script = stateMap && stateMap->ToInstanceMap() ?
+            stateMap->ToInstanceMap()->GetInstanceScript() : nullptr;
+        encounterStateActive = script && script->GetBossState(ctx.scenario->GetKillOnBossState()) == IN_PROGRESS;
+    }
     // 双 boss：gate 未死期间 encounter 仍进行（BossEntry 可能已死变幽灵），卡壳判定
     // 挂起，终态交给 Kill（gate 死）/ Wipe / Timeout。
     if ((!ctx.scenario || !ctx.scenario->GetEventStarterEntry()) && bossKnown && !bossInCombat && !anyDead && !gatePending &&
