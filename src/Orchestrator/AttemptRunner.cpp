@@ -1162,7 +1162,11 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                 // A pull from across the room (Razuvious' patrol loop keeps the prep point 45+ yd out) puts the boss in
                 // combat before the tank arrives; only time the tank is not closing in counts against the window.
                 bool const tankClosingIn = tank->isMoving() && tank->GetDistance(ctx.boss) > 10.0f;
-                if (!tankClosingIn)
+                // Scripted walk after engage (Four Horsemen go passive and walk to their corners before picking a
+                // target): no victim is the script, not a missed pull (1741/1746/1748 failed with the tank at 7.7 yd).
+                bool const scriptedWalk = ctx.boss->HasReactState(REACT_PASSIVE) && !ctx.boss->GetVictim() &&
+                    ctx.boss->IsInCombat();
+                if (!tankClosingIn && !scriptedWalk)
                     _tankAggroAcquireMs += diff;
                 if (_tankAggroAcquireMs < kTankAggroAcquireMs)
                     return;
