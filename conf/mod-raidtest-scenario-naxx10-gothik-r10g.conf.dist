@@ -1,0 +1,31 @@
+# 纳克萨玛斯 10 人 收割者哥特克（BOSS_GOTHIK = 11），阵容 raid10-ilvl200-v1。
+# 哥特克在西侧高台 (2642.1,-3387.0,285.5)，重置后被动、一阶段不吃伤害；被打到才开战（JustEngagedWith 后全区进战），
+# 30 秒起分波在生者一侧刷小怪，生者死后在亡者一侧复活成灵魂；约 4.5 分钟后二阶段他本人下场、每 20 秒两侧传送，30% 开门。
+# 开战 2 分钟时若队伍没有同时站在两侧（CheckGroupSplitted），直接开门、所有小怪一起冲过来——本场景先按
+# 「全员生者一侧、不分组」打。坦克准备点离高台 30 码（23 码处台沿挡视线，33 码处看得见），其余人在生者一侧地面。
+# 开战确认用 EngageConfirmBossState = 11:1（进行中）：一阶段他不会以坦克为目标。
+[Scenario]
+MapId = 533
+BossEntry = 16060
+RosterFile = "mod-raidtest-roster-raid10-ilvl200-v1.conf"
+PartySize = 10
+RaidDifficulty = 10
+GearProfile = none
+EngageConfirmBossState = 11:1
+KillOnBossState = 11
+TankPreparationX = 2672.0
+TankPreparationY = -3387.0
+TankPreparationZ = 267.7
+TankPreparationO = 3.14
+NonTankPreparationX = 2700.0
+NonTankPreparationY = -3405.0
+NonTankPreparationZ = 267.7
+NonTankPreparationO = 3.14
+EngageX = 2672.0
+EngageY = -3387.0
+EngageZ = 267.7
+EngageO = 3.14
+TimeoutSeconds = 900
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
+ObserveEntries = 16124,16125,16126,16127,16148,16150
