@@ -1,0 +1,26 @@
+# 英雄魔枢整本通关（2026-09-30，设计稿 docs/08 阶段 2 的第二个副本，验证路线工具的通用性）。
+# 路线 mod-playerbots data/dungeon-routes/576-the-nexus.route（tools/route-gen + overrides/576-the-nexus.txt）：
+# 入口 → 大厅 → 泰蕾斯特拉 → 阿诺玛鲁斯 → 奥莫洛克 → 蓝龙法师 → 回大厅打克莉斯塔萨（三个封印球解开后才可攻击）。
+# 英雄独有的指挥官一组在普通难度不存在，领队会跳过。完成判据：实例 boss 状态 3（DATA_KERISTRASZA_EVENT）DONE。
+# 副本不在 attempt 之间重置，每个 run 1 个 attempt。阵容同乌特加德城堡整本通关（ilvl 200 档）。
+[Scenario]
+MapId = 576
+BossEntry = 26723
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-nex
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 3
+PreparationX = 145.9
+PreparationY = -10.6
+PreparationZ = -16.6
+PreparationO = 0.0
+EngageX = 145.9
+EngageY = -10.6
+EngageZ = -16.6
+EngageO = 0.0
+TimeoutSeconds = 3600
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
