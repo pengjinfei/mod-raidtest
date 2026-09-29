@@ -68,6 +68,7 @@ private:
     bool _moorabiUnreachableObserved{false};
     std::unordered_set<ObjectGuid> _ingvarOverlappingMembers;
     std::unordered_set<ObjectGuid> _ingvarObservedAxes;
+    std::unordered_map<ObjectGuid, float> _lastSampleZ;   // fall detection: previous 1 s sample height per bot
     std::unordered_map<ObjectGuid, IngvarAxeMemberState> _ingvarAxeMemberStates;
     std::unordered_map<uint64, std::string> _tankStrategies;
     std::unordered_map<uint64, std::string> _tankActions;

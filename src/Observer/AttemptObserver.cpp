@@ -7,6 +7,7 @@
 #include "LastMovementValue.h"
 #include "Log.h"
 #include "MotionMaster.h"
+#include "MoveSpline.h"
 #include "Map.h"
 #include "PathGenerator.h"
 #include "Player.h"
@@ -624,6 +625,58 @@ AttemptResult AttemptObserver::Tick(RunContext& ctx, uint32 diff)
         {
             if (!member || !member->IsInWorld())
                 continue;
+            // Fall detection (read only): a bot 4+ yd lower than a second ago - what moved it there.
+            {
+                auto const prev = _lastSampleZ.find(member->GetGUID());
+                float const z = member->GetPositionZ();
+                if (prev != _lastSampleZ.end() && prev->second - z > 4.0f && member->IsAlive())
+                {
+                    PlayerbotAI* fallAi = GET_PLAYERBOT_AI(member);
+                    LastMovement* lastMove = fallAi ?
+                        &fallAi->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get() : nullptr;
+                    float const floorZ = member->GetMap()->GetHeight(member->GetPhaseMask(), member->GetPositionX(),
+                        member->GetPositionY(), prev->second + 2.0f, true, 50.0f);
+                    bool const splineActive = !member->movespline->Finalized();
+                    G3D::Vector3 const dest = splineActive ? member->movespline->FinalDestination() : G3D::Vector3();
+                    CombatEvent fall;
+                    fall.type = CombatEventType::State;
+                    fall.source = member->GetGUID();
+                    fall.detail = Acore::StringFormat("fall_detect:pos={:.2f},{:.2f},{:.2f} prev_z={:.2f} floor_z={:.2f} "
+                        "motion_type={} spline={} spline_dest={:.2f},{:.2f},{:.2f} falling_flag={} "
+                        "last_move=({:.2f},{:.2f},{:.2f}) issuer={} age_ms={}",
+                        member->GetPositionX(), member->GetPositionY(), z, prev->second, floorZ,
+                        uint32(member->GetMotionMaster()->GetCurrentMovementGeneratorType()), splineActive,
+                        dest.x, dest.y, dest.z, member->HasUnitMovementFlag(MOVEMENTFLAG_FALLING),
+                        lastMove ? lastMove->lastMoveToX : 0.0f, lastMove ? lastMove->lastMoveToY : 0.0f,
+                        lastMove ? lastMove->lastMoveToZ : 0.0f, lastMove ? lastMove->issuer : std::string("-"),
+                        lastMove ? getMSTimeDiff(lastMove->msTime, getMSTime()) : 0);
+                    // First sample of a drop (still above the old floor): replay the path search to the requested
+                    // point and record where the navmesh projects it and what the ground search returns from there.
+                    if (lastMove && floorZ > prev->second - 3.0f)
+                    {
+                        float const reqX = lastMove->lastMoveToX, reqY = lastMove->lastMoveToY, reqZ = lastMove->lastMoveToZ;
+                        Map* map = member->GetMap();
+                        uint32 const phase = member->GetPhaseMask();
+                        PathGenerator path(member);
+                        path.CalculatePath(member->GetPositionX(), member->GetPositionY(), prev->second, reqX, reqY, reqZ, false);
+                        PathRouteDiagnostics const diag = path.GetRouteDiagnostics();
+                        std::string points;
+                        for (G3D::Vector3 const& point : path.GetPath())
+                            points += Acore::StringFormat("{:.1f},", point.z);
+                        fall.detail += Acore::StringFormat(" | probe: path_type=0x{:X} points_z={} end_poly={} end_nav_z={:.2f} "
+                            "end_expanded={} start_nav_z={:.2f} ground_req+2={:.2f} ground_req+5={:.2f} ground_req+10={:.2f} "
+                            "collision_h={:.2f}",
+                            uint32(path.GetPathType()), points, uint64(diag.end.polyRef), diag.end.closestPoint.z,
+                            diag.end.usedExpandedQuery, diag.start.closestPoint.z,
+                            map->GetHeight(phase, reqX, reqY, reqZ + 2.0f, true, 50.0f),
+                            map->GetHeight(phase, reqX, reqY, reqZ + 5.0f, true, 50.0f),
+                            map->GetHeight(phase, reqX, reqY, reqZ + 10.0f, true, 50.0f), member->GetCollisionHeight());
+                    }
+                    CombatEventBus::instance().Push(fall);
+                    LOG_INFO("raidtest", "AttemptObserver: {} {}", member->GetName(), fall.detail);
+                }
+                _lastSampleZ[member->GetGUID()] = z;
+            }
             CombatEvent pos;
             pos.type = CombatEventType::State;
             pos.source = member->GetGUID();
