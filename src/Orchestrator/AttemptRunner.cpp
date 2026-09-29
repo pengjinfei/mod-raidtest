@@ -1520,9 +1520,11 @@ bool AttemptRunner::StartRouteRun(RunContext& ctx)
 
 void AttemptRunner::TickRouteRun(RunContext& ctx, uint32 diff)
 {
-    // A run without progress for this long, while nobody fights, is stuck (walked into a wall, waits for a member
-    // who cannot come, a pack it cannot pull...). Long enough for a full rest and a resurrection.
-    constexpr uint32 kRouteStallMs = 300000;
+    // A run without route progress for this long is stuck (walked into a wall, waits for a member who cannot come,
+    // a pack it cannot pull...). Long enough for a boss fight plus a full rest and a resurrection. Combat does not
+    // reset it: a pack that evades every pull (Utgarde Keep forge masters out of order) keeps the party "in combat"
+    // for a moment each time and would never trip an out-of-combat timer.
+    constexpr uint32 kRouteStallMs = 480000;
     constexpr uint32 kRouteSampleMs = 5000;
 
     AttemptResult const r = _observer.Tick(ctx, diff);
@@ -1554,7 +1556,7 @@ void AttemptRunner::TickRouteRun(RunContext& ctx, uint32 diff)
     float const progress = tankAI->GetAiObjectContext()->GetValue<float>("dungeon run progress")->Get();
     bool const fighting = std::any_of(ctx.bots.begin(), ctx.bots.end(),
         [](Player* bot) { return bot && bot->IsAlive() && bot->IsInCombat(); });
-    if (progress > _routeProgress + 1.0f || fighting)
+    if (progress > _routeProgress + 1.0f)
     {
         _routeProgress = std::max(_routeProgress, progress);
         _routeStallMs = 0;
