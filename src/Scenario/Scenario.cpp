@@ -620,6 +620,17 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _fixtureInstanceActions.push_back(int32(action));
             }
         }
+        else if (key == "PullerSlot")
+        {
+            uint32 slot = 0;
+            if (!ParseUint32(value, slot))
+                failed = true;
+            else
+            {
+                _pullerSlot = slot;
+                _hasPullerSlot = true;
+            }
+        }
         else if (key == "DungeonRun")
         {
             uint32 flag = 0;

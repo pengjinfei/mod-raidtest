@@ -2460,7 +2460,11 @@ bool AttemptRunner::StartBossPull(RunContext& ctx)
     for (Player* bot : ctx.bots)
         if (bot && bot != tank)
             _heldFollowers.push_back(bot->GetGUID());
-    if (!CombatTrigger::BeginTankPull(tank, ctx.boss))
+    Player* puller = tank;
+    if (ctx.scenario->HasPullerSlot() && ctx.scenario->GetPullerSlot() < ctx.bots.size() &&
+        ctx.bots[ctx.scenario->GetPullerSlot()])
+        puller = ctx.bots[ctx.scenario->GetPullerSlot()];
+    if (!CombatTrigger::BeginTankPull(puller, ctx.boss))
     {
         // 巡逻 boss：开怪那一刻他可能正好在柱子后面或走出施法距离（德雷德 14 点 waypoint
         // 路径，实测同一个开怪点对 8 个 waypoint 只有 6–8 个有视线，距离 11–34 码之间摆动）。

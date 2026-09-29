@@ -4,6 +4,7 @@
 # 开战 2 分钟时若队伍没有同时站在两侧（CheckGroupSplitted），直接开门、所有小怪一起冲过来——本场景先按
 # 「全员生者一侧、不分组」打。坦克准备点离高台 30 码（23 码处台沿挡视线，33 码处看得见），其余人在生者一侧地面。
 # 开战确认用 EngageConfirmBossState = 11:1（进行中）：一阶段他不会以坦克为目标。
+# 开怪由猎人（槽位 9）远程打一枪（PullerSlot）：坦克只会走近战，走到台下 23 码内看不见他就丢目标（run 1800）。
 [Scenario]
 MapId = 533
 BossEntry = 16060
@@ -28,4 +29,6 @@ EngageO = 3.14
 TimeoutSeconds = 900
 EngageTrigger = pull
 MasterlessAvoidAoe = 1
+PullerSlot = 9
+SlotPreparation.9 = 2675.0,-3387.0,267.7,3.14
 ObserveEntries = 16124,16125,16126,16127,16148,16150

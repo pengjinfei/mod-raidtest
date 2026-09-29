@@ -176,6 +176,10 @@ public:
     // the playerbots "dungeon run" strategy and walks the map's route; the framework only observes. Pair with
     // KillOnBossState = <last boss id>; one attempt per run (the instance is not reset).
     bool IsDungeonRun() const { return _dungeonRun; }
+    // PullerSlot = N: that roster slot opens the fight instead of the tank (a boss up on a ledge the tank cannot reach
+    // or keep in sight: Gothik). Pair with EngageConfirmBossState - the puller is not expected to hold aggro.
+    bool HasPullerSlot() const { return _hasPullerSlot; }
+    uint32 GetPullerSlot() const { return _pullerSlot; }
     // boss 不会死、打到残血后「投降」（致命伤害被吞掉，自己变成不可攻击并脱战，如 Mal'Ganis）：
     // 本 attempt 最低血量到过 10% 以下、且此刻带 UNIT_FLAG_NON_ATTACKABLE → 判 Kill。
     bool GetKillOnBossSurrender() const { return _killOnBossSurrender; }
@@ -292,6 +296,8 @@ protected:
     bool _fixtureBossNotify{false};
     bool _masterlessAvoidAoe{false};
     bool _dungeonRun{false};
+    bool _hasPullerSlot{false};
+    uint32 _pullerSlot{0};
     bool _killOnBossSurrender{false};
     bool _hasKillOnInstanceData{false};
     uint32 _killOnInstanceDataId{0};
