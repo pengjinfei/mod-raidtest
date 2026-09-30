@@ -1511,6 +1511,7 @@ bool AttemptRunner::StartRouteRun(RunContext& ctx)
     _routeProgress = 0.0f;
     _routeStallMs = 0;
     _routeSampleMs = 0;
+    _routeAnchor = tank->GetPosition();
     RecordPhase("route_start", ctx.attemptElapsedMs);
     _stage = Stage::RouteRun;
     LOG_INFO("raidtest", "AttemptRunner: attempt {} - dungeon run led by {} from ({:.1f},{:.1f},{:.1f})",
@@ -1526,6 +1527,7 @@ void AttemptRunner::TickRouteRun(RunContext& ctx, uint32 diff)
     // for a moment each time and would never trip an out-of-combat timer.
     constexpr uint32 kRouteStallMs = 480000;
     constexpr uint32 kRouteSampleMs = 5000;
+    constexpr float kRouteMoveYd = 20.0f;  // the tank moving this far from where the clock started resets it
 
     AttemptResult const r = _observer.Tick(ctx, diff);
     if (r != AttemptResult::Ongoing)
@@ -1556,10 +1558,15 @@ void AttemptRunner::TickRouteRun(RunContext& ctx, uint32 diff)
     float const progress = tankAI->GetAiObjectContext()->GetValue<float>("dungeon run progress")->Get();
     bool const fighting = std::any_of(ctx.bots.begin(), ctx.bots.end(),
         [](Player* bot) { return bot && bot->IsAlive() && bot->IsInCombat(); });
-    if (progress > _routeProgress + 1.0f)
+    // Progress on the route, or the tank getting somewhere, counts as not stalled: below Azjol-Nerub's drop there
+    // are no route nodes to advance on, and clearing to Anub'arak and fighting him took longer than the window; the
+    // run was aborted mid-fight (run 1881). Combat alone still does not count (see above).
+    bool const moved = tank->GetExactDist(_routeAnchor) > kRouteMoveYd;
+    if (progress > _routeProgress + 1.0f || moved)
     {
         _routeProgress = std::max(_routeProgress, progress);
         _routeStallMs = 0;
+        _routeAnchor = tank->GetPosition();
     }
     else if ((_routeStallMs += diff) >= kRouteStallMs)
     {

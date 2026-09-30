@@ -110,7 +110,8 @@ private:
     std::vector<uint32> _prerequisiteRebindElapsedMs;
     uint32 _preBossElapsed{0};
     float _routeProgress{0.0f};        // best "dungeon run progress" seen on the tank
-    uint32 _routeStallMs{0};           // out of combat without progress
+    uint32 _routeStallMs{0};           // without route progress or the tank moving on
+    Position _routeAnchor;             // where the tank stood when the stall clock last started
     uint32 _routeSampleMs{0};
     uint32 _preparationElapsed{0};
     // 前置清怪时首次进入场景 boss 的原生仇恨半径（且有 LOS）的只读诊断标记。
