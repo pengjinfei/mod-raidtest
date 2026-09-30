@@ -1,16 +1,16 @@
 # Heroic Azjol-Nerub full run (all-bot): the tank leads with the playerbots "dungeon run" strategy along
-# modules/mod-playerbots/data/dungeon-routes/601-azjol-nerub.route. First version ends at Hadronox (boss state 1);
-# the drop into Anub'arak's cavern is not in the route yet.
+# modules/mod-playerbots/data/dungeon-routes/601-azjol-nerub.route. Ends at Anub'arak (boss state 2);
+# the group drops down the hole in Hadronox's pit into the pool of his cavern.
 [Scenario]
 MapId = 601
-BossEntry = 28921
+BossEntry = 29120
 PartySize = 5
 DungeonDifficulty = heroic
 Strategy = wotlk-an
 RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
 GearProfile = none
 DungeonRun = 1
-KillOnBossState = 1
+KillOnBossState = 2
 PreparationX = 413.3
 PreparationY = 796.0
 PreparationZ = 831.4
