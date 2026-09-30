@@ -284,9 +284,12 @@ bool RaidTestCommandScript::HandleLosCommand(ChatHandler* handler, char const* a
     float const floor1 = tree.getHeight(v[0], v[1], v[2] + 2.0f, 50.0f);
     float const floor2 = tree.getHeight(v[3], v[4], v[5] + 2.0f, 50.0f);
     float const dist = std::sqrt((v[0] - v[3]) * (v[0] - v[3]) + (v[1] - v[4]) * (v[1] - v[4]));
+    // Liquid under the target point: a long drop into water is survivable (Azjol-Nerub's pit below Hadronox).
+    LiquidData const liquid = map->GetLiquidData(PHASEMASK_NORMAL, v[3], v[4], v[5], 2.0f, {});
     handler->PSendSysMessage("los map={} from=({:.1f},{:.1f},{:.2f}) to=({:.1f},{:.1f},{:.2f}) dist2d={:.1f} los={} "
-        "vmap_floor_from={:.2f} vmap_floor_to={:.2f}", *mapId, v[0], v[1], v[2], v[3], v[4], v[5], dist, los,
-        floor1, floor2);
+        "vmap_floor_from={:.2f} vmap_floor_to={:.2f} liquid_to={} liquid_level={:.2f} liquid_floor={:.2f}", *mapId,
+        v[0], v[1], v[2], v[3], v[4], v[5], dist, los, floor1, floor2, uint32(liquid.Status), liquid.Level,
+        liquid.DepthLevel);
     return true;
 }
 
