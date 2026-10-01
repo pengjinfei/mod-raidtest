@@ -1,0 +1,24 @@
+# Heroic Ahn'kahet full run (all-bot): the tank leads with the playerbots "dungeon run" strategy along
+# modules/mod-playerbots/data/dungeon-routes/619-ahnkahet.route. Ends at Herald Volazj (boss state 3); on the way
+# Elder Nadox, Prince Taldaram (two ancient devices first), Amanitar (heroic) and Jedoga Shadowseeker.
+[Scenario]
+MapId = 619
+BossEntry = 29311
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-ok
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 3
+PreparationX = 333.4
+PreparationY = -1109.9
+PreparationZ = 69.8
+PreparationO = 0.55
+EngageX = 333.4
+EngageY = -1109.9
+EngageZ = 69.8
+EngageO = 0.55
+TimeoutSeconds = 3600
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
