@@ -1512,6 +1512,7 @@ bool AttemptRunner::StartRouteRun(RunContext& ctx)
     _routeStallMs = 0;
     _routeSampleMs = 0;
     _routeAnchor = tank->GetPosition();
+    _routeDumpMs = 0;
     RecordPhase("route_start", ctx.attemptElapsedMs);
     _stage = Stage::RouteRun;
     LOG_INFO("raidtest", "AttemptRunner: attempt {} - dungeon run led by {} from ({:.1f},{:.1f},{:.1f})",
@@ -1528,6 +1529,8 @@ void AttemptRunner::TickRouteRun(RunContext& ctx, uint32 diff)
     constexpr uint32 kRouteStallMs = 480000;
     constexpr uint32 kRouteSampleMs = 5000;
     constexpr float kRouteMoveYd = 20.0f;  // the tank moving this far from where the clock started resets it
+    constexpr uint32 kRouteStallDumpMs = 60000;
+    constexpr uint32 kRouteDumpEveryMs = 30000;
 
     AttemptResult const r = _observer.Tick(ctx, diff);
     if (r != AttemptResult::Ongoing)
@@ -1570,9 +1573,18 @@ void AttemptRunner::TickRouteRun(RunContext& ctx, uint32 diff)
     }
     else if ((_routeStallMs += diff) >= kRouteStallMs)
     {
+        DumpCombatHolders(ctx, tank, "stall_abort");
         Abort(Acore::StringFormat("route stalled at {:.0f} yd (tank at {:.1f},{:.1f},{:.1f})", _routeProgress,
             tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ()));
         return;
+    }
+
+    // Stalled for a minute: record what keeps the group in combat, every 30 s (run 1902 stood eight minutes with
+    // three members "in combat" and no damage but one melee swing a minute; the log that could tell why was gone).
+    if (_routeStallMs >= kRouteStallDumpMs && (_routeDumpMs += diff) >= kRouteDumpEveryMs)
+    {
+        _routeDumpMs = 0;
+        DumpCombatHolders(ctx, tank, "stalled");
     }
 
     if ((_routeSampleMs += diff) >= kRouteSampleMs)
@@ -1589,6 +1601,52 @@ void AttemptRunner::TickRouteRun(RunContext& ctx, uint32 diff)
             progress, tank->GetPositionX(), tank->GetPositionY(), tank->GetPositionZ(), alive, ctx.bots.size(),
             fighting);
         CombatEventBus::instance().Push(state);
+    }
+}
+
+// Observation only: every creature the group is in combat with, with what could keep it from dying or leaving -
+// out of reach, out of sight, under the floor, evading, fleeing, not attackable.
+void AttemptRunner::DumpCombatHolders(RunContext& ctx, Player* tank, char const* reason)
+{
+    std::set<ObjectGuid> seen;
+    for (Player* bot : ctx.bots)
+    {
+        if (!bot || !bot->IsInWorld())
+            continue;
+        for (auto const& [guid, ref] : bot->GetCombatManager().GetPvECombatRefs())
+        {
+            Unit* other = ref->GetOther(bot);
+            Creature* creature = other ? other->ToCreature() : nullptr;
+            if (!creature || !seen.insert(creature->GetGUID()).second)
+                continue;
+            Map* map = creature->GetMap();
+            float const x = creature->GetPositionX();
+            float const y = creature->GetPositionY();
+            float const z = creature->GetPositionZ();
+            // A floor above the creature within 20 yd while none is under it: it stands inside or below the level.
+            float const below = map->GetHeight(creature->GetPhaseMask(), x, y, z + 2.0f, true, 50.0f);
+            float const above = map->GetHeight(creature->GetPhaseMask(), x, y, z + 20.0f, true, 18.0f);
+            PathGenerator path(bot);
+            path.CalculatePath(x, y, z, false);
+            std::string const detail = Acore::StringFormat(
+                "combat_holder:reason={} entry={} name={} spawn={} hp={:.0f}% pos={:.1f},{:.1f},{:.1f} "
+                "floor_below={:.1f} floor_above={:.1f} member={} dist={:.1f} tank_dist={:.1f} los={} path={} "
+                "alive={} evade={} flee={} selectable={} attackable={} victim={} motion={} casting={} threat_size={}",
+                reason, creature->GetEntry(), creature->GetName(), creature->GetSpawnId(), creature->GetHealthPct(),
+                x, y, z, below, above, bot->GetName(), bot->GetDistance(creature),
+                tank ? tank->GetDistance(creature) : -1.0f, bot->IsWithinLOSInMap(creature), uint32(path.GetPathType()),
+                creature->IsAlive(), creature->IsInEvadeMode(), creature->HasUnitState(UNIT_STATE_FLEEING),
+                !creature->HasUnitFlag(UNIT_FLAG_NOT_SELECTABLE), bot->IsValidAttackTarget(creature),
+                creature->GetVictim() ? creature->GetVictim()->GetName() : "-",
+                uint32(creature->GetMotionMaster()->GetCurrentMovementGeneratorType()),
+                creature->IsNonMeleeSpellCast(false), creature->GetThreatMgr().GetThreatListSize());
+            LOG_INFO("raidtest", "AttemptRunner: {}", detail);
+            CombatEvent state;
+            state.type = CombatEventType::State;
+            state.source = creature->GetGUID();
+            state.detail = detail;
+            CombatEventBus::instance().Push(state);
+        }
     }
 }
 
