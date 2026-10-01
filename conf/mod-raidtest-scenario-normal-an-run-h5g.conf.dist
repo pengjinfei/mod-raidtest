@@ -1,0 +1,22 @@
+# Normal-difficulty regression of heroic-an-run-h5g (same route, roster and settings): heroic is the target, normal must not break.
+[Scenario]
+MapId = 601
+BossEntry = 29120
+PartySize = 5
+DungeonDifficulty = normal
+Strategy = wotlk-an
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 2
+PreparationX = 413.3
+PreparationY = 796.0
+PreparationZ = 831.4
+PreparationO = 5.5
+EngageX = 413.3
+EngageY = 796.0
+EngageZ = 831.4
+EngageO = 5.5
+TimeoutSeconds = 3600
+EngageTrigger = pull
+MasterlessAvoidAoe = 1
