@@ -1,0 +1,26 @@
+# Heroic Drak'Tharon Keep run from a checkpoint (all-bot), my-mac 2026-10-02: starts at route node 250 (-386,-606.8),
+# just before the two Risen Drakkari Warriors (along 266) and the first hall (along 336), and goes on to the end.
+# For iterating on the later stretches; a fix is confirmed by full runs from the entrance (heroic-dtk-run-h5g).
+# Everything the route clears before the start (along < 250: packs 118, 158, 226, 20 spawns) is gone, as if cleared;
+# full runs 100049 and 100053 cleared them with no deaths.
+[Scenario]
+MapId = 600
+BossEntry = 26632
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-dtk
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 4
+PreparationX = -386.0
+PreparationY = -606.8
+PreparationZ = 2.0
+PreparationO = 6.2
+EngageX = -386.0
+EngageY = -606.8
+EngageZ = 2.0
+EngageO = 6.2
+TimeoutSeconds = 3600
+EngageTrigger = pull
+FixtureDespawnSpawns = 127436,127437,127596,127411,127440,127441,127572,127575,127576,127587,127410,127412,127430,127431,127585,127593,127594,127600,127601,127603
