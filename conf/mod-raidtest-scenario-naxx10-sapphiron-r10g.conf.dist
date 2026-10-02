@@ -22,4 +22,3 @@ EngageO = 1.2
 PullWaitAttackableSeconds = 40
 TimeoutSeconds = 900
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

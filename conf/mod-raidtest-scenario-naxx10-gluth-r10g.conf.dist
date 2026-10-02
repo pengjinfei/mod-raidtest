@@ -32,4 +32,3 @@ NonTankPreparationZ = 297.8
 NonTankPreparationO = 4.4
 TimeoutSeconds = 420
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

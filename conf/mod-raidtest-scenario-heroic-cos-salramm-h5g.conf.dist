@@ -22,4 +22,3 @@ PreparationO = 0.69
 FixtureSummonCreature = 26530:2351.45,1197.81,130.45,3.83
 TimeoutSeconds = 480
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

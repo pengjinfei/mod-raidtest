@@ -24,4 +24,3 @@ BossSpawnMode = script
 FixtureSummonCreature = 31134:1892.29,805.70,38.44,5.5
 TimeoutSeconds = 480
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

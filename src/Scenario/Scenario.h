@@ -171,7 +171,6 @@ public:
     // mod-playerbots AiFactory 只在 HasGameClientMaster() 时默认加这条策略，raidtest 全 bot 队伍因此
     // 从未躲过地面持续区域（哈多诺克斯酸液云占非坦克承伤 47–75%）。这是真人带队时的默认策略，
     // 不改 bot 的决策逻辑；按场景显式开启以免悄悄改变其它场景基线。
-    bool GetMasterlessAvoidAoe() const { return _masterlessAvoidAoe; }
     // DungeonRun = 1: a whole-dungeon run. The party starts at the preparation point (the entrance), the tank gets
     // the playerbots "dungeon run" strategy and walks the map's route; the framework only observes. Pair with
     // KillOnBossState = <last boss id>; one attempt per run (the instance is not reset).
@@ -294,7 +293,6 @@ protected:
     std::vector<int32> _fixtureInstanceActions;
     std::vector<FixtureSummon> _fixtureSummons;
     bool _fixtureBossNotify{false};
-    bool _masterlessAvoidAoe{false};
     bool _dungeonRun{false};
     bool _hasPullerSlot{false};
     uint32 _pullerSlot{0};

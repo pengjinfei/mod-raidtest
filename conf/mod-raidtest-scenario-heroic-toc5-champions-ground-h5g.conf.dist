@@ -28,4 +28,3 @@ EngageConfirmInstanceData = 4:5
 KillOnInstanceData = 4:6
 TimeoutSeconds = 480
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

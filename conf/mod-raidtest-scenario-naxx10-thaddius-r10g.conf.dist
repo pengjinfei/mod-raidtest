@@ -38,4 +38,3 @@ SlotPreparation.8 = 3520.0,-3016.0,311.7,2.0
 SlotPreparation.9 = 3520.0,-3016.0,311.7,2.0
 ObserveEntries = 15929,15930
 TimeoutSeconds = 720
-MasterlessAvoidAoe = 1

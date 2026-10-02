@@ -25,4 +25,3 @@ EngageTrigger = areatrigger
 EngageAreaTrigger = 4991
 EngageConfirmInstanceData = 2:1
 TimeoutSeconds = 600
-MasterlessAvoidAoe = 1

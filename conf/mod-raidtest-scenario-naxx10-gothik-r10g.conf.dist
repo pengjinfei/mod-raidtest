@@ -28,7 +28,6 @@ EngageZ = 267.7
 EngageO = 3.14
 TimeoutSeconds = 900
 EngageTrigger = pull
-MasterlessAvoidAoe = 1
 PullerSlot = 9
 SlotPreparation.9 = 2675.0,-3387.0,267.7,3.14
 ObserveEntries = 16124,16125,16126,16127,16148,16150

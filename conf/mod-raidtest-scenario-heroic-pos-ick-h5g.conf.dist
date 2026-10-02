@@ -23,4 +23,3 @@ FixtureDespawnSpawns = 201903,201981,201833,202156,202236
 FixtureInstanceData = 4:1
 TimeoutSeconds = 480
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

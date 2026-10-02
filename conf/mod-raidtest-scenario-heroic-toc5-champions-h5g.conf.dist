@@ -30,4 +30,3 @@ EventFailureEscortEntry = 35005
 KillOnInstanceData = 4:6
 EngageTrigger = pull
 TimeoutSeconds = 900
-MasterlessAvoidAoe = 1

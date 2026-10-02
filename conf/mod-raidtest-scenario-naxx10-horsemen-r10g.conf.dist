@@ -26,7 +26,6 @@ EngageZ = 241.3
 EngageO = 0.3
 TimeoutSeconds = 900
 EngageTrigger = pull
-MasterlessAvoidAoe = 1
 SlotPreparation.0 = 2506.9,-2958.8,243.3,0.25
 # 副坦（槽位 5 血 DK）开怪前就在里文戴尔的角落等：从台阶跑 78 码要约 11 秒，男爵到角落转主动后先去打仇恨
 # 最高的神圣骑（治疗仇恨分摊到所有进战的敌人），1739 一下 10243，神圣骑死、泽里克审判全团。

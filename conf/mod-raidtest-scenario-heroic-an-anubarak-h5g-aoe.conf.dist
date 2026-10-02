@@ -47,8 +47,8 @@ EngageY = 248.0
 EngageZ = 223.44
 EngageO = 4.71
 TimeoutSeconds = 480
-# 2026-09-25：与 heroic-an-anubarak-h5g 唯一差别——无真人 master 也启用标准 avoid aoe（BACKLOG 第 8 条对照）。
-MasterlessAvoidAoe = 1
+# 2026-09-25：原与 heroic-an-anubarak-h5g 唯一差别是无真人 master 也启用 avoid aoe；2026-10-02 起改由 playerbots
+# AiPlayerbot.AutoAvoidAoeWithoutMaster 全局开启，两者已无差别。
 EngageTrigger = pull
 # 准备点：2026-09-13 曾试挪到南侧 (543,230,224.1)，run 468/1 牧师从东南沿 (562,230) 掉出、法师站到南沿外——那里离南沿只有 7 码。
 # 回到 (527,248)：离 boss 出生点 24 码（仇恨半径外），虽在西沿导航网格尽头，但 27 场里只被击飞掉落 6 人次。

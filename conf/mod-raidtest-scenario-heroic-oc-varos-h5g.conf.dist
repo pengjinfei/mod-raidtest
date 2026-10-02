@@ -22,4 +22,3 @@ FixtureInstanceData = 0:3,5:3,5:3,5:3,5:3,5:3,5:3,5:3,5:3,5:3,5:3
 FixtureDespawnSpawns = 100932,101882,101892,101893,101498,101874
 TimeoutSeconds = 480
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

@@ -21,5 +21,4 @@ EngageZ = 267.7
 EngageO = 0.0
 TimeoutSeconds = 720
 EngageTrigger = pull
-MasterlessAvoidAoe = 1
 FixtureDespawnSpawns = 127796,127797,127798,127816,127817,127819,127820,127824

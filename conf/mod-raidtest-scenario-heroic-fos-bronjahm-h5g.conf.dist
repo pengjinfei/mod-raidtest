@@ -20,4 +20,3 @@ PreparationO = 0.0
 FixtureDespawnSpawns = 201700,201757,201706,201764,201762,201790,201791,201732,201695
 TimeoutSeconds = 480
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

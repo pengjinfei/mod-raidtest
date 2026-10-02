@@ -639,14 +639,6 @@ bool Scenario::LoadFromFile(std::string const& filePath)
             else
                 _dungeonRun = flag == 1;
         }
-        else if (key == "MasterlessAvoidAoe")
-        {
-            uint32 flag = 0;
-            if (!ParseUint32(value, flag) || flag > 1)
-                failed = true;
-            else
-                _masterlessAvoidAoe = flag == 1;
-        }
         else if (key == "KillOnInstanceData")
         {
             std::string const item = Acore::String::Trim(value);

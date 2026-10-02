@@ -27,4 +27,3 @@ FixtureInstanceData = 0:3,1:3,4:5
 EngageTrigger = areatrigger
 EngageAreaTrigger = 5633
 TimeoutSeconds = 480
-MasterlessAvoidAoe = 1

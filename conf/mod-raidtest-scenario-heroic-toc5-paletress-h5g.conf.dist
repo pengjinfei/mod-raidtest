@@ -26,4 +26,3 @@ FixtureSummonCreature = 34928:746.88,635.26,411.70,4.71
 KillOnBossSurrender = 1
 TimeoutSeconds = 480
 EngageTrigger = pull
-MasterlessAvoidAoe = 1

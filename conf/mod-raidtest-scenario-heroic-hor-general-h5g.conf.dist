@@ -24,4 +24,3 @@ FixtureDespawnSpawns = 1972019
 FixtureSummonCreature = 36723:5413.92,2116.50,707.70,3.95
 EngageTrigger = pull
 TimeoutSeconds = 300
-MasterlessAvoidAoe = 1

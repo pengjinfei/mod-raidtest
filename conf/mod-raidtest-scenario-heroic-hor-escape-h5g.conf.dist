@@ -32,4 +32,3 @@ EventFollowStarter = true
 EventTrackEntries = 36941,37069,36940
 EngageTrigger = pull
 TimeoutSeconds = 600
-MasterlessAvoidAoe = 1

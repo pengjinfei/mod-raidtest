@@ -24,4 +24,3 @@ EngageTrigger = self
 EngageConfirmInstanceData = 8:1
 EngageConfirmInstanceDataAtLeast = 1
 TimeoutSeconds = 600
-MasterlessAvoidAoe = 1

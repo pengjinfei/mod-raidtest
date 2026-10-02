@@ -19,4 +19,3 @@ EngageZ = 273.7
 EngageO = 4.9
 TimeoutSeconds = 720
 EngageTrigger = pull
-MasterlessAvoidAoe = 1
