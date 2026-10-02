@@ -28,6 +28,9 @@
 #include "Map.h"
 #include "MapCollisionData.h"
 #include "MapMgr.h"
+#include "ObjectAccessor.h"
+#include "PathGenerator.h"
+#include "Player.h"
 #include "Position.h"
 #include "RaidTestConfig.h"
 #include "RaidTestOrchestrator.h"
@@ -169,6 +172,7 @@ public:
             {"dump",     HandleDumpCommand,     SEC_ADMINISTRATOR, Console::Yes},
             // 只读的静态视线探针：勘测准备点/清怪点时用，不登录角色、不建实例。
             {"los",      HandleLosCommand,      SEC_ADMINISTRATOR, Console::Yes},
+            {"path",     HandlePathCommand,     SEC_ADMINISTRATOR, Console::Yes},
             // 观察会话必须由真人在游戏内发起（需要发起者的队伍作为成员集合），
             // 因此 Console::No。SEC_PLAYER：它是纯只读采样，不登录角色、不建组、
             // 不传送、不开怪、不改任何游戏状态，只写 raidtest_events。代价是普通玩家
@@ -236,6 +240,10 @@ private:
     // 两端所在的 vmap 瓦片。用途：选准备点/清怪点前先在控制台批量验视线，而不是靠一场场试
     // （run394/395–399：(519,116–121) 一带对泰蕾斯特拉守卫全部无视线，每个点试一次要一分钟）。
     static bool HandleLosCommand(ChatHandler* handler, char const* args);
+    // Read-only navmesh probe: the path the named player's map instance would give between two points.
+    // `los` only sees the collision model; a dungeon-run route also needs the navmesh to connect its nodes
+    // without dropping under the map (Drak'Tharon Keep's entrance pit, my-mac run100048).
+    static bool HandlePathCommand(ChatHandler* handler, char const* args);
 };
 
 bool RaidTestCommandScript::HandleLosCommand(ChatHandler* handler, char const* args)
@@ -290,6 +298,53 @@ bool RaidTestCommandScript::HandleLosCommand(ChatHandler* handler, char const* a
         "vmap_floor_from={:.2f} vmap_floor_to={:.2f} liquid_to={} liquid_level={:.2f} liquid_floor={:.2f}", *mapId,
         v[0], v[1], v[2], v[3], v[4], v[5], dist, los, floor1, floor2, uint32(liquid.Status), liquid.Level,
         liquid.DepthLevel);
+    return true;
+}
+
+bool RaidTestCommandScript::HandlePathCommand(ChatHandler* handler, char const* args)
+{
+    std::vector<std::string> tokens = TokenizeArgs(args ? args : "");
+    if (tokens.size() != 7)
+    {
+        handler->SendSysMessage("usage: .raidtest path <player in the map> <x1> <y1> <z1> <x2> <y2> <z2>");
+        return true;
+    }
+
+    Player* owner = ObjectAccessor::FindPlayerByName(tokens[0], false);
+    if (!owner || !owner->IsInWorld())
+    {
+        handler->PSendSysMessage("path: player '{}' not in world", tokens[0]);
+        return true;
+    }
+
+    float v[6];
+    for (size_t i = 0; i < 6; ++i)
+    {
+        Optional<float> value = Acore::StringTo<float>(tokens[i + 1]);
+        if (!value)
+        {
+            handler->PSendSysMessage("path: bad number '{}'", tokens[i + 1]);
+            return true;
+        }
+        v[i] = *value;
+    }
+
+    PathGenerator path(owner);
+    path.CalculatePath(v[0], v[1], v[2], v[3], v[4], v[5], false);
+    Movement::PointsArray const& points = path.GetPath();
+    float length = 0.0f;
+    float minZ = points.empty() ? 0.0f : points.front().z;
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        minZ = std::min(minZ, points[i].z);
+        if (i)
+            length += (points[i] - points[i - 1]).length();
+    }
+    G3D::Vector3 const end = points.empty() ? G3D::Vector3(0.0f, 0.0f, 0.0f) : points.back();
+    float const endGap = std::sqrt((end.x - v[3]) * (end.x - v[3]) + (end.y - v[4]) * (end.y - v[4]));
+    handler->PSendSysMessage("path map={} from=({:.1f},{:.1f},{:.2f}) to=({:.1f},{:.1f},{:.2f}) type=0x{:02X} points={} "
+        "length={:.1f} min_z={:.2f} end=({:.1f},{:.1f},{:.2f}) end_gap2d={:.1f}", owner->GetMapId(), v[0], v[1], v[2],
+        v[3], v[4], v[5], uint32(path.GetPathType()), points.size(), length, minZ, end.x, end.y, end.z, endGap);
     return true;
 }
 
