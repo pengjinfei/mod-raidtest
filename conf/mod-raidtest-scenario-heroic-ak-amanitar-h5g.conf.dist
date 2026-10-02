@@ -31,7 +31,11 @@ EngageZ = -74.9
 EngageO = 0.0
 TimeoutSeconds = 420
 EngageTrigger = pull
-PrerequisiteSpawns = 131949,131948,131947,131950,131945,131946
+# v4（run100030–100040 后）：去掉 131945（原地游走，距 boss 98.1 码）与 131950（巡逻最近 114.8 码）——
+#   两者都到不了 boss 战场；v3 的 3 次清怪超时全卡在 131945，3 次清怪减员都发生在绕这一大圈的路上。
+#   保留确实进过 boss 战的巡逻 131947（run100019 第 189 秒进场）。
+#   v3 cohort：boss 阶段 4/4 kill（run100030/32/33/35，0 死）；清怪阶段 6 次 prerequisite_failed。
+PrerequisiteSpawns = 131949,131948,131947,131946
 PreparationX = 344.7
 PreparationY = -798.1
 PreparationZ = -72.0
