@@ -1506,6 +1506,13 @@ bool AttemptRunner::StartRouteRun(RunContext& ctx)
             ai->SetMaster(tank);
         CombatTrigger::RestoreFollowerAttackTagged(bot);
     }
+    // A dungeon run never reaches the pull path that installs it: the scenario's MasterlessAvoidAoe was ignored and
+    // the group stood in Taldaram's flame spheres (Ahn'kahet, run 1970).
+    if (ctx.scenario->GetMasterlessAvoidAoe() && !RosterLogin::EnsureCombatStrategy(ctx.bots, "avoid aoe"))
+    {
+        Abort("raid_invalid: avoid aoe strategy inactive before the run");
+        return false;
+    }
     tankAI->ChangeStrategy("+dungeon run", BOT_STATE_NON_COMBAT);
     _pullTank = tank->GetGUID();
     _routeProgress = 0.0f;
