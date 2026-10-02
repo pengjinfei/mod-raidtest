@@ -159,6 +159,7 @@ public:
     // 按顺序调用 InstanceScript::DoAction("<action>,...")，在持久数据之后执行。紫罗兰监狱的
     // ACTION_RELEASE_BOSS=3 开牢房放 boss（原本由 Azure Saboteur 在第 6/12 波调用）。隔离形态，结论口径降级。
     std::vector<int32> const& GetFixtureInstanceActions() const { return _fixtureInstanceActions; }
+    std::vector<std::pair<uint32, uint32>> const& GetFixtureInstanceSetData() const { return _fixtureInstanceSetData; }
     // 在场景地图上直接召唤单位（"<entry>:<x>,<y>,<z>,<o>;..."），在上面三种实例夹具之后执行。用于没有 DB spawn、
     // 原本由事件链召出的 boss（净化斯坦索姆 Meathook / Salramm / Epoch）。隔离形态：跳过事件与协助 NPC，口径降级。
     struct FixtureSummon
@@ -291,6 +292,7 @@ protected:
     std::vector<std::pair<uint32, uint32>> _fixtureInstanceData;
     std::vector<std::pair<uint32, uint32>> _fixturePersistentData;
     std::vector<int32> _fixtureInstanceActions;
+    std::vector<std::pair<uint32, uint32>> _fixtureInstanceSetData;
     std::vector<FixtureSummon> _fixtureSummons;
     bool _fixtureBossNotify{false};
     bool _dungeonRun{false};

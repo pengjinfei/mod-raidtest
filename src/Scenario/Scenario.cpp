@@ -609,6 +609,22 @@ bool Scenario::LoadFromFile(std::string const& filePath)
                     _fixtureSummons.push_back(summon);
             }
         }
+        else if (key == "FixtureInstanceSetData")
+        {
+            // "type:data,...": the instance script's own SetData, as the event that sets it would call it (a device
+            // used, a door opened) - a checkpoint starts with what lies before it done.
+            for (auto token : Acore::Tokenize(value, ',', false))
+            {
+                std::vector<std::string_view> const pair = Acore::Tokenize(token, ':', false);
+                uint32 type = 0;
+                uint32 data = 0;
+                if (pair.size() != 2 || !ParseUint32(Acore::String::Trim(std::string(pair[0])), type) ||
+                    !ParseUint32(Acore::String::Trim(std::string(pair[1])), data))
+                    failed = true;
+                else
+                    _fixtureInstanceSetData.emplace_back(type, data);
+            }
+        }
         else if (key == "FixtureInstanceAction")
         {
             for (auto token : Acore::Tokenize(value, ',', false))

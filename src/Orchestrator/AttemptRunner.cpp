@@ -863,7 +863,8 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
 
             // 隔离夹具（FixturePersistentData / FixtureInstanceAction）：写持久数据槽、再调副本脚本的
             // DoAction。紫罗兰监狱用它指定并放出牢房 boss；每场 attempt 都要重放（boss 复位会关回牢房）。
-            if (!ctx.scenario->GetFixturePersistentData().empty() || !ctx.scenario->GetFixtureInstanceActions().empty())
+            if (!ctx.scenario->GetFixturePersistentData().empty() || !ctx.scenario->GetFixtureInstanceActions().empty() ||
+                !ctx.scenario->GetFixtureInstanceSetData().empty())
             {
                 Map* map = ctx.bots.front()->GetMap();
                 InstanceScript* script = map->ToInstanceMap() ? map->ToInstanceMap()->GetInstanceScript() : nullptr;
@@ -879,6 +880,15 @@ void AttemptRunner::Tick(RunContext& ctx, uint32 diff)
                     ev.type = CombatEventType::State;
                     ev.detail = Acore::StringFormat("fixture_persistent_data=index:{} value:{} now:{}", index, data,
                         script->GetPersistentData(index));
+                    CombatEventBus::instance().Push(ev);
+                    LOG_INFO("raidtest", "AttemptRunner: {}", ev.detail);
+                }
+                for (auto const& [type, data] : ctx.scenario->GetFixtureInstanceSetData())
+                {
+                    script->SetData(type, data);
+                    CombatEvent ev;
+                    ev.type = CombatEventType::State;
+                    ev.detail = Acore::StringFormat("fixture_instance_set_data=type:{} data:{}", type, data);
                     CombatEventBus::instance().Push(ev);
                     LOG_INFO("raidtest", "AttemptRunner: {}", ev.detail);
                 }
