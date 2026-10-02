@@ -1,0 +1,25 @@
+# Heroic Drak'Tharon Keep full run (all-bot), my-mac 2026-10-02: the tank leads with the playerbots "dungeon run"
+# strategy along modules/mod-playerbots/data/dungeon-routes/600-drak-tharon-keep.route
+# (tools/route-gen/overrides/600-drak-tharon-keep.txt). Ends at The Prophet Tharon'ja (boss state 4, DATA_THARON_JA;
+# the instance registers 5 encounters because DATA_NOVOS_CRYSTALS = 2 sits in between).
+# Start at the instance entrance (areatrigger 4998 target).
+[Scenario]
+MapId = 600
+BossEntry = 26632
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-dtk
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 4
+PreparationX = -517.3
+PreparationY = -488.0
+PreparationZ = 11.0
+PreparationO = 4.83
+EngageX = -517.3
+EngageY = -488.0
+EngageZ = 11.0
+EngageO = 4.83
+TimeoutSeconds = 3600
+EngageTrigger = pull
