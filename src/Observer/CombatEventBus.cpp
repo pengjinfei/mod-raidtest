@@ -772,7 +772,7 @@ void RaidTestUnitScript::OnUnitEnterCombat(Unit* unit, Unit* victim)
 class RaidTestPlayerDeathScript : public PlayerScript
 {
 public:
-    RaidTestPlayerDeathScript() : PlayerScript("RaidTestPlayerDeathScript", { PLAYERHOOK_ON_PLAYER_JUST_DIED }) { }
+    RaidTestPlayerDeathScript() : PlayerScript("RaidTestPlayerDeathScript", { PLAYERHOOK_ON_PLAYER_JUST_DIED, PLAYERHOOK_ON_BEFORE_TELEPORT }) { }
 
     void OnPlayerJustDied(Player* player) override
     {
@@ -791,6 +791,30 @@ public:
             player->GetPositionZ(), player->GetMapId());
         bus.Push(e);
         LOG_INFO("raidtest", "CombatEventBus: {} died without a unit-death hook ({})", player->GetName(), e.detail);
+    }
+
+    // Read-only: every teleport of an attempt member, with where it goes. All five bots of a Drak'Tharon Keep run were
+    // world-ported at once mid-route (LOGINEFFECT 836 on each, my-mac run100076 at 435 s, run100019 at 439 s) and the
+    // attempt was scored a wipe; nothing in the logs said who sent them where.
+    bool OnPlayerBeforeTeleport(Player* player, uint32 mapid, float x, float y, float z, float /*orientation*/,
+                                uint32 options, Unit* target) override
+    {
+        CombatEventBus& bus = CombatEventBus::instance();
+        if (!bus.IsActive() || !player || !bus.IsMember(player->GetGUID()))
+            return true;
+
+        CombatEvent e;
+        e.type = CombatEventType::State;
+        e.source = player->GetGUID();
+        e.value = int32(mapid);
+        e.detail = fmt::format("teleport:to_map={} to=({:.1f},{:.1f},{:.1f}) from_map={} from=({:.1f},{:.1f},{:.1f}) "
+            "options={} target={} alive={}", mapid, x, y, z, player->GetMapId(), player->GetPositionX(),
+            player->GetPositionY(), player->GetPositionZ(), options, target ? target->GetName() : "none",
+            player->IsAlive());
+        bus.Push(e);
+        if (mapid != player->GetMapId())
+            LOG_INFO("raidtest", "CombatEventBus: {} {}", player->GetName(), e.detail);
+        return true;
     }
 };
 
