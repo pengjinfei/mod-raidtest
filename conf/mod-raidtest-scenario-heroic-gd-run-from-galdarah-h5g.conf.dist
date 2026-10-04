@@ -1,0 +1,30 @@
+# Checkpoint of heroic-gd-run-h5g just before Gal'darah (fixtures at the end). The full run: from the south entrance
+# to Gal'darah. The tank leads with the playerbots "dungeon run" strategy
+# along modules/mod-playerbots/data/dungeon-routes/604-gundrak.route: Slad'ran, Drakkari Colossus, Moorabi (each altar
+# used after its boss), Eck the Ferocious (heroic, summoned once the Ruins Dwellers die), Gal'darah. Ends at Gal'darah
+# (boss state 3).
+[Scenario]
+MapId = 604
+BossEntry = 29306
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 3
+PreparationX = 1704.5
+PreparationY = 748.0
+PreparationZ = 139.3
+PreparationO = 2.0
+EngageX = 1704.5
+EngageY = 748.0
+EngageZ = 139.3
+EngageO = 2.0
+TimeoutSeconds = 1800
+EngageTrigger = pull
+# Checkpoint before the walk over the raised keystone to Gal'darah: Slad'ran, Moorabi, the Colossus and Eck done, the three
+# altars used (instance SetData by altar entry raises the keystone), everything on the route before it despawned.
+FixtureBossStates = 0:3,1:3,2:3,4:3
+FixtureInstanceSetData = 192518:0,192520:0,192519:0
+FixtureDespawnSpawns = 127016,127026,127027,127014,127015,127025,127017,127028,127029,127042,127085,127086,127094,127096,127097,127098,127105,127089,127009,127010,127018,127019,127007,127045,127058,127008,127020,127013,127023,127024,127006,127012,127022,127021,127011,127079,127082,127046,127076,127077,127078,127080,127081,127100,127087,127099,127069,127095,127052,127053,127057,127063,127054,127064,127048,127055,127060,127066,127083,127084,127049,127050,127056,127061,127070,127102,127104,127047,127059,127065,127067,127068,127113,127051,127062,127043,127088,127090,127091,127092,127093,127101,127103,127106,127204,127205,127206,127201,127202,127203
