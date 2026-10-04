@@ -1,0 +1,24 @@
+# Heroic Halls of Lightning full run (all-bot), my-mac 2026-10-04: the tank leads with the playerbots "dungeon run"
+# strategy along modules/mod-playerbots/data/dungeon-routes/602-halls-of-lightning.route
+# (tools/route-gen/overrides/602-halls-of-lightning.txt). Ends at Loken (boss state 2, DATA_LOKEN).
+# Start at the instance entrance (areatrigger 5093 target).
+[Scenario]
+MapId = 602
+BossEntry = 28923
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hol
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 2
+PreparationX = 1331.5
+PreparationY = 259.6
+PreparationZ = 53.4
+PreparationO = 4.77
+EngageX = 1331.5
+EngageY = 259.6
+EngageZ = 53.4
+EngageO = 4.77
+TimeoutSeconds = 5400
+EngageTrigger = pull
