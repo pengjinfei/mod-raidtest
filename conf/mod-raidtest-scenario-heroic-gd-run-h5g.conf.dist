@@ -1,0 +1,24 @@
+# Heroic Gundrak run from the south entrance to Gal'darah. The tank leads with the playerbots "dungeon run" strategy
+# along modules/mod-playerbots/data/dungeon-routes/604-gundrak.route: Slad'ran, Drakkari Colossus, Moorabi (each altar
+# used after its boss), Eck the Ferocious (heroic, summoned once the Ruins Dwellers die), Gal'darah. Ends at Gal'darah
+# (boss state 3).
+[Scenario]
+MapId = 604
+BossEntry = 29306
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-gd
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 3
+PreparationX = 1882.3
+PreparationY = 631.0
+PreparationZ = 176.7
+PreparationO = 2.0
+EngageX = 1882.3
+EngageY = 631.0
+EngageZ = 176.7
+EngageO = 2.0
+TimeoutSeconds = 5400
+EngageTrigger = pull
