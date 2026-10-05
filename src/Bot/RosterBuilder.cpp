@@ -961,6 +961,12 @@ bool RosterBuilder::PrepareCharacter(Player* bot, RosterSlot const& slot)
     }
     else
         factory.InitGlyphs(false);
+    // Loot from earlier runs off the backpack, supplies kept: a character used for run after run filled its 16
+    // slots, and the tank stood looting a corpse in Gundrak's Colossus room until the run stalled (run 2203).
+    for (uint8 invSlot = INVENTORY_SLOT_ITEM_START; invSlot < INVENTORY_SLOT_ITEM_END; ++invSlot)
+        if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, invSlot))
+            if (std::find(slot.supplies.begin(), slot.supplies.end(), item->GetEntry()) == slot.supplies.end())
+                bot->DestroyItem(INVENTORY_SLOT_BAG_0, invSlot, true);
     ApplyGear(bot, slot);
     for (uint32 id : slot.supplies)
     {
