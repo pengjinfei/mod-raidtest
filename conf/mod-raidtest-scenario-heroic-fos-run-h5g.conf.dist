@@ -1,6 +1,7 @@
 # Heroic Forge of Souls run from the entrance to the Devourer of Souls. The tank leads with the playerbots "dungeon run"
 # strategy along modules/mod-playerbots/data/dungeon-routes/632-forge-of-souls.route: the Soulguard packs of the forge,
-# Bronjahm, the Spectral Wardens of the upper hall, Devourer of Souls. Ends at the Devourer (boss state 3).
+# Bronjahm, the Spectral Wardens of the upper hall, Devourer of Souls. Ends when the Devourer is done: KillOnBossState is
+# the instance's boss id (DATA_DEVOURER = 1), not a state.
 [Scenario]
 MapId = 632
 BossEntry = 36502
@@ -10,7 +11,7 @@ Strategy = wotlk-fos
 RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
 GearProfile = none
 DungeonRun = 1
-KillOnBossState = 3
+KillOnBossState = 1
 PreparationX = 4923.0
 PreparationY = 2175.0
 PreparationZ = 638.7
