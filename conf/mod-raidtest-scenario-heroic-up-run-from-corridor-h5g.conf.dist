@@ -1,0 +1,26 @@
+# Heroic Utgarde Pinnacle run from a checkpoint (all-bot), my-mac 2026-10-06: starts at route along 1085 (491.4,-435.9),
+# past Skadi, at the head of the corridor down to Ymiron (z 75); Skadi set done opens Ymiron's door.
+# For iterating on the later stretches; a fix is confirmed by full runs from the entrance (heroic-up-run-h5g).
+# Everything the route clears before the start is gone, as if cleared; the bosses before it are set done.
+[Scenario]
+MapId = 575
+BossEntry = 26861
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-up
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnInstanceData = 3:3
+PreparationX = 491.4
+PreparationY = -435.9
+PreparationZ = 81.0
+PreparationO = 3.9
+EngageX = 491.4
+EngageY = -435.9
+EngageZ = 81.0
+EngageO = 3.9
+FixtureDespawnSpawns = 126155,126160,126164,126171,126151,126156,126161,126170,126154,126158,126159,126163,126169,126152,126153,126157,126162,126167,126168,126076,126080,126085,126083,126087,126088,126075,126077,126079,126084,126089,126090,126078,126081,126082,126086,126108,126248,126249,126166
+FixtureInstanceData = 0:3,1:3,2:3
+TimeoutSeconds = 3600
+EngageTrigger = pull
