@@ -1,0 +1,25 @@
+# Heroic Utgarde Pinnacle full run (all-bot), my-mac 2026-10-06: the tank leads with the playerbots "dungeon run"
+# strategy along modules/mod-playerbots/data/dungeon-routes/575-utgarde-pinnacle.route
+# (tools/route-gen/overrides/575-utgarde-pinnacle.txt). Ends at King Ymiron: the instance records him with SetData,
+# not SetBossState, so KillOnBossState never fired (my-mac run 100190 killed him and was taken as stalled).
+# Start at the instance entrance (areatrigger 4747 target).
+[Scenario]
+MapId = 575
+BossEntry = 26861
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-up
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnInstanceData = 3:3
+PreparationX = 584.1
+PreparationY = -328.0
+PreparationZ = 110.1
+PreparationO = 3.12
+EngageX = 584.1
+EngageY = -328.0
+EngageZ = 110.1
+EngageO = 3.12
+TimeoutSeconds = 5400
+EngageTrigger = pull

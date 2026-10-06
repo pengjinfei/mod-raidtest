@@ -304,9 +304,11 @@ bool RaidTestCommandScript::HandleLosCommand(ChatHandler* handler, char const* a
 bool RaidTestCommandScript::HandlePathCommand(ChatHandler* handler, char const* args)
 {
     std::vector<std::string> tokens = TokenizeArgs(args ? args : "");
-    if (tokens.size() != 7)
+    // "points" as an eighth argument lists every point as well: a route skeleton where the travel-node graph has no
+    // path (Utgarde Pinnacle's entrance, Gortok and Ymiron are not linked to one another).
+    if (tokens.size() != 7 && !(tokens.size() == 8 && tokens[7] == "points"))
     {
-        handler->SendSysMessage("usage: .raidtest path <player in the map> <x1> <y1> <z1> <x2> <y2> <z2>");
+        handler->SendSysMessage("usage: .raidtest path <player in the map> <x1> <y1> <z1> <x2> <y2> <z2> [points]");
         return true;
     }
 
@@ -345,6 +347,9 @@ bool RaidTestCommandScript::HandlePathCommand(ChatHandler* handler, char const* 
     handler->PSendSysMessage("path map={} from=({:.1f},{:.1f},{:.2f}) to=({:.1f},{:.1f},{:.2f}) type=0x{:02X} points={} "
         "length={:.1f} min_z={:.2f} end=({:.1f},{:.1f},{:.2f}) end_gap2d={:.1f}", owner->GetMapId(), v[0], v[1], v[2],
         v[3], v[4], v[5], uint32(path.GetPathType()), points.size(), length, minZ, end.x, end.y, end.z, endGap);
+    if (tokens.size() == 8)
+        for (size_t i = 0; i < points.size(); ++i)
+            handler->PSendSysMessage("path_point {} {:.2f} {:.2f} {:.2f}", i, points[i].x, points[i].y, points[i].z);
     return true;
 }
 
