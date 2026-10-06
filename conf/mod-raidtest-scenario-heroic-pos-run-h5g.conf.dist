@@ -5,6 +5,8 @@
 [Scenario]
 MapId = 658
 BossEntry = 36658
+# Tyrannus is summoned once the group comes out of the tunnel: not in the instance at the start.
+BossSpawnMode = script
 PartySize = 5
 DungeonDifficulty = heroic
 Strategy = wotlk-pos
