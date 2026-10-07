@@ -1,0 +1,24 @@
+# Heroic Violet Hold full run: from the entrance, the leader talks to Lieutenant Sinclari to start the event, then the
+# group holds the room through eighteen portal waves, two released cell bosses and Cyanigosa (route 608-violet-hold).
+# Done = boss state DATA_CYANIGOSA (2) DONE. Cyanigosa is summoned at wave 18, so the boss is bound by script.
+[Scenario]
+MapId = 608
+BossEntry = 31134
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-vh
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 2
+BossSpawnMode = script
+PreparationX = 1808.8
+PreparationY = 803.9
+PreparationZ = 44.4
+PreparationO = 0.0
+EngageX = 1808.8
+EngageY = 803.9
+EngageZ = 44.4
+EngageO = 0.0
+TimeoutSeconds = 3600
+EngageTrigger = pull
