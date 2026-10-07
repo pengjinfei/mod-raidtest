@@ -1,0 +1,22 @@
+# Heroic Halls of Stone full run: entrance -> Krystallus -> Maiden of Grief -> Brann's escort and the Tribunal of
+# Ages (Brann talked to by the leader, route 599-halls-of-stone) -> Sjonnir. Done = BOSS_SJONNIR (3) DONE.
+[Scenario]
+MapId = 599
+BossEntry = 27978
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 3
+PreparationX = 1153.24
+PreparationY = 806.16
+PreparationZ = 195.94
+PreparationO = 4.715
+EngageX = 1153.24
+EngageY = 806.16
+EngageZ = 195.94
+EngageO = 4.715
+TimeoutSeconds = 4500
+EngageTrigger = pull
