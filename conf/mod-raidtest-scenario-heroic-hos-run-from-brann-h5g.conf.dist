@@ -1,0 +1,22 @@
+# Heroic Halls of Stone full run from Brann Bronzebeard (checkpoint): the leader joins the route at the nearest node.
+# Ages (Brann talked to by the leader, route 599-halls-of-stone) -> Sjonnir. Done = BOSS_SJONNIR (3) DONE.
+[Scenario]
+MapId = 599
+BossEntry = 27978
+PartySize = 5
+DungeonDifficulty = heroic
+Strategy = wotlk-hos
+RosterFile = "mod-raidtest-roster-heroic5gear-n5talents-v2.conf"
+GearProfile = none
+DungeonRun = 1
+KillOnBossState = 3
+PreparationX = 1077.4
+PreparationY = 474.2
+PreparationZ = 207.8
+PreparationO = 4.715
+EngageX = 1077.4
+EngageY = 474.2
+EngageZ = 207.8
+EngageO = 4.715
+TimeoutSeconds = 4500
+EngageTrigger = pull
